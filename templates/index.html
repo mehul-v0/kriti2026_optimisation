@@ -33,15 +33,33 @@
                             <label class="form-label">Time Weight</label>
                             <input type="number" step="0.1" class="form-control" id="timeWeight" value="0.4">
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3" id="divPopSize">
                             <label class="form-label">Population Size</label>
                             <input type="number" class="form-control" id="popSize" value="80">
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Generations</label>
+                        <div class="mb-3" id="divGenerations">
+                            <label class="form-label" id="lblGenerations">Generations</label>
                             <input type="number" class="form-control" id="generations" value="200">
                         </div>
-                        <button type="submit" class="btn btn-primary w-100" id="startBtn">Start Simulation</button>
+                        
+                        <hr>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Input File (Excel)</label>
+                            <input type="file" class="form-control" id="uploadFile" accept=".xlsx">
+                            <div class="form-text">Leave empty to use default file</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Algorithm</label>
+                            <select class="form-select" id="algoSelect">
+                                <option value="ga">Genetic Algorithm (C++)</option>
+                                <option value="alns">ALNS (C++)</option>
+                                <option value="ortools">Google OR-Tools (Python)</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mb-2" id="startBtn">Start Simulation</button>
                     </form>
                 </div>
             </div>
@@ -105,9 +123,62 @@
     let isRunning = false;
     let pollInterval = null;
 
+    // Handle Algorithm Selection UI
+    document.getElementById('algoSelect').addEventListener('change', function() {
+        const algo = this.value;
+        const divPop = document.getElementById('divPopSize');
+        const divGen = document.getElementById('divGenerations');
+        const lblGen = document.getElementById('lblGenerations');
+
+        if (algo === 'ga') {
+            divPop.style.display = 'block';
+            divGen.style.display = 'block';
+            lblGen.innerText = 'Generations';
+        } else if (algo === 'alns') {
+            divPop.style.display = 'none';
+            divGen.style.display = 'block';
+            lblGen.innerText = 'Iterations';
+        } else if (algo === 'ortools') {
+            divPop.style.display = 'none';
+            divGen.style.display = 'none';
+        }
+    });
+
+    // Trigger change on load
+    document.getElementById('algoSelect').dispatchEvent(new Event('change'));
+
     document.getElementById('configForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         
+        const btn = document.getElementById('startBtn');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+
+        // 1. Handle File Upload
+        const fileInput = document.getElementById('uploadFile');
+        if (fileInput.files.length > 0) {
+            btn.innerText = "Uploading...";
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            try {
+                const upRes = await fetch('/upload', {method: 'POST', body: formData});
+                const upData = await upRes.json();
+                if(upData.status !== 'success') {
+                    alert("Upload failed: " + upData.message);
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                    return;
+                }
+            } catch(err) {
+                console.error(err);
+                alert("Upload error");
+                btn.disabled = false;
+                btn.innerText = originalText;
+                return;
+            }
+        }
+
+        // 2. Prepare Configuration
         const config = {
             cost_weight: document.getElementById('costWeight').value,
             time_weight: document.getElementById('timeWeight').value,
@@ -115,12 +186,16 @@
             generations: document.getElementById('generations').value
         };
 
-        const btn = document.getElementById('startBtn');
-        btn.disabled = true;
-        btn.innerText = "Running...";
+        // 3. Determine Endpoint
+        const algo = document.getElementById('algoSelect').value;
+        let endpoint = '/start';
+        if (algo === 'ortools') endpoint = '/start_ortools';
+        if (algo === 'alns') endpoint = '/start_alns';
+
+        btn.innerText = "Running " + algo.toUpperCase() + "...";
 
         try {
-            const res = await fetch('/start', {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(config)
@@ -130,10 +205,15 @@
             if (data.status === 'started') {
                 isRunning = true;
                 pollInterval = setInterval(pollStatus, 1000);
+            } else {
+                alert(data.message || "Error starting simulation");
+                btn.disabled = false;
+                btn.innerText = originalText;
             }
         } catch (err) {
             console.error(err);
             btn.disabled = false;
+            btn.innerText = originalText;
         }
     });
 
@@ -147,8 +227,11 @@
             // Stopped
             isRunning = false;
             clearInterval(pollInterval);
-            document.getElementById('startBtn').disabled = false;
-            document.getElementById('startBtn').innerText = "Start Simulation";
+            
+            // Reset buttons
+            const btn = document.getElementById('startBtn');
+            btn.disabled = false;
+            btn.innerText = "Start Simulation";
         }
     }
 

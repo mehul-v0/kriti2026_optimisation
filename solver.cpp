@@ -73,13 +73,140 @@ double haversine_km(double lat1, double lon1, double lat2, double lon2) {
     return R * c;
 }
 
-double evaluate(const Solution& sol, double& out_cost, double& out_time, double& out_penalty) {
+// Permutation based optimization for small routes
+void optimize_route_sequence(int v_idx, vector<int>& route, double& out_dist, double& out_time, double& out_penalty) {
+    if (route.empty()) {
+        out_dist = 0; out_time = 0; out_penalty = 0;
+        return;
+    }
+
+    const auto& v = vehicles[v_idx];
+    
+    // Sort initially by earliest pickup to have a decent start frame
+    sort(route.begin(), route.end(), [](int a, int b){
+        return employees[a].earliest_pickup < employees[b].earliest_pickup;
+    });
+
+    // If capacity is small <= 6, brute force permutations
+    // If larger, stick to the sorted heuristic or Nearest Neighbor
+    // V04 is a van with capacity 6. 6! = 720 iterations. totally fine in C++.
+    
+    double best_dist = 1e9;
+    double best_penalty = 1e9;
+    double best_total_emp_time = 1e9;
+    vector<int> best_perm = route;
+    
+    bool try_permutations = (route.size() <= 6);
+    // If not trying permutations, we just evaluate the heuristic sort order once.
+    // To implement "just evaluate once", we can wrap the loop logic.
+    
+    // To support `next_permutation`, we need the vector sorted logic? 
+    // No, standard `next_permutation` goes through lexicographical orders. 
+    // We want ALL permutations. So start with sorted indices to be safe, or just run full cycle.
+    // Actually `next_permutation` needs sorted to cover ALL.
+    if (try_permutations) {
+        sort(route.begin(), route.end()); 
+    }
+
+    do {
+        double current_dist = 0;
+        double current_penalty = 0;
+        double current_total_emp_time = 0;
+        
+        double cur_lat = v.current_lat;
+        double cur_lng = v.current_lng;
+        double cur_time = v.available_from;
+        
+        vector<double> pickup_times;
+        pickup_times.reserve(route.size());
+
+        // Traverse route
+        bool possible = true;
+        for (int e_idx : route) {
+            const auto& emp = employees[e_idx];
+            double d = haversine_km(cur_lat, cur_lng, emp.pickup_lat, emp.pickup_lng);
+            current_dist += d;
+            
+            double travel = (d / v.speed_kmph) * 60.0;
+            cur_time += travel;
+            
+            // Earliest pickup wait (hard constraint logic usually, but here wait counts to time?)
+            // Usually wait time doesn't cost driver distance, but consumes time.
+            if (emp.earliest_pickup > 0 && cur_time < emp.earliest_pickup) {
+                cur_time = emp.earliest_pickup;
+            }
+            
+            pickup_times.push_back(cur_time);
+            cur_lat = emp.pickup_lat;
+            cur_lng = emp.pickup_lng;
+        }
+        
+        // Go to office
+        double d_office = haversine_km(cur_lat, cur_lng, config.office_lat, config.office_lng);
+        current_dist += d_office;
+        double travel_office = (d_office / v.speed_kmph) * 60.0;
+        cur_time += travel_office;
+        double drop_time = cur_time;
+
+        // Check constraints & penalties
+        for (size_t i = 0; i < route.size(); ++i) {
+            int e_idx = route[i];
+            const auto& emp = employees[e_idx];
+            
+            double ride_time = drop_time - pickup_times[i];
+            current_total_emp_time += ride_time;
+            
+            if (emp.latest_drop > 0) {
+                if (drop_time > emp.latest_drop + config.slack) {
+                     current_penalty += 1000.0 + (drop_time - emp.latest_drop);
+                }
+            }
+        }
+        
+        // Compare with best
+        // Objective for sequencing: Minimize (Cost + Penalty). 
+        // We often care less about ride time inside the sequence optimization unless it generates penalty.
+        // Actually the global objective includes ride time.
+        // Local Score = CostWeight * Dist * CostPerKm + TimeWeight * EmpTime + Penalty
+        // We need normalized values strictly speaking, but for local optimization, raw weighted sum is fine.
+        // Since normalization factors are constant, we can use effective weights.
+        
+        // Approx weights for local decision
+        double local_score = (config.cost_weight * current_dist * v.cost_per_km) + 
+                             (config.time_weight * current_total_emp_time) + 
+                             current_penalty;
+
+        // Check if better
+        double current_best_score = (config.cost_weight * best_dist * v.cost_per_km) + 
+                                    (config.time_weight * best_total_emp_time) + 
+                                    best_penalty;
+
+        if (local_score < current_best_score) {
+            best_dist = current_dist;
+            best_total_emp_time = current_total_emp_time;
+            best_penalty = current_penalty;
+            best_perm = route;
+        }
+
+    } while (try_permutations && next_permutation(route.begin(), route.end()));
+
+    // Set the route to the best permutation found
+    route = best_perm;
+    out_dist = best_dist;
+    out_time = best_total_emp_time;
+    out_penalty = best_penalty;
+}
+
+double evaluate(Solution& sol, double& out_cost, double& out_time, double& out_penalty) {
     double total_cost = 0;
     double total_emp_time = 0;
     double penalty = 0;
 
+    // To allow `evaluate` to update the solution inplace with best sequence, we passed sol by ref.
+    // This is "Lamarckian" evolution - the improvements during evaluation are written back to the individual.
+    
     for (size_t v_idx = 0; v_idx < sol.size(); ++v_idx) {
-        const auto& route = sol[v_idx]; // list of emp indices
+        auto& route = sol[v_idx]; // list of emp indices
         if (route.empty()) continue;
 
         const auto& v = vehicles[v_idx];
@@ -87,6 +214,10 @@ double evaluate(const Solution& sol, double& out_cost, double& out_time, double&
         // Capacity penalty
         if (route.size() > (size_t)v.capacity) {
             penalty += 1000.0 * (route.size() - v.capacity);
+            // If over capacity, optimization might be slow (n! grows fast). 
+            // In mutation/init we might exceed capacity locally.
+            // If > 8, do NOT permute.
+            // But we truncated logic to <=6 inside function.
         }
 
         // Sharing preference penalty
@@ -94,70 +225,15 @@ double evaluate(const Solution& sol, double& out_cost, double& out_time, double&
             int pref = employees[e_idx].sharing_pref;
             if (pref == 1 && route.size() > 1) penalty += 500;
             if (pref == 2 && route.size() > 2) penalty += 200;
-            // triple (3) usually means max 3, or at least 3? 
-            // In python code: triple check wasn't explicitly penalizing >3, just ensuring 'capacity' usually covers it. 
-            // We'll stick to python logic: single/double checks only.
         }
 
-        // Simulate route
-        double cur_lat = v.current_lat;
-        double cur_lng = v.current_lng;
-        double cur_time = v.available_from;
-        double total_dist = 0;
-
-        // Sequence of pickups
-        vector<double> pickup_times;
-        for (int e_idx : route) {
-            const auto& emp = employees[e_idx];
-            double d = haversine_km(cur_lat, cur_lng, emp.pickup_lat, emp.pickup_lng);
-            total_dist += d;
-            double travel = (d / v.speed_kmph) * 60.0;
-            cur_time += travel;
-            
-            // Wait if early
-            if (emp.earliest_pickup > 0 && cur_time < emp.earliest_pickup) {
-                cur_time = emp.earliest_pickup;
-            }
-            
-            pickup_times.push_back(cur_time); // actual pickup time
-            cur_lat = emp.pickup_lat;
-            cur_lng = emp.pickup_lng;
-        }
-
-        // Go to office
-        double d_office = haversine_km(cur_lat, cur_lng, config.office_lat, config.office_lng);
-        total_dist += d_office;
-        double travel_office = (d_office / v.speed_kmph) * 60.0;
-        cur_time += travel_office; // drop time at office
-
-        double drop_time = cur_time;
-
-        // Calculate Cost
-        total_cost += total_dist * v.cost_per_km;
-
-        // Calculate Employee Times and Delay Penalties
-        for (size_t i = 0; i < route.size(); ++i) {
-            int e_idx = route[i];
-            const auto& emp = employees[e_idx];
-            
-            // Re-calc ride time approx?
-            // Python code logic: 
-            // "employee ride times (pickup->drop): approximate by drop_time - pickup_arrival"
-            // Wait, Python re-simulated to get specific ride time. 
-            // Here we have `drop_time` (everyone drops at office at same time in this simplified model?)
-            // Yes, standard pooling to office usually implies one drop location.
-            // Ride time = Drop Time - Pickup Time
-            
-            double ride_time = drop_time - pickup_times[i];
-            total_emp_time += ride_time;
-
-            // Latest drop penalty
-            if (emp.latest_drop > 0) {
-                if (drop_time > emp.latest_drop + config.slack) { // simplified slack
-                     penalty += 1000.0; // + (drop_time - emp.latest_drop);
-                }
-            }
-        }
+        double d, t, p;
+        // Optimize sequence locally!
+        optimize_route_sequence(v_idx, route, d, t, p);
+        
+        total_cost += d * v.cost_per_km;
+        total_emp_time += t;
+        penalty += p;
     }
 
     out_cost = total_cost;

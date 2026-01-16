@@ -21,6 +21,21 @@ DATA_PATH = "TestCase_TC03.xlsx"
 # Load data once to keep it simple, or reload on every run
 cached_data = None
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    global DATA_PATH, cached_data
+    if 'file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No file part'})
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'status': 'error', 'message': 'No selected file'})
+    if file:
+        filename = "uploaded_data.xlsx"
+        file.save(filename)
+        DATA_PATH = filename
+        cached_data = None # Invalidate cache to force reload
+        return jsonify({'status': 'success', 'message': 'File uploaded successfully'})
+
 def get_data():
     global cached_data
     if cached_data is None:
@@ -34,6 +49,8 @@ def get_data():
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
 
 import subprocess
 import os
@@ -121,10 +138,11 @@ def compile_cpp_solver():
     print("Could not compile C++ solver automatically. Please compile 'solver.cpp' to 'solver.exe' manually.")
     return None
 
-def run_solver(cost_weight, time_weight, pop_size, generations):
+
+def run_cpp_solver_generic(executable_path, cost_weight, time_weight, pop_size, generations):
     global simulation_state
     simulation_state['running'] = True
-    simulation_state['logs'] = []
+    simulation_state['logs'] = [f"Starting {executable_path}..."]
     
     data = get_data()
     if not data:
@@ -134,17 +152,15 @@ def run_solver(cost_weight, time_weight, pop_size, generations):
     inp_file = "cpp_input.txt"
     export_to_cpp_input(data, inp_file, cost_weight, time_weight, pop_size, generations)
     
-    # 2. Compile/Check binary
-    exe_path = compile_cpp_solver()
-    if not exe_path or not os.path.exists(exe_path):
-        simulation_state['logs'].append("Error: C++ Solver binary not found. Compilation failed or compiler missing.")
-        # Fallback to python? Or just stop. User asked for C++.
+    # 2. Check binary
+    if not executable_path or not os.path.exists(executable_path):
+        simulation_state['logs'].append(f"Error: Solver binary {executable_path} not found.")
         simulation_state['running'] = False
         return
 
     # 3. Run
     try:
-        proc = subprocess.Popen([exe_path, inp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.Popen([executable_path, inp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
         for line in proc.stdout:
             line = line.strip()
@@ -179,11 +195,97 @@ def start_simulation():
     pop_size = int(params.get('pop_size', 50))
     generations = int(params.get('generations', 100))
 
-    thread = threading.Thread(target=run_solver, args=(cost_weight, time_weight, pop_size, generations))
+    # Ensure GA solver is compiled
+    exe_path = compile_cpp_solver()
+
+    thread = threading.Thread(target=run_cpp_solver_generic, args=(exe_path, cost_weight, time_weight, pop_size, generations))
     thread.daemon = True
     thread.start()
     
     return jsonify({'status': 'started'})
+
+@app.route('/start_alns', methods=['POST'])
+def start_alns():
+    if simulation_state['running']:
+        return jsonify({'status': 'error', 'message': 'Simulation already running'})
+    
+    params = request.json
+    cost_weight = float(params.get('cost_weight', 0.6))
+    time_weight = float(params.get('time_weight', 0.4))
+    pop_size = int(params.get('pop_size', 50)) 
+    generations = int(params.get('generations', 100)) # Used as iterations
+
+    # Assume solver_alns.exe is compiled manually or exists
+    exe_path = 'solver_alns.exe'
+    if not os.path.exists(exe_path):
+         # Try compile if missing?
+         try:
+            subprocess.check_call(['g++', '-O3', 'solver_alns.cpp', '-o', 'solver_alns.exe'])
+         except:
+            return jsonify({'status': 'error', 'message': 'ALNS solver binary not found and compilation failed'})
+
+    thread = threading.Thread(target=run_cpp_solver_generic, args=(exe_path, cost_weight, time_weight, pop_size, generations))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'status': 'started'})
+
+
+import solver_ortools
+
+@app.route('/start_ortools', methods=['POST'])
+def start_ortools():
+    params = request.json
+    # We can run this in a thread too, OR-Tools might take a few seconds
+    
+    thread = threading.Thread(target=run_ortools_solver, args=(params,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'status': 'started'})
+
+def run_ortools_solver(params):
+    global simulation_state
+    simulation_state['running'] = True
+    simulation_state['logs'] = ["Running Google OR-Tools Solver..."]
+    
+    data = get_data()
+    if not data:
+        simulation_state['running'] = False
+        return
+
+    # Update weights in metadata just for consistent passing (wrapper logic)
+    # The actual solver reads from the list of dicts or we pass explicit weights
+    # In solver_ortools.py we wrote strict logic.
+    
+    # Let's map the params to metadata dict
+    meta_list = data.get('metadataa', data.get('metadata', []))
+    meta = {m['key']: m['value'] for m in meta_list}
+    meta['objective_cost_weight'] = params.get('cost_weight', 0.6)
+    meta['objective_time_weight'] = params.get('time_weight', 0.4)
+    
+    try:
+        result = solver_ortools.solve_ortools(
+            data['employees'],
+            data['vehicles'],
+            data['baseline'],
+            meta
+        )
+        
+        if result:
+            simulation_state['generation'] = "Final"
+            simulation_state['best_score'] = result['score']
+            simulation_state['best_assignment'] = result['assignment']
+            simulation_state['stats'] = result['stats']
+            simulation_state['logs'].append("OR-Tools Finished Successfully.")
+        else:
+             simulation_state['logs'].append("OR-Tools could not find a solution.")
+             
+    except Exception as e:
+        simulation_state['logs'].append(f"OR-Tools Error: {e}")
+        print(e)
+        
+    simulation_state['running'] = False
 
 @app.route('/status')
 def status():
