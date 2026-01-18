@@ -14,6 +14,9 @@ simulation_state = {
     'best_score': 0,
     'best_assignment': {},
     'stats': {},
+    'details': [],  # Route details for visualization
+    'solution_type': '',  # Multi-stage solver result type
+    'route_text': '',  # Formatted route text for display
     'logs': []
 }
 
@@ -49,6 +52,27 @@ def get_data():
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/get_metadata')
+def get_metadata():
+    """Return metadata including cost_weight and time_weight from the uploaded Excel."""
+    data = get_data()
+    if not data:
+        return jsonify({'error': 'No data loaded'})
+    
+    # Extract metadata
+    meta_list = data.get('metadataa', data.get('metadata', []))
+    meta = {m['key']: m['value'] for m in meta_list}
+    
+    # Get weights with defaults
+    cost_weight = float(meta.get('objective_cost_weight', 0.6))
+    time_weight = float(meta.get('objective_time_weight', 0.4))
+    
+    return jsonify({
+        'cost_weight': cost_weight,
+        'time_weight': time_weight,
+        'metadata': meta
+    })
 
 
 
@@ -232,6 +256,7 @@ def start_alns():
 
 
 import solver_ortools
+import solver_ortools_full
 
 @app.route('/start_ortools', methods=['POST'])
 def start_ortools():
@@ -287,16 +312,65 @@ def run_ortools_solver(params):
         
     simulation_state['running'] = False
 
+
+@app.route('/start_ortools_full', methods=['POST'])
+def start_ortools_full():
+    """Start the comprehensive OR-Tools solver that uses ALL input fields."""
+    params = request.json
+    
+    thread = threading.Thread(target=run_ortools_full_solver, args=(params,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'status': 'started'})
+
+def run_ortools_full_solver(params):
+    """Run the full OR-Tools solver with all constraints."""
+    global simulation_state
+    simulation_state['running'] = True
+    simulation_state['logs'] = ["Running OR-Tools Full Solver (All Constraints)..."]
+    
+    data = get_data()
+    if not data:
+        simulation_state['running'] = False
+        return
+
+    # Build metadata dict from the data
+    meta_list = data.get('metadataa', data.get('metadata', []))
+    meta = {m['key']: m['value'] for m in meta_list}
+    meta['objective_cost_weight'] = params.get('cost_weight', 0.6)
+    meta['objective_time_weight'] = params.get('time_weight', 0.4)
+    
+    try:
+        result = solver_ortools_full.solve_ortools_full(
+            data['employees'],
+            data['vehicles'],
+            data['baseline'],
+            meta
+        )
+        
+        if result:
+            simulation_state['generation'] = "Final"
+            simulation_state['best_score'] = result['score']
+            simulation_state['best_assignment'] = result['assignment']
+            simulation_state['stats'] = result['stats']
+            simulation_state['details'] = result.get('details', [])  # Store route details
+            simulation_state['solution_type'] = result.get('solution_type', '')  # Store solution type
+            simulation_state['route_text'] = result.get('route_text', '')  # Store formatted route text
+            simulation_state['logs'].append("OR-Tools Full Solver Finished Successfully.")
+        else:
+            simulation_state['logs'].append("OR-Tools Full could not find a solution.")
+             
+    except Exception as e:
+        simulation_state['logs'].append(f"OR-Tools Full Error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+    simulation_state['running'] = False
+
 @app.route('/status')
 def status():
-    # Return current state
-    # We also need to return the vehicle paths for the map if possible
-    # For now, let's just return assignments and stats
-    
-    # To facilitate map: calculate routes (lat/lng sequence) for the current assignment
-    # This might be heavy to do every poll. Let's do it on the client side or lightweight here.
-    # We have lat/lngs in employees and vehicles.
-    # Let's send the raw assignment + data (vehicles/employees) so client can draw lines.
+    # Return current state with detailed route information
     
     data = get_data()
     # Helper to serialize for JSON
@@ -307,6 +381,9 @@ def status():
         'score': simulation_state['best_score'],
         'stats': simulation_state['stats'],
         'assignment': simulation_state['best_assignment'],
+        'details': simulation_state.get('details', []),  # Include route details for pathway visualization
+        'solution_type': simulation_state.get('solution_type', ''),  # Include solution type for multi-stage solver
+        'route_text': simulation_state.get('route_text', ''),  # Include formatted route text
         # Send partial data needed for visualization
         'employees': {e['employee_id']: {'lat': e['drop_lat'], 'lng': e['drop_lng'], 'olat': e['pickup_lat'], 'olng': e['pickup_lng']} for e in data.get('employees', [])} if data else {},
         'vehicles': {v['vehicle_id']: {'lat': v['current_lat'], 'lng': v['current_lng']} for v in data.get('vehicles', [])} if data else {},
