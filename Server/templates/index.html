@@ -191,9 +191,9 @@
             
             <!-- Route Flowchart Visualization -->
             <div class="mt-3" id="flowchartSection" style="display: none;">
-                <h5>🗺️ Route Flowcharts</h5>
+                <h5>🗺️ Route Flowchart</h5>
                 <div id="flowchartContainer">
-                    <!-- Individual vehicle flowcharts will be inserted here -->
+                    <!-- Individual flowcharts will be inserted here -->
                 </div>
             </div>
             
@@ -216,9 +216,7 @@
         flowchart: {
             useMaxWidth: false,
             htmlLabels: true,
-            curve: 'basis',
-            nodeSpacing: 100,
-            rankSpacing: 150
+            curve: 'basis'
         }
     });
 
@@ -233,6 +231,7 @@
     let isRunning = false;
     let pollInterval = null;
     let routeDetailsData = null;
+    let flowchartsRendered = false; // Track if flowcharts have been rendered
 
     // Load weights from uploaded Excel sheet
     async function loadWeightsFromSheet() {
@@ -420,18 +419,18 @@
         return violations;
     }
 
-    // Generate separate Mermaid flowcharts for each vehicle
-    function generateVehicleFlowcharts(data) {
+    // Generate Mermaid flowchart from route details - separate diagram for each vehicle
+    function generateRouteFlowcharts(data) {
         if (!data.details || data.details.length === 0) return [];
         
         const flowcharts = [];
         
-        // Process each vehicle separately
+        // Process each vehicle as a separate flowchart
         for (let vIdx = 0; vIdx < data.details.length; vIdx++) {
             const vehicleData = data.details[vIdx];
             if (!vehicleData.trip_routes || vehicleData.trip_routes.length === 0) continue;
             
-            let mermaidCode = '%%{init: {"theme": "base", "themeVariables": {"fontSize": "18px", "fontFamily": "Segoe UI, Arial"}}}%%\n';
+            let mermaidCode = '%%{init: {"theme": "base", "themeVariables": {"fontSize": "18px"}}}%%\n';
             mermaidCode += 'graph LR\n';
             let nodeId = 0;
             
@@ -445,9 +444,9 @@
                 // Add trip separator node if not first trip
                 if (tripIdx > 0) {
                     const sepNodeId = `s${nodeId++}`;
-                    const tripTitle = `Trip ${tripIdx + 1}<br/>${trip.distance_km}km<br/>Cost: $${trip.cost}`;
-                    mermaidCode += `    ${sepNodeId}["${tripTitle}"]\n`;
-                    mermaidCode += `    style ${sepNodeId} fill:#fff,stroke:#999,stroke-width:4px,stroke-dasharray: 8 8,padding:25px,min-width:200px\n`;
+                    const sepLabel = `Trip ${tripIdx + 1}<br/>Distance: ${trip.distance_km}km<br/>Cost: $${trip.cost}`;
+                    mermaidCode += `    ${sepNodeId}["${sepLabel}"]\n`;
+                    mermaidCode += `    style ${sepNodeId} fill:#fff,stroke:#999,stroke-width:4px,stroke-dasharray: 8 8,padding:25px,font-size:18px\n`;
                     if (prevNodeId) {
                         mermaidCode += `    ${prevNodeId} -.-> ${sepNodeId}\n`;
                         prevNodeId = sepNodeId;
@@ -459,14 +458,14 @@
                     const stop = trip.detailed_stops[stopIdx];
                     const currentNodeId = `n${nodeId++}`;
                     
-                    // Determine node style and label with detailed info
+                    // Build detailed multi-line label
                     let style, label;
                     if (stop.type === 'depot') {
-                        style = 'fill:#e3f2fd,stroke:#1976d2,stroke-width:5px,padding:30px,min-width:250px';
+                        style = 'fill:#e3f2fd,stroke:#1976d2,stroke-width:5px,padding:30px,font-size:18px';
                         label = `DEPOT: ${stop.label}<br/>Time: ${stop.time}`;
                     } else if (stop.type === 'employee') {
-                        style = 'fill:#fff3e0,stroke:#f57c00,stroke-width:5px,padding:30px,min-width:350px';
-                        // Add detailed info for employee pickups
+                        style = 'fill:#fff3e0,stroke:#f57c00,stroke-width:5px,padding:30px,font-size:18px';
+                        // Multi-line label with all details
                         label = `PICKUP: ${stop.label}<br/>Time: ${stop.time}`;
                         if (stop.time_window) {
                             label += `<br/>Window: ${stop.time_window}`;
@@ -475,12 +474,12 @@
                             label += `<br/>Est Office: ${stop.est_office_arrival}`;
                         }
                     } else if (stop.type === 'office' || stop.type === 'office_start') {
-                        style = 'fill:#c8e6c9,stroke:#388e3c,stroke-width:5px,padding:30px,min-width:250px';
+                        style = 'fill:#c8e6c9,stroke:#388e3c,stroke-width:5px,padding:30px,font-size:18px';
                         const startLabel = stop.type === 'office_start' ? ' START' : '';
                         label = `OFFICE${startLabel}<br/>Time: ${stop.time}`;
                     }
                     
-                    // Create node with detailed info
+                    // Create node with detailed multi-line info
                     mermaidCode += `    ${currentNodeId}["${label}"]\n`;
                     mermaidCode += `    style ${currentNodeId} ${style}\n`;
                     
@@ -498,21 +497,27 @@
                 }
             }
             
+            // Add vehicle info to flowchart object
             flowcharts.push({
-                vehicleId: vehicleData.vehicle,
-                employees: vehicleData.employees,
+                vehicle: vehicleData.vehicle,
+                employees: vehicleData.employees.length,
                 cost: vehicleData.cost,
-                numTrips: vehicleData.num_trips,
-                mermaidCode: mermaidCode
+                trips: vehicleData.num_trips,
+                code: mermaidCode
             });
         }
         
         return flowcharts;
     }
 
-    // Render separate Mermaid flowcharts for each vehicle
+    // Render individual Mermaid flowcharts for each vehicle
     async function renderFlowchart(data) {
-        const flowcharts = generateVehicleFlowcharts(data);
+        // Only render once to prevent scroll glitching
+        if (flowchartsRendered) {
+            return;
+        }
+        
+        const flowcharts = generateRouteFlowcharts(data);
         if (!flowcharts || flowcharts.length === 0) {
             document.getElementById('flowchartSection').style.display = 'none';
             return;
@@ -520,7 +525,7 @@
         
         document.getElementById('flowchartSection').style.display = 'block';
         const container = document.getElementById('flowchartContainer');
-        container.innerHTML = ''; // Clear existing content
+        container.innerHTML = '';
         
         // Create a separate card for each vehicle
         for (let i = 0; i < flowcharts.length; i++) {
@@ -529,73 +534,46 @@
             // Create card wrapper
             const cardDiv = document.createElement('div');
             cardDiv.className = 'card mb-3';
-            cardDiv.style.cssText = 'border: 2px solid #1976d2; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+            cardDiv.style.cssText = 'border: 3px solid #1976d2; box-shadow: 0 4px 8px rgba(0,0,0,0.15);';
             
             // Create card header with vehicle info
             const headerDiv = document.createElement('div');
             headerDiv.className = 'card-header';
-            headerDiv.style.cssText = 'background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%); color: white; font-weight: bold; font-size: 16px;';
-            headerDiv.innerHTML = `🚗 ${fc.vehicleId} - ${fc.employees.length} employees - ${fc.numTrips} trip(s) - Cost: $${fc.cost}`;
+            headerDiv.style.cssText = 'background: #1976d2; color: white; font-weight: bold; font-size: 18px; padding: 12px 20px;';
+            headerDiv.innerHTML = `🚗 Vehicle ${fc.vehicle} | ${fc.employees} Employees | ${fc.trips} Trip(s) | Cost: $${fc.cost}`;
             
-            // Create card body with data attribute to track scroll
+            // Create card body with horizontal scroll
             const bodyDiv = document.createElement('div');
-            bodyDiv.className = 'card-body flowchart-body';
-            bodyDiv.style.cssText = 'overflow-x: auto; overflow-y: hidden; padding: 30px; background: #fafafa; position: relative;';
-            bodyDiv.dataset.scrollLeft = '0';
+            bodyDiv.className = 'card-body';
+            bodyDiv.style.cssText = 'overflow-x: auto; overflow-y: hidden; padding: 15px; background: #fafafa; -webkit-overflow-scrolling: touch;';
             
             // Create mermaid container
             const mermaidDiv = document.createElement('div');
             mermaidDiv.className = 'mermaid';
             mermaidDiv.id = `flowchart-${i}`;
-            mermaidDiv.style.cssText = 'width: fit-content; min-width: 100%; height: auto; display: inline-block;';
-            mermaidDiv.innerHTML = fc.mermaidCode;
+            mermaidDiv.style.cssText = 'display: inline-block; min-width: fit-content;';
+            mermaidDiv.textContent = fc.code;
             
             // Assemble the card
             bodyDiv.appendChild(mermaidDiv);
             cardDiv.appendChild(headerDiv);
             cardDiv.appendChild(bodyDiv);
             container.appendChild(cardDiv);
-            
-            // Track scroll position on scroll event
-            bodyDiv.addEventListener('scroll', (e) => {
-                bodyDiv.dataset.scrollLeft = bodyDiv.scrollLeft;
-            }, { passive: true });
         }
         
         // Render all mermaid diagrams
         try {
-            const elements = document.querySelectorAll('.mermaid');
-            const bodies = document.querySelectorAll('.flowchart-body');
-            
-            // Save scroll positions before rendering using stored data
-            const scrollPositions = [];
-            bodies.forEach((body) => {
-                scrollPositions.push(parseInt(body.dataset.scrollLeft) || 0);
-            });
-            
+            const mermaidElements = container.querySelectorAll('.mermaid');
             await mermaid.run({
-                nodes: Array.from(elements)
+                nodes: mermaidElements,
+                suppressErrors: true
             });
             
-            // After rendering, adjust heights and restore scroll positions with a slight delay
-            setTimeout(() => {
-                elements.forEach((el, idx) => {
-                    const svg = el.querySelector('svg');
-                    if (svg) {
-                        const svgHeight = svg.getBoundingClientRect().height;
-                        el.style.height = `${svgHeight + 20}px`;
-                    }
-                    
-                    // Restore scroll position
-                    const body = bodies[idx];
-                    if (body && scrollPositions[idx] !== undefined) {
-                        body.scrollLeft = scrollPositions[idx];
-                        body.dataset.scrollLeft = scrollPositions[idx];
-                    }
-                });
-            }, 50);
+            // Mark as rendered to prevent re-rendering
+            flowchartsRendered = true;
         } catch (err) {
             console.error('Mermaid rendering error:', err);
+            container.innerHTML = '<div class="alert alert-danger">Error rendering flowcharts</div>';
         }
     }
 
@@ -627,6 +605,9 @@
 
     document.getElementById('configForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        // Reset flowchart render flag for new simulation
+        flowchartsRendered = false;
         
         const btn = document.getElementById('startBtn');
         const originalText = btn.innerText;
