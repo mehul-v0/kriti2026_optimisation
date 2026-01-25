@@ -94,6 +94,7 @@
                             <label class="form-label">Algorithm</label>
                             <select class="form-select" id="algoSelect">
                                 <option value="ortools_full">OR-Tools Full (All Constraints)</option>
+                                <option value="custom_ortools">Custom OR-Tools (C++)</option>
                                 <option value="ga">Genetic Algorithm (C++)</option>
                                 <option value="alns">ALNS (C++)</option>
                                 <option value="ortools">Google OR-Tools Basic (Python)</option>
@@ -594,7 +595,7 @@
             divPop.style.display = 'none';
             divGen.style.display = 'block';
             lblGen.innerText = 'Iterations';
-        } else if (algo === 'ortools' || algo === 'ortools_full') {
+        } else if (algo === 'ortools' || algo === 'ortools_full' || algo === 'custom_ortools') {
             divPop.style.display = 'none';
             divGen.style.display = 'none';
         }
@@ -654,6 +655,7 @@
         if (algo === 'ortools') endpoint = '/start_ortools';
         if (algo === 'ortools_full') endpoint = '/start_ortools_full';
         if (algo === 'alns') endpoint = '/start_alns';
+        if (algo === 'custom_ortools') endpoint = '/start_custom_ortools';
 
         btn.innerText = "Running " + algo.toUpperCase() + "...";
 
@@ -751,7 +753,10 @@
         } else if (data.details && data.details.length > 0) {
             // Format the details array into console-style output
             document.getElementById('routeTextDisplay').innerText = formatSolutionDetails(data);
-            // Render flowchart
+        }
+        
+        // Always render flowchart when details are available
+        if (data.details && data.details.length > 0) {
             renderFlowchart(data);
         }
 

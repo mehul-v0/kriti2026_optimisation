@@ -1,0 +1,326 @@
+{
+  "assignment": {
+    "V01": ["E01", "E06", "E02", "E05"],
+    "V02": ["E03", "E08"],
+    "V03": ["E04", "E07"]
+  },
+  "score": 1.5473,
+  "stats": {
+    "cost": 653.05,
+    "time": 211.00,
+    "penalty": 0.00,
+    "hard_violations": 0,
+    "soft_violations": 0
+  },
+  "details": [
+    {
+      "vehicle": "V01",
+      "vehicle_id": "V01",
+      "employees": ["E01", "E06", "E02", "E05"],
+      "num_trips": 3,
+      "cost": 269.80,
+      "trip_routes": [
+        {
+          "trip_number": 1,
+          "employees": ["E01"],
+          "distance_km": 5.67,
+          "cost": 56.73,
+          "detailed_stops": [
+            {
+              "stop_number": 0,
+              "label": "Depot",
+              "type": "depot",
+              "time": "08:30",
+              "time_minutes": 510,
+              "distance_to_next": 0.00,
+              "cumulative_distance": 0.00
+            },
+            {
+              "stop_number": 1,
+              "label": "E01",
+              "type": "employee",
+              "time": "08:30",
+              "time_minutes": 510,
+              "distance_to_next": 0.49,
+              "cumulative_distance": 0.00,
+              "time_window": "[08:30 - 09:30]",
+              "adjusted_window": "[08:30 - 09:35]",
+              "earliest_pickup": "08:30",
+              "latest_drop": "09:30",
+              "latest_drop_minutes": 570,
+              "adjusted_latest_minutes": 575,
+              "priority": 1,
+              "max_delay": 5,
+              "est_office_arrival": "08:42",
+              "est_office_arrival_minutes": 522
+            },
+            {
+              "stop_number": 2,
+              "label": "Office",
+              "type": "office",
+              "time": "08:42",
+              "time_minutes": 522,
+              "distance_to_next": 5.18,
+              "cumulative_distance": 0.49
+            }
+          ]
+        },
+        {
+          "trip_number": 2,
+          "employees": ["E06"],
+          "distance_km": 7.31,
+          "cost": 73.06,
+          "detailed_stops": [
+            {
+              "stop_number": 0,
+              "label": "Office",
+              "type": "office_start",
+              "time": "08:42",
+              "time_minutes": 522,
+              "distance_to_next": 0.00,
+              "cumulative_distance": 0.00
+            },
+            {
+              "stop_number": 1,
+              "label": "E06",
+              "type": "employee",
+              "time": "08:49",
+              "time_minutes": 529,
+              "distance_to_next": 3.65,
+              "cumulative_distance": 0.00,
+              "time_window": "[08:15 - 09:15]",
+              "adjusted_window": "[08:15 - 09:20]",
+              "earliest_pickup": "08:15",
+              "latest_drop": "09:15",
+              "latest_drop_minutes": 555,
+              "adjusted_latest_minutes": 560,
+              "priority": 1,
+              "max_delay": 5,
+              "est_office_arrival": "08:58",
+              "est_office_arrival_minutes": 538
+            },
+            {
+              "stop_number": 2,
+              "label": "Office",
+              "type": "office",
+              "time": "08:58",
+              "time_minutes": 538,
+              "distance_to_next": 3.65,
+              "cumulative_distance": 3.65
+            }
+          ]
+        },
+        {
+          "trip_number": 3,
+          "employees": ["E02", "E05"],
+          "distance_km": 14.00,
+          "cost": 140.01,
+          "detailed_stops": [
+            {
+              "stop_number": 0,
+              "label": "Office",
+              "type": "office_start",
+              "time": "08:58",
+              "time_minutes": 538,
+              "distance_to_next": 0.00,
+              "cumulative_distance": 0.00
+            },
+            {
+              "stop_number": 1,
+              "label": "E02",
+              "type": "employee",
+              "time": "09:08",
+              "time_minutes": 548,
+              "distance_to_next": 5.46,
+              "cumulative_distance": 0.00,
+              "time_window": "[08:45 - 10:00]",
+              "adjusted_window": "[08:45 - 10:10]",
+              "earliest_pickup": "08:45",
+              "latest_drop": "10:00",
+              "latest_drop_minutes": 600,
+              "adjusted_latest_minutes": 610,
+              "priority": 2,
+              "max_delay": 10,
+              "est_office_arrival": "09:30",
+              "est_office_arrival_minutes": 570
+            },
+            {
+              "stop_number": 2,
+              "label": "E05",
+              "type": "employee",
+              "time": "09:15",
+              "time_minutes": 555,
+              "distance_to_next": 2.03,
+              "cumulative_distance": 5.46,
+              "time_window": "[09:15 - 11:00]",
+              "adjusted_window": "[09:15 - 11:20]",
+              "earliest_pickup": "09:15",
+              "latest_drop": "11:00",
+              "latest_drop_minutes": 660,
+              "adjusted_latest_minutes": 680,
+              "priority": 4,
+              "max_delay": 20,
+              "est_office_arrival": "09:30",
+              "est_office_arrival_minutes": 570
+            },
+            {
+              "stop_number": 3,
+              "label": "Office",
+              "type": "office",
+              "time": "09:30",
+              "time_minutes": 570,
+              "distance_to_next": 6.51,
+              "cumulative_distance": 7.49
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "vehicle": "V02",
+      "vehicle_id": "V02",
+      "employees": ["E03", "E08"],
+      "num_trips": 1,
+      "cost": 159.09,
+      "trip_routes": [
+        {
+          "trip_number": 1,
+          "employees": ["E03", "E08"],
+          "distance_km": 11.36,
+          "cost": 159.09,
+          "detailed_stops": [
+            {
+              "stop_number": 0,
+              "label": "Depot",
+              "type": "depot",
+              "time": "08:56",
+              "time_minutes": 536,
+              "distance_to_next": 0.00,
+              "cumulative_distance": 0.00
+            },
+            {
+              "stop_number": 1,
+              "label": "E03",
+              "type": "employee",
+              "time": "09:00",
+              "time_minutes": 540,
+              "distance_to_next": 2.88,
+              "cumulative_distance": 0.00,
+              "time_window": "[09:00 - 10:30]",
+              "adjusted_window": "[09:00 - 10:45]",
+              "earliest_pickup": "09:00",
+              "latest_drop": "10:30",
+              "latest_drop_minutes": 630,
+              "adjusted_latest_minutes": 645,
+              "priority": 3,
+              "max_delay": 15,
+              "est_office_arrival": "10:10",
+              "est_office_arrival_minutes": 610
+            },
+            {
+              "stop_number": 2,
+              "label": "E08",
+              "type": "employee",
+              "time": "10:00",
+              "time_minutes": 600,
+              "distance_to_next": 3.28,
+              "cumulative_distance": 2.88,
+              "time_window": "[10:00 - 12:00]",
+              "adjusted_window": "[10:00 - 12:30]",
+              "earliest_pickup": "10:00",
+              "latest_drop": "12:00",
+              "latest_drop_minutes": 720,
+              "adjusted_latest_minutes": 750,
+              "priority": 5,
+              "max_delay": 30,
+              "est_office_arrival": "10:10",
+              "est_office_arrival_minutes": 610
+            },
+            {
+              "stop_number": 3,
+              "label": "Office",
+              "type": "office",
+              "time": "10:10",
+              "time_minutes": 610,
+              "distance_to_next": 5.20,
+              "cumulative_distance": 6.16
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "vehicle": "V03",
+      "vehicle_id": "V03",
+      "employees": ["E04", "E07"],
+      "num_trips": 1,
+      "cost": 224.16,
+      "trip_routes": [
+        {
+          "trip_number": 1,
+          "employees": ["E04", "E07"],
+          "distance_km": 12.45,
+          "cost": 224.16,
+          "detailed_stops": [
+            {
+              "stop_number": 0,
+              "label": "Depot",
+              "type": "depot",
+              "time": "08:28",
+              "time_minutes": 508,
+              "distance_to_next": 0.00,
+              "cumulative_distance": 0.00
+            },
+            {
+              "stop_number": 1,
+              "label": "E04",
+              "type": "employee",
+              "time": "08:30",
+              "time_minutes": 510,
+              "distance_to_next": 1.41,
+              "cumulative_distance": 0.00,
+              "time_window": "[08:30 - 09:45]",
+              "adjusted_window": "[08:30 - 09:55]",
+              "earliest_pickup": "08:30",
+              "latest_drop": "09:45",
+              "latest_drop_minutes": 585,
+              "adjusted_latest_minutes": 595,
+              "priority": 2,
+              "max_delay": 10,
+              "est_office_arrival": "09:45",
+              "est_office_arrival_minutes": 585
+            },
+            {
+              "stop_number": 2,
+              "label": "E07",
+              "type": "employee",
+              "time": "09:30",
+              "time_minutes": 570,
+              "distance_to_next": 3.90,
+              "cumulative_distance": 1.41,
+              "time_window": "[09:30 - 11:00]",
+              "adjusted_window": "[09:30 - 11:15]",
+              "earliest_pickup": "09:30",
+              "latest_drop": "11:00",
+              "latest_drop_minutes": 660,
+              "adjusted_latest_minutes": 675,
+              "priority": 3,
+              "max_delay": 15,
+              "est_office_arrival": "09:45",
+              "est_office_arrival_minutes": 585
+            },
+            {
+              "stop_number": 3,
+              "label": "Office",
+              "type": "office",
+              "time": "09:45",
+              "time_minutes": 585,
+              "distance_to_next": 7.15,
+              "cumulative_distance": 5.31
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
