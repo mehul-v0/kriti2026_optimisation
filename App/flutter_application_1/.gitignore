@@ -1,0 +1,44 @@
+##############
+# IDE
+##############
+.idea/
+.vscode/
+*.iml
+
+##############
+# Flutter / Dart
+##############
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+coverage/
+
+##############
+# Flutter platform generated
+##############
+**/flutter/ephemeral/
+**/windows/out/
+**/linux/build/
+**/macos/Pods/
+**/ios/Pods/
+**/ios/Flutter/.last_build_id
+
+##############
+# Android
+##############
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+##############
+# Misc
+##############
+.DS_Store
+*.log
+*.exe
+*.pyc
+__pycache__/
+.env
