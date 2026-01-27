@@ -53,11 +53,32 @@ public:
         int incomp_count = 0;
         for (int i = 0; i < n_emp; i++) {
             for (int j = i+1; j < n_emp; j++) {
+                // Basic check: deadline before earliest pickup
                 if (emps[i].latest_arrival_deadline < emps[j].earliest_pickup ||
                     emps[j].latest_arrival_deadline < emps[i].earliest_pickup) {
                     incompatible_pairs[i].push_back(j);
                     incompatible_pairs[j].push_back(i);
                     incomp_count++;
+                    continue;
+                }
+                
+                // Advanced check: if waiting for one employee would cause the other to miss deadline
+                // Assume ~30 min minimum for pickup + travel to office
+                const int min_trip_time = 30;
+                
+                // If j's earliest pickup + min_trip_time exceeds i's deadline, they're incompatible
+                if (emps[j].earliest_pickup + min_trip_time > emps[i].latest_arrival_deadline) {
+                    incompatible_pairs[i].push_back(j);
+                    incompatible_pairs[j].push_back(i);
+                    incomp_count++;
+                    continue;
+                }
+                // Vice versa
+                if (emps[i].earliest_pickup + min_trip_time > emps[j].latest_arrival_deadline) {
+                    incompatible_pairs[i].push_back(j);
+                    incompatible_pairs[j].push_back(i);
+                    incomp_count++;
+                    continue;
                 }
             }
         }

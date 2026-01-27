@@ -68,8 +68,7 @@ public:
             trip.stops.push_back(off);
             trip.total_distance += dist_off;
             
-            for (int e : routes[v])
-                if (off_arr > emps[e].latest_arrival_deadline) sol.hard_violations++;
+            // Don't check violations here - will check after trip sequencing
             
             trip.total_cost = trip.total_distance * vv.cost_per_km;
             trip.total_time = off_arr - vv.available_from;
@@ -82,6 +81,63 @@ public:
         
         for (size_t p = 0; p < phys_vehs.size(); p++) {
             if (phys_trips[p].empty()) continue;
+            
+            // Sort trips by trip number
+            std::sort(phys_trips[p].begin(), phys_trips[p].end(), 
+                     [](const Trip& a, const Trip& b) { return a.trip_number < b.trip_number; });
+            
+            // Properly sequence trips - each trip starts when previous trip ends
+            int next_available_time = phys_vehs[p].available_from;
+            for (auto& trip : phys_trips[p]) {
+                // Calculate time offset needed to start this trip at correct time
+                int original_start = trip.stops[0].departure_time;
+                
+                // Trip can start when previous trip ends OR at its original planned time
+                // whichever is LATER (can't start earlier than planned - would violate time windows)
+                int actual_start = std::max(next_available_time, original_start);
+                int time_offset = actual_start - original_start;
+                
+                if (time_offset != 0) {
+                    // Adjust all times in this trip
+                    for (auto& stop : trip.stops) {
+                        stop.arrival_time += time_offset;
+                        stop.departure_time += time_offset;
+                    }
+                }
+                
+                // Recalculate trip duration based on adjusted times
+                trip.total_time = trip.stops.back().arrival_time - trip.stops.front().departure_time;
+                
+                // Check for time window violations with adjusted times
+                int office_arrival = trip.stops.back().arrival_time;
+                for (int emp_idx : trip.employee_indices) {
+                    const auto& emp = emps[emp_idx];
+                    
+                    // Check if pickup time is too early
+                    for (size_t s = 1; s < trip.stops.size() - 1; s++) {
+                        if (trip.stops[s].employee_idx == emp_idx) {
+                            if (trip.stops[s].departure_time < emp.earliest_pickup) {
+                                std::cerr << "HARD VIOLATION: " << emp.employee_id << " pickup at " 
+                                         << trip.stops[s].departure_time << " < earliest " 
+                                         << emp.earliest_pickup << std::endl;
+                                sol.hard_violations++;
+                            }
+                            break;
+                        }
+                    }
+                    
+                    // Check if office arrival exceeds deadline (with priority buffer)
+                    if (office_arrival > emp.latest_arrival_deadline) {
+                        std::cerr << "HARD VIOLATION: " << emp.employee_id << " office arrival " 
+                                 << office_arrival << " > deadline " 
+                                 << emp.latest_arrival_deadline << std::endl;
+                        sol.hard_violations++;
+                    }
+                }
+                
+                // Next trip can start when this trip ends (arrives at office)
+                next_available_time = trip.stops.back().arrival_time;
+            }
             
             VehicleSolution vs;
             vs.vehicle_id = phys_vehs[p].vehicle_id;
@@ -98,12 +154,23 @@ public:
             sol.vehicles.push_back(vs);
         }
         
-        if (enforce_soft) {
-            for (const auto& route : routes) {
-                if (route.empty()) continue;
-                int sz = route.size();
-                for (int e : route)
-                    if (emps[e].sharing_pref < sz) sol.soft_violations++;
+        // ALWAYS count soft violations (for reporting and comparison)
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].empty()) continue;
+            const auto& vv = virt_vehs[v];
+            int phys_id = vv.physical_id;
+            const auto& pv = phys_vehs[phys_id];
+            
+            // Check sharing preference violations
+            int sz = routes[v].size();
+            for (int e : routes[v])
+                if (emps[e].sharing_pref < sz) sol.soft_violations++;
+            
+            // Check vehicle preference violations
+            for (int e : routes[v]) {
+                // 0=any, 1=premium, 2=normal
+                if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.soft_violations++; // Premium required but not premium
+                if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.soft_violations++; // Normal required but premium given
             }
         }
         

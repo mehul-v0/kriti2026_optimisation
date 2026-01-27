@@ -85,12 +85,15 @@ public:
         }
         
         // Expand virtual vehicles (3 trips per physical)
+        // Stagger by 40min per trip - typical time for a quick single-person trip
+        // The actual start times will be adjusted in output based on when previous trip ends
         for (const auto& pv : phys_vehs) {
             for (int trip = 0; trip < 3; trip++) {
                 Vehicle vv = pv;
                 vv.id = virt_vehs.size();
                 vv.start_node = (trip == 0) ? pv.start_node : office;
                 vv.vehicle_id = pv.vehicle_id + "_trip" + std::to_string(trip+1);
+                vv.available_from = pv.available_from + (trip * 40);
                 virt_vehs.push_back(vv);
             }
         }

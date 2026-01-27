@@ -13,3 +13,8 @@ __pycache__/
 
 # Logs
 *.log
+
+# Output folder (keep structure, ignore contents)
+output/*.json
+output/*.txt
+output/*.log
