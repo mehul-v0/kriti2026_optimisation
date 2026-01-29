@@ -78,13 +78,146 @@ public:
         if (wu >= 0 && wv >= 0) penalties[wu][wv]++;
     }
     
+    // Try splitting a multi-employee route into separate trips
+    bool try_split_route(std::vector<std::vector<int>>& routes, size_t v_idx,
+                         const std::vector<Vehicle>& vehs, const std::vector<Employee>& emps,
+                         const Metadata& meta, bool enforce_soft, double& current_cost) {
+        
+        if (routes[v_idx].size() < 2) return false;  // Can't split single-employee routes
+        
+        // Find empty trip slots for the same physical vehicle
+        int phys_veh_id = v_idx / 3;  // Which physical vehicle (V1, V2, V3, V4)
+        std::vector<size_t> empty_trips;
+        
+        for (int trip = 0; trip < 3; trip++) {
+            size_t trip_idx = phys_veh_id * 3 + trip;
+            if (trip_idx < routes.size() && routes[trip_idx].empty() && trip_idx != v_idx) {
+                empty_trips.push_back(trip_idx);
+            }
+        }
+        
+        if (empty_trips.empty()) return false;
+        
+        // Try moving each employee to an empty trip
+        for (size_t emp_pos = 0; emp_pos < routes[v_idx].size() && !empty_trips.empty(); emp_pos++) {
+            int emp = routes[v_idx][emp_pos];
+            size_t target_trip = empty_trips.back();
+            
+            // Create trial configuration
+            std::vector<int> new_source = routes[v_idx];
+            new_source.erase(new_source.begin() + emp_pos);
+            std::vector<int> new_target = {emp};
+            
+            // Validate both routes
+            int h1=0, s1=0, h2=0, s2=0;
+            if (validate_full_route(new_source, vehs[v_idx], emps, h1, s1, enforce_soft, meta) &&
+                validate_full_route(new_target, vehs[target_trip], emps, h2, s2, enforce_soft, meta)) {
+                
+                // Calculate cost change
+                double old_cost = route_cost_real(routes[v_idx], vehs[v_idx].start_node, emps, vehs[v_idx]);
+                double new_cost = route_cost_real(new_source, vehs[v_idx].start_node, emps, vehs[v_idx]) +
+                                  route_cost_real(new_target, vehs[target_trip].start_node, emps, vehs[target_trip]);
+                
+                // Count current violations in the original route
+                int old_h=0, old_s=0;
+                validate_full_route(routes[v_idx], vehs[v_idx], emps, old_h, old_s, enforce_soft, meta);
+                
+                // Accept if:
+                // 1. It reduces violations (even if cost increases)
+                // 2. Same violations but reduces cost
+                // 3. Feasible and cost increase < 20%
+                if ((h1+h2) < old_h || 
+                    ((h1+h2) == old_h && new_cost < old_cost * 1.2)) {
+                    routes[v_idx] = new_source;
+                    routes[target_trip] = new_target;
+                    empty_trips.pop_back();
+                    current_cost = current_cost - old_cost + new_cost;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // Large Neighborhood Search: remove multiple employees and reinsert optimally
+    bool try_destroy_repair(std::vector<std::vector<int>>& routes,
+                            const std::vector<Vehicle>& vehs, const std::vector<Employee>& emps,
+                            const Metadata& meta, bool enforce_soft, double& current_cost) {
+        
+        // Find a route with multiple employees
+        std::vector<size_t> multi_routes;
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].size() >= 2) multi_routes.push_back(v);
+        }
+        
+        if (multi_routes.empty()) return false;
+        
+        // Pick a random route and remove all but one employee
+        size_t target = multi_routes[rand() % multi_routes.size()];
+        std::vector<int> removed;
+        
+        while (routes[target].size() > 1) {
+            removed.push_back(routes[target].back());
+            routes[target].pop_back();
+        }
+        
+        // Try to reinsert removed employees in best positions
+        for (int emp : removed) {
+            double best_delta = 1e9;
+            size_t best_v = 0;
+            size_t best_pos = 0;
+            
+            for (size_t v = 0; v < routes.size(); v++) {
+                // Check capacity
+                if ((int)routes[v].size() >= vehs[v].capacity) continue;
+                
+                // Check compatibility
+                bool compat = true;
+                for (int ex : routes[v]) {
+                    if (cp_ptr && !cp_ptr->are_compatible(emp, ex)) {
+                        compat = false;
+                        break;
+                    }
+                }
+                if (!compat) continue;
+                
+                for (size_t pos = 0; pos <= routes[v].size(); pos++) {
+                    std::vector<int> temp = routes[v];
+                    temp.insert(temp.begin() + pos, emp);
+                    
+                    int h=0, s=0;
+                    if (validate_full_route(temp, vehs[v], emps, h, s, enforce_soft, meta)) {
+                        double delta = route_cost_real(temp, vehs[v].start_node, emps, vehs[v]) -
+                                       route_cost_real(routes[v], vehs[v].start_node, emps, vehs[v]);
+                        if (delta < best_delta) {
+                            best_delta = delta;
+                            best_v = v;
+                            best_pos = pos;
+                        }
+                    }
+                }
+            }
+            
+            // Insert at best position
+            if (best_delta < 1e9) {
+                routes[best_v].insert(routes[best_v].begin() + best_pos, emp);
+                current_cost += best_delta;
+            } else {
+                // Forced insertion if no good position found
+                routes[target].push_back(emp);
+            }
+        }
+        
+        return true;
+    }
+
     void optimize(std::vector<std::vector<int>>& routes, std::vector<std::vector<int>>& best,
                   double& best_cost, const std::vector<Vehicle>& vehs,
                   const std::vector<Employee>& emps, const Metadata& meta,
                   bool enforce_soft, int time_limit = 10) {
         
         std::cout << "\n" << std::string(60, '=') << "\n";
-        std::cout << "GUIDED LOCAL SEARCH\n";
+        std::cout << "GUIDED LOCAL SEARCH + ROUTE SPLITTING\n";
         std::cout << std::string(60, '=') << std::endl;
         
         auto start = std::chrono::high_resolution_clock::now();
@@ -94,9 +227,10 @@ public:
             best_cost += route_cost_real(routes[v], vehs[v].start_node, emps, vehs[v]);
         
         best = routes;
+        double current_cost = best_cost;
         std::cout << "Initial cost: $" << best_cost << std::endl;
         
-        int iters = 0, improvements = 0, no_improve = 0;
+        int iters = 0, improvements = 0, no_improve = 0, splits = 0, repairs = 0;
         
         while (true) {
             auto now = std::chrono::high_resolution_clock::now();
@@ -252,6 +386,29 @@ public:
                 }
             }
             
+            // ============================================================================
+            // ROUTE SPLITTING: Try to split multi-employee routes into single trips
+            // ============================================================================
+            if (iters % 20 == 0) {  // Try every 20 iterations (more frequent)
+                for (size_t v = 0; v < routes.size(); v++) {
+                    if (try_split_route(routes, v, vehs, emps, meta, enforce_soft, current_cost)) {
+                        splits++;
+                        improved = true;
+                        // Don't break - try all routes
+                    }
+                }
+            }
+            
+            // ============================================================================
+            // DESTROY-REPAIR: Large neighborhood search for escaping local optima
+            // ============================================================================
+            if (no_improve > 500 && iters % 50 == 0) {  // Earlier trigger, more frequent
+                if (try_destroy_repair(routes, vehs, emps, meta, enforce_soft, current_cost)) {
+                    repairs++;
+                    improved = true;
+                }
+            }
+            
             next_iter:
             
             double curr_cost = 0;
@@ -281,6 +438,7 @@ public:
         
         std::cout << "\nOptimization: " << iters << " iterations, " 
                   << improvements << " improvements\n";
+        std::cout << "   Route splits: " << splits << ", Destroy-repairs: " << repairs << "\n";
         std::cout << "   Final cost: $" << best_cost << "\n";
         std::cout << std::string(60, '=') << std::endl;
         

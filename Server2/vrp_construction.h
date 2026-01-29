@@ -7,16 +7,35 @@
 #include <iostream>
 #include <limits>
 #include <algorithm>
+#include <random>
+
+// Different ordering strategies for construction heuristic
+enum OrderingStrategy {
+    EARLIEST_DEADLINE,      // Original: tightest deadline first
+    LATEST_DEADLINE,        // Relaxed deadlines first (counter-intuitive but may work)
+    GEOGRAPHIC_CLUSTER,     // Nearest to office first
+    PRIORITY_BASED,         // By employee priority
+    RANDOM_ORDER            // Random for diversity
+};
 
 class ParallelCheapestInsertion {
 public:
     static void build(std::vector<std::vector<int>>& routes,
                       const std::vector<Employee>& emps,
                       const std::vector<Vehicle>& virt_vehs,
-                      const ConstraintEngine& cp, bool enforce_soft, const Metadata& meta) {
+                      const ConstraintEngine& cp, bool enforce_soft, const Metadata& meta,
+                      OrderingStrategy strategy = EARLIEST_DEADLINE) {
         
         std::cout << "\n" << std::string(60, '=') << "\n";
-        std::cout << "PARALLEL CHEAPEST INSERTION\n";
+        std::cout << "PARALLEL CHEAPEST INSERTION (";
+        switch(strategy) {
+            case EARLIEST_DEADLINE: std::cout << "EARLIEST_DEADLINE"; break;
+            case LATEST_DEADLINE: std::cout << "LATEST_DEADLINE"; break;
+            case GEOGRAPHIC_CLUSTER: std::cout << "GEOGRAPHIC_CLUSTER"; break;
+            case PRIORITY_BASED: std::cout << "PRIORITY_BASED"; break;
+            case RANDOM_ORDER: std::cout << "RANDOM_ORDER"; break;
+        }
+        std::cout << ")\n";
         std::cout << std::string(60, '=') << std::endl;
         
         int n_emp = emps.size();
@@ -25,14 +44,43 @@ public:
         routes.clear();
         routes.resize(n_veh);
         
-        // Sort employees by deadline (tighter deadlines first) for priority processing
+        // Create employee order based on strategy
         std::vector<int> emp_order(n_emp);
         for (int i = 0; i < n_emp; i++) emp_order[i] = i;
-        std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
-            return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
-        });
         
-        std::cout << "Employee order by deadline: ";
+        switch(strategy) {
+            case EARLIEST_DEADLINE:
+                std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
+                    return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
+                });
+                break;
+            case LATEST_DEADLINE:
+                std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
+                    return emps[a].latest_arrival_deadline > emps[b].latest_arrival_deadline;
+                });
+                break;
+            case GEOGRAPHIC_CLUSTER:
+                std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
+                    double dist_a = haversine_km(emps[a].pickup_lat, emps[a].pickup_lng, 
+                                              emps[a].drop_lat, emps[a].drop_lng);
+                    double dist_b = haversine_km(emps[b].pickup_lat, emps[b].pickup_lng, 
+                                              emps[b].drop_lat, emps[b].drop_lng);
+                    return dist_a < dist_b;
+                });
+                break;
+            case PRIORITY_BASED:
+                std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
+                    return emps[a].priority < emps[b].priority;
+                });
+                break;
+            case RANDOM_ORDER:
+                std::random_device rd;
+                std::mt19937 g(rd());
+                std::shuffle(emp_order.begin(), emp_order.end(), g);
+                break;
+        }
+        
+        std::cout << "Employee order: ";
         for (int e : emp_order) std::cout << emps[e].employee_id << "(" << emps[e].latest_arrival_deadline << ") ";
         std::cout << std::endl;
         

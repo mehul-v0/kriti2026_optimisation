@@ -3,6 +3,7 @@
 #include "vrp_parser.h"
 #include "vrp_constraints.h"
 #include "vrp_construction.h"
+#include "vrp_single_trip_construction.h"
 #include "vrp_validators.h"
 #include "vrp_local_search.h"
 #include "vrp_gls.h"
@@ -29,37 +30,99 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
     ConstraintEngine cp;
     cp.setup(enforce_soft, emps, active_virt, meta);
     
-    std::vector<std::vector<int>> routes;
-    ParallelCheapestInsertion::build(routes, emps, active_virt, cp, enforce_soft, meta);
+    // Try multiple construction strategies and keep the best
+    std::vector<OrderingStrategy> strategies = {
+        EARLIEST_DEADLINE,
+        LATEST_DEADLINE,
+        GEOGRAPHIC_CLUSTER,
+        PRIORITY_BASED
+    };
     
-    GuidedLocalSearch gls(dist_matrix.size());
-    gls.set_constraint_engine(&cp);
-    std::vector<std::vector<int>> best;
-    double best_cost = 0;
-    gls.optimize(routes, best, best_cost, active_virt, emps, meta, enforce_soft, time_limit);
+    Solution best_sol;
+    best_sol.hard_violations = 999999;
+    best_sol.soft_violations = 999999;
+    best_sol.total_cost = 1e9;
     
-    // Debug: Print routes
-    std::cout << "\nRoutes from GLS:\n";
-    for (size_t v = 0; v < best.size(); v++) {
-        if (!best[v].empty()) {
-            std::cout << "  V" << (v/3)+1 << " Trip" << (v%3)+1 << " (" << active_virt[v].vehicle_id << "): ";
-            for (int e : best[v]) std::cout << emps[e].employee_id << " ";
-            std::cout << "(start: " << active_virt[v].available_from << " min)\n";
+    std::cout << "\nTrying " << (strategies.size() + 1) << " construction strategies...\n";
+    
+    // SPECIAL: Try single-trip construction first (most likely to find manual-style solution)
+    std::cout << "\n--- SPECIAL: Single-Trip Strategy ---\n";
+    {
+        std::vector<std::vector<int>> routes;
+        SingleTripConstruction::build(routes, emps, active_virt, cp, enforce_soft, meta);
+        
+        // Give more time to this strategy
+        int strategy_time = time_limit / 2;  // Half the time budget
+        
+        GuidedLocalSearch gls(dist_matrix.size());
+        gls.set_constraint_engine(&cp);
+        std::vector<std::vector<int>> best_routes;
+        double best_cost = 0;
+        gls.optimize(routes, best_routes, best_cost, active_virt, emps, meta, enforce_soft, strategy_time);
+        
+        // Convert to solution
+        std::string sol_type = enforce_soft ? "STAGE_1_ALL_CONSTRAINTS" : "STAGE_2_HARD_ONLY";
+        Solution sol = OutputFormatter::format(best_routes, active_virt, phys, emps, meta, enforce_soft, sol_type);
+        
+        std::cout << "Single-trip result: Cost=$" << sol.total_cost 
+                  << " Hard=" << sol.hard_violations 
+                  << " Soft=" << sol.soft_violations << "\n";
+        
+        best_sol = sol;
+    }
+    
+    // Try other strategies with remaining time
+    int remaining_time = time_limit / 2;
+    for (size_t strat_idx = 0; strat_idx < strategies.size(); strat_idx++) {
+        OrderingStrategy strategy = strategies[strat_idx];
+        std::cout << "\n--- Strategy " << (strat_idx + 2) << "/" << (strategies.size() + 1) << " ---\n";
+        
+        std::vector<std::vector<int>> routes;
+        ParallelCheapestInsertion::build(routes, emps, active_virt, cp, enforce_soft, meta, strategy);
+        
+        // Give each strategy a portion of remaining time
+        int strategy_time = remaining_time / strategies.size();
+        
+        GuidedLocalSearch gls(dist_matrix.size());
+        gls.set_constraint_engine(&cp);
+        std::vector<std::vector<int>> best_routes;
+        double best_cost = 0;
+        gls.optimize(routes, best_routes, best_cost, active_virt, emps, meta, enforce_soft, strategy_time);
+        
+        // Convert to solution and compare
+        std::string sol_type = enforce_soft ? "STAGE_1_ALL_CONSTRAINTS" : "STAGE_2_HARD_ONLY";
+        Solution sol = OutputFormatter::format(best_routes, active_virt, phys, emps, meta, enforce_soft, sol_type);
+        
+        std::cout << "Strategy result: Cost=$" << sol.total_cost 
+                  << " Hard=" << sol.hard_violations 
+                  << " Soft=" << sol.soft_violations << "\n";
+        
+        // Compare: hard violations > soft violations > cost
+        bool is_better = false;
+        if (sol.hard_violations < best_sol.hard_violations) {
+            is_better = true;
+        } else if (sol.hard_violations == best_sol.hard_violations) {
+            if (sol.soft_violations < best_sol.soft_violations) {
+                is_better = true;
+            } else if (sol.soft_violations == best_sol.soft_violations && sol.total_cost < best_sol.total_cost) {
+                is_better = true;
+            }
+        }
+        
+        if (is_better) {
+            best_sol = sol;
+            std::cout << "✓ New best solution!\n";
         }
     }
     
-    std::string sol_type = enforce_soft ? "STAGE_1_ALL_CONSTRAINTS" : "STAGE_2_HARD_ONLY";
-    Solution sol = OutputFormatter::format(best, active_virt, phys, emps, meta, enforce_soft, sol_type);
+    std::cout << "\nBest solution from all strategies:\n";
+    std::cout << "   Cost: $" << best_sol.total_cost << "\n";
+    std::cout << "   Time: " << best_sol.total_time << " min\n";
+    std::cout << "   Hard violations: " << best_sol.hard_violations << "\n";
+    std::cout << "   Soft violations: " << best_sol.soft_violations << "\n";
+    std::cout << "   Score: " << best_sol.score << std::endl;
     
-    std::cout << "\nStage " << stage << " Results:\n";
-    std::cout << "   GLS Optimization Cost: $" << best_cost << "\n";
-    std::cout << "   Output Formatter Cost: $" << sol.total_cost << "\n";
-    std::cout << "   Time: " << sol.total_time << " min\n";
-    std::cout << "   Hard violations: " << sol.hard_violations << "\n";
-    std::cout << "   Soft violations: " << sol.soft_violations << "\n";
-    std::cout << "   Score: " << sol.score << std::endl;
-    
-    return sol;
+    return best_sol;
 }
 
 int main(int argc, char* argv[]) {
