@@ -161,17 +161,11 @@ def create_data_model(employees, vehicles, metadata):
         5: int(metadata.get('priority_5_max_delay_min', 30)),
     }
     
-    # ========== OBJECTIVE WEIGHTS (from sheet) ==========
-    # Fetch cost_weight and time_weight from metadata sheet
-    if 'objective_cost_weight' not in metadata or 'objective_time_weight' not in metadata:
-        print("⚠️ Warning: objective_cost_weight or objective_time_weight not found in metadata sheet!")
-        print("   Using default values: cost_weight=0.7, time_weight=0.3")
-        data['cost_weight'] = 0.7
-        data['time_weight'] = 0.3
-    else:
-        data['cost_weight'] = float(metadata['objective_cost_weight'])
-        data['time_weight'] = float(metadata['objective_time_weight'])
-        print(f"✓ Loaded from sheet: cost_weight={data['cost_weight']}, time_weight={data['time_weight']}")
+    # ========== OBJECTIVE: MINIMIZE COST ONLY ==========
+    # Focus on cost minimization, ignore time in objective
+    data['cost_weight'] = 1.0
+    data['time_weight'] = 0.0
+    print("✓ Objective: MINIMIZE COST ONLY (time weight = 0)")
     
     # ========== DISTANCE MATRIX ==========
     size = len(locations)
@@ -609,7 +603,7 @@ def solve_with_constraints(employees, vehicles, baseline, metadata, enforce_soft
     search_parameters.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
-    search_parameters.time_limit.seconds = 30  # More time to find constraint-satisfying solutions
+    search_parameters.time_limit.seconds = 10  # Quick 10-second optimization
     search_parameters.log_search = False
     
     # ========== 8. SOLVE ==========
@@ -642,6 +636,7 @@ def format_solution(data, manager, routing, solution, employees, vehicles, basel
     total_penalty = 0.0
     hard_violations = 0  # Time window violations (HARD constraints)
     soft_violations = 0  # Sharing/vehicle preference violations (SOFT constraints)
+    violation_details = []  # Track specific violations with details
     
     # Baseline for scoring
     baseline_cost = sum(float(b.get('baseline_cost', 0)) for b in baseline)
@@ -991,6 +986,13 @@ def format_solution(data, manager, routing, solution, employees, vehicles, basel
                         if stop_time < earliest_pickup:
                             hard_violations += 1
                             total_penalty += 100000
+                            violation_details.append({
+                                'type': 'hard',
+                                'constraint': 'Early Pickup',
+                                'employee': raw_stop['label'],
+                                'vehicle': v_id,
+                                'message': f"{raw_stop['label']}: Picked up at {min_to_time(int(stop_time))}, but earliest allowed is {min_to_time(earliest_pickup)}"
+                            })
                 
                 # Build stop info with time window details
                 stop_info = {
@@ -1049,6 +1051,13 @@ def format_solution(data, manager, routing, solution, employees, vehicles, basel
                             if actual_office_arrival > adjusted_latest:
                                 hard_violations += 1
                                 total_penalty += 100000
+                                violation_details.append({
+                                    'type': 'hard',
+                                    'constraint': 'Late Drop-off',
+                                    'employee': stop['label'],
+                                    'vehicle': v_id,
+                                    'message': f"{stop['label']}: Arrived at office at {min_to_time(int(actual_office_arrival))}, but latest allowed is {min_to_time(int(adjusted_latest))} (Priority {stop.get('priority', 3)}, Delay {actual_office_arrival - stop['latest_drop_minutes']:.0f} min)"
+                                })
             
             # Update physical_vehicle_trips
             physical_vehicle_trips[v_id].append({
@@ -1098,10 +1107,9 @@ def format_solution(data, manager, routing, solution, employees, vehicles, basel
                 'cost': 0.0
             })
     
-    # Calculate final score
-    norm_cost = total_cost / (baseline_cost + 1e-6)
-    norm_time = total_time / (baseline_time + 1e-6)
-    score = (data['cost_weight'] * norm_cost + data['time_weight'] * norm_time + total_penalty / 10000.0)
+    # Calculate final score - COST ONLY
+    # Score = total cost + penalty (no time component)
+    score = total_cost + (total_penalty / 1000.0)
     
     # Summary
     print(f"\n✓ Solution: Cost=${total_cost:.2f}, Hard violations={hard_violations}, Soft violations={soft_violations}")
@@ -1116,7 +1124,8 @@ def format_solution(data, manager, routing, solution, employees, vehicles, basel
             'hard_violations': hard_violations,
             'soft_violations': soft_violations
         },
-        'details': route_details
+        'details': route_details,
+        'violations': violation_details  # Add detailed violations
     }
 
 

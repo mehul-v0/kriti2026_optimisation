@@ -18,3 +18,4 @@ __pycache__/
 output/*.json
 output/*.txt
 output/*.log
+frontend/node_modules/
