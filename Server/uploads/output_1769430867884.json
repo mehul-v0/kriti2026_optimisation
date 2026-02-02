@@ -1,0 +1,165 @@
+{
+  "metadata": {
+    "test_case_id": "TC_01",
+    "city": "Bengaluru",
+    "distance_method": "haversine",
+    "allow_external_maps": "true",
+    "priority_1_max_delay_min": 5,
+    "priority_2_max_delay_min": 10,
+    "priority_3_max_delay_min": 15,
+    "priority_4_max_delay_min": 20,
+    "priority_5_max_delay_min": 30,
+    "objective_cost_weight": 0.7,
+    "objective_time_weight": 0.3
+  },
+  "routes": [
+    {
+      "vehicle_id": "V01",
+      "capacity": 3,
+      "cost_per_km": 10.0,
+      "stops": [
+        {
+          "type": "pickup",
+          "id": "E06",
+          "lat": 12.95,
+          "lng": 77.62,
+          "time": "08:15"
+        },
+        {
+          "type": "drop",
+          "id": "E06",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "09:15"
+        },
+        {
+          "type": "pickup",
+          "id": "E01",
+          "lat": 12.9352,
+          "lng": 77.6245,
+          "time": "08:30"
+        },
+        {
+          "type": "drop",
+          "id": "E01",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "09:30"
+        },
+        {
+          "type": "pickup",
+          "id": "E05",
+          "lat": 12.915,
+          "lng": 77.61,
+          "time": "09:15"
+        },
+        {
+          "type": "drop",
+          "id": "E05",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "11:00"
+        }
+      ],
+      "current_load": 3,
+      "total_dist": 11.695797649975965,
+      "total_cost": 116.95797649975964,
+      "category": "premium"
+    },
+    {
+      "vehicle_id": "V02",
+      "capacity": 4,
+      "cost_per_km": 14.0,
+      "stops": [
+        {
+          "type": "pickup",
+          "id": "E04",
+          "lat": 12.96,
+          "lng": 77.638,
+          "time": "08:30"
+        },
+        {
+          "type": "drop",
+          "id": "E04",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "09:45"
+        },
+        {
+          "type": "pickup",
+          "id": "E03",
+          "lat": 12.944,
+          "lng": 77.6,
+          "time": "09:00"
+        },
+        {
+          "type": "drop",
+          "id": "E03",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "10:30"
+        },
+        {
+          "type": "pickup",
+          "id": "E07",
+          "lat": 12.925,
+          "lng": 77.64,
+          "time": "09:30"
+        },
+        {
+          "type": "drop",
+          "id": "E07",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "11:00"
+        },
+        {
+          "type": "pickup",
+          "id": "E08",
+          "lat": 12.94,
+          "lng": 77.63,
+          "time": "10:00"
+        },
+        {
+          "type": "drop",
+          "id": "E08",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "12:00"
+        }
+      ],
+      "current_load": 4,
+      "total_dist": 15.471682858786473,
+      "total_cost": 216.60356002301063,
+      "category": "normal"
+    },
+    {
+      "vehicle_id": "V03",
+      "capacity": 6,
+      "cost_per_km": 18.0,
+      "stops": [
+        {
+          "type": "pickup",
+          "id": "E02",
+          "lat": 12.9298,
+          "lng": 77.621,
+          "time": "08:45"
+        },
+        {
+          "type": "drop",
+          "id": "E02",
+          "lat": 12.9716,
+          "lng": 77.5946,
+          "time": "10:00"
+        }
+      ],
+      "current_load": 1,
+      "total_dist": 0.0,
+      "total_cost": 0.0,
+      "category": "normal"
+    }
+  ],
+  "unassigned": [],
+  "total_fleet_cost": 333.56153652277027,
+  "total_employees_served": 8
+}
