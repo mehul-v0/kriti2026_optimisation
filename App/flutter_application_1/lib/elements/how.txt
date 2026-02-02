@@ -1,0 +1,26 @@
+________________HOW TO USE EVERY ELE______________________________
+
+---------------------Snackbar-------------------------------------
+
+//success
+AppSnackbar.show(context, message: "File uploaded successfully!");
+
+//error
+try {
+  // your upload logic
+} catch (e) {
+  AppSnackbar.show(context, message: e.toString(), isError: true);
+}
+
+
+-----------------------loader--------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: LoadingOverlay(
+        isLoading: // Pass the variable here
+        child: // whatever screen or ui
+      ),
+    );
+  }
