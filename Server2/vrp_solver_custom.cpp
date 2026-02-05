@@ -6,7 +6,7 @@
 #include "vrp_single_trip_construction.h"
 #include "vrp_validators.h"
 #include "vrp_local_search.h"
-#include "vrp_gls.h"
+#include "vrp_alns.h"
 #include "vrp_output.h"
 #include <iostream>
 #include <fstream>
@@ -54,11 +54,11 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
         // Give more time to this strategy
         int strategy_time = time_limit / 2;  // Half the time budget
         
-        GuidedLocalSearch gls(dist_matrix.size());
-        gls.set_constraint_engine(&cp);
+        AdaptiveLargeNeighborhoodSearch alns;
+        alns.set_constraint_engine(&cp);
         std::vector<std::vector<int>> best_routes;
         double best_cost = 0;
-        gls.optimize(routes, best_routes, best_cost, active_virt, emps, meta, enforce_soft, strategy_time);
+        alns.optimize(routes, best_routes, best_cost, active_virt, emps, meta, enforce_soft, strategy_time);
         
         // Convert to solution
         std::string sol_type = enforce_soft ? "STAGE_1_ALL_CONSTRAINTS" : "STAGE_2_HARD_ONLY";
@@ -83,11 +83,11 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
         // Give each strategy a portion of remaining time
         int strategy_time = remaining_time / strategies.size();
         
-        GuidedLocalSearch gls(dist_matrix.size());
-        gls.set_constraint_engine(&cp);
+        AdaptiveLargeNeighborhoodSearch alns;
+        alns.set_constraint_engine(&cp);
         std::vector<std::vector<int>> best_routes;
         double best_cost = 0;
-        gls.optimize(routes, best_routes, best_cost, active_virt, emps, meta, enforce_soft, strategy_time);
+        alns.optimize(routes, best_routes, best_cost, active_virt, emps, meta, enforce_soft, strategy_time);
         
         // Convert to solution and compare
         std::string sol_type = enforce_soft ? "STAGE_1_ALL_CONSTRAINTS" : "STAGE_2_HARD_ONLY";
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
     int time_limit = (argc >= 4) ? std::atoi(argv[3]) : 10;
     
     std::cout << "\n" << std::string(70, '=') << "\n";
-    std::cout << "CUSTOM VRP SOLVER - CP + GLS\n";
+    std::cout << "CUSTOM VRP SOLVER - CP + ALNS\n";
     std::cout << std::string(70, '=') << "\n";
     std::cout << "Input: " << argv[1] << std::endl;
     std::cout << "Output: " << output_file << std::endl;

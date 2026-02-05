@@ -91,7 +91,8 @@ inline double calculate_delta_cost(const std::vector<int>& route, int pos, int e
 
 inline bool validate_full_route(const std::vector<int>& route, const Vehicle& veh,
                                  const std::vector<Employee>& emps, int& hard_v, int& soft_v,
-                                 bool enforce_soft, const Metadata& meta) {
+                                 bool enforce_soft, const Metadata& meta,
+                                 bool allow_hard_violations = false) {
     if (route.empty()) return true;
     if ((int)route.size() > veh.capacity) { hard_v++; return false; }
     
@@ -138,7 +139,7 @@ inline bool validate_full_route(const std::vector<int>& route, const Vehicle& ve
         // latest_arrival_deadline already includes priority max delay
         if (final_arr > emps[e].latest_arrival_deadline) {
             hard_v++;
-            return false;
+            if (!allow_hard_violations) return false;
         }
     }
     return true;

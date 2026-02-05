@@ -154,23 +154,24 @@ public:
             sol.vehicles.push_back(vs);
         }
         
-        // ALWAYS count soft violations (for reporting and comparison)
+        // Count preference violations as HARD violations
+        // Vehicle preference and sharing preference are hard constraints
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
             const auto& vv = virt_vehs[v];
             int phys_id = vv.physical_id;
             const auto& pv = phys_vehs[phys_id];
             
-            // Check sharing preference violations
+            // Check sharing preference violations → HARD
             int sz = routes[v].size();
             for (int e : routes[v])
-                if (emps[e].sharing_pref < sz) sol.soft_violations++;
+                if (emps[e].sharing_pref < sz) sol.hard_violations++;
             
-            // Check vehicle preference violations
+            // Check vehicle preference violations → HARD
             for (int e : routes[v]) {
                 // 0=any, 1=premium, 2=normal
-                if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.soft_violations++; // Premium required but not premium
-                if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.soft_violations++; // Normal required but premium given
+                if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.hard_violations++; // Premium required but not premium
+                if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.hard_violations++; // Normal required but premium given
             }
         }
         

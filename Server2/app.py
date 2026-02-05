@@ -1,6 +1,6 @@
 """Flask Backend for VRP Solver"""
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 import os
 import json
@@ -10,7 +10,7 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from convert_excel_to_json import convert
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Configuration
@@ -288,6 +288,15 @@ def download_solution():
         return send_file(output_json, as_attachment=True, download_name='solution.json')
     except Exception as e:
         return jsonify({'error': f'Error downloading solution: {str(e)}'}), 500
+
+# Serve React App
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react_app(path):
+    if path and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
