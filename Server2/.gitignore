@@ -1,67 +1,25 @@
 ##############
-# Compiled binaries
+# Compiled binaries (vrp_solver_custom.exe)
 ##############
 *.exe
 *.out
 *.o
 *.obj
-*.dll
-*.so
 
 ##############
-# Build directories
+# Python virtual env
 ##############
-build/
-bin/
-dist/
-
-##############
-# Python cache / env
-##############
+venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-venv/
-.venv/
-env/
 
 ##############
-# Node (if used)
-##############
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-##############
-# Logs
-##############
-*.log
-
-##############
-# Output folder (keep structure, ignore contents)
-<<<<<<< HEAD
-output/*.json
-output/*.txt
-output/*.log
-frontend/node_modules/
-=======
-##############
-output/*
-!output/.gitkeep
-
-##############
-# OS / Editor junk
+# OS / Editor
 ##############
 .DS_Store
-.idea/
 .vscode/
 
 ##############
 # Secrets
 ##############
 .env
-.env.*
->>>>>>> 75fbc275d975e30e78444feb9cd044b6dffc51f0
