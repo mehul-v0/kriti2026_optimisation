@@ -3,6 +3,7 @@
 
 #include "vrp_types.h"
 #include "vrp_utils.h"
+#include "vrp_validators.h"
 #include "json.hpp"
 #include <sstream>
 
@@ -16,7 +17,7 @@ public:
     static Solution format(const std::vector<std::vector<int>>& routes,
                           const std::vector<Vehicle>& virt_vehs, const std::vector<Vehicle>& phys_vehs,
                           const std::vector<Employee>& emps, const Metadata& meta,
-                          bool enforce_soft, const std::string& sol_type) {
+                          bool /*enforce_soft*/, const std::string& sol_type) {
         
         Solution sol;
         sol.solution_type = sol_type;
@@ -30,7 +31,7 @@ public:
             
             const auto& vv = virt_vehs[v];
             int phys_id = vv.physical_id;
-            int trip_num = (v % 3) + 1;
+            int trip_num = (v % 4) + 1;
             
             Trip trip;
             trip.trip_number = trip_num;
@@ -47,7 +48,7 @@ public:
             for (int e : routes[v]) {
                 const auto& emp = emps[e];
                 double dist = dist_matrix[curr_node][emp.node_idx];
-                int travel = std::round((dist/vv.speed_kmph)*60.0);
+                int travel = (int)std::round((dist/vv.speed_kmph)*60.0);
                 int arrival = curr_time + travel;
                 int wait = std::max(0, emp.earliest_pickup - arrival);
                 int depart = std::max(arrival, emp.earliest_pickup);
@@ -61,7 +62,7 @@ public:
             }
             
             double dist_off = dist_matrix[curr_node][OFFICE_NODE];
-            int travel_off = std::round((dist_off/vv.speed_kmph)*60.0);
+            int travel_off = (int)std::round((dist_off/vv.speed_kmph)*60.0);
             int off_arr = curr_time + travel_off;
             
             Stop off = {OFFICE_NODE, -1, "Office (Drop-off)", off_arr, off_arr, 0, dist_off};
@@ -154,24 +155,19 @@ public:
             sol.vehicles.push_back(vs);
         }
         
-        // Count preference violations as HARD violations
-        // Vehicle preference and sharing preference are hard constraints
+        // Count preference violations as HARD violations using shared utility
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
+            // Use the already-sequenced trip times for violation counting
+            // Preference violations (sharing + vehicle) don't depend on timing
             const auto& vv = virt_vehs[v];
             int phys_id = vv.physical_id;
             const auto& pv = phys_vehs[phys_id];
-            
-            // Check sharing preference violations → HARD
-            int sz = routes[v].size();
-            for (int e : routes[v])
-                if (emps[e].sharing_pref < sz) sol.hard_violations++;
-            
-            // Check vehicle preference violations → HARD
+            int sz = (int)routes[v].size();
             for (int e : routes[v]) {
-                // 0=any, 1=premium, 2=normal
-                if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.hard_violations++; // Premium required but not premium
-                if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.hard_violations++; // Normal required but premium given
+                if (emps[e].sharing_pref < sz) sol.hard_violations++;
+                if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.hard_violations++;
+                if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.hard_violations++;
             }
         }
         
@@ -182,10 +178,9 @@ public:
     static json to_json(const Solution& sol) {
         json out;
         out["solution_type"] = sol.solution_type;
-        out["total_cost"] = sol.total_cost;
+        out["score"] = sol.total_cost;
         out["total_time"] = sol.total_time;
-        out["score"] = sol.score;
-        out["stats"] = {{"cost", sol.total_cost}, {"time", sol.total_time},
+        out["stats"] = {{"cost", sol.score}, {"time", sol.total_time},
                         {"hard_violations", sol.hard_violations}, {"soft_violations", sol.soft_violations}};
         
         json vehs = json::array();

@@ -15,7 +15,8 @@ enum OrderingStrategy {
     LATEST_DEADLINE,        // Relaxed deadlines first (counter-intuitive but may work)
     GEOGRAPHIC_CLUSTER,     // Nearest to office first
     PRIORITY_BASED,         // By employee priority
-    RANDOM_ORDER            // Random for diversity
+    RANDOM_ORDER,           // Random for diversity
+    CHEAPEST_VEHICLE_FIRST  // Maximize trips on cheapest vehicles
 };
 
 class ParallelCheapestInsertion {
@@ -34,6 +35,7 @@ public:
             case GEOGRAPHIC_CLUSTER: std::cout << "GEOGRAPHIC_CLUSTER"; break;
             case PRIORITY_BASED: std::cout << "PRIORITY_BASED"; break;
             case RANDOM_ORDER: std::cout << "RANDOM_ORDER"; break;
+            case CHEAPEST_VEHICLE_FIRST: std::cout << "CHEAPEST_VEHICLE_FIRST"; break;
         }
         std::cout << ")\n";
         std::cout << std::string(60, '=') << std::endl;
@@ -73,16 +75,31 @@ public:
                     return emps[a].priority < emps[b].priority;
                 });
                 break;
-            case RANDOM_ORDER:
+            case RANDOM_ORDER: {
                 std::random_device rd;
                 std::mt19937 g(rd());
                 std::shuffle(emp_order.begin(), emp_order.end(), g);
+                break;
+            }
+            case CHEAPEST_VEHICLE_FIRST:
+                std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
+                    return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
+                });
                 break;
         }
         
         std::cout << "Employee order: ";
         for (int e : emp_order) std::cout << emps[e].employee_id << "(" << emps[e].latest_arrival_deadline << ") ";
         std::cout << std::endl;
+        
+        // Create vehicle ordering: by cost_per_km ascending for CHEAPEST_VEHICLE_FIRST
+        std::vector<int> veh_order(n_veh);
+        for (int i = 0; i < n_veh; i++) veh_order[i] = i;
+        if (strategy == CHEAPEST_VEHICLE_FIRST) {
+            std::sort(veh_order.begin(), veh_order.end(), [&virt_vehs](int a, int b) {
+                return virt_vehs[a].cost_per_km < virt_vehs[b].cost_per_km;
+            });
+        }
         
         std::vector<bool> routed(n_emp, false);
         int unrouted = n_emp;
@@ -95,7 +112,8 @@ public:
             for (int e : emp_order) {
                 if (routed[e]) continue;
                 
-                for (int v = 0; v < n_veh; v++) {
+                for (int vi = 0; vi < n_veh; vi++) {
+                    int v = veh_order[vi];
                     if (!cp.employee_vars[e].is_vehicle_valid(v)) continue;
                     
                     bool compat = true;
@@ -106,6 +124,10 @@ public:
                     
                     for (size_t p = 0; p <= routes[v].size(); p++) {
                         double cost = calculate_delta_cost(routes[v], p, e, virt_vehs[v].start_node, emps);
+                        // For CHEAPEST_VEHICLE_FIRST, use dollar cost to strongly prefer cheap vehicles
+                        if (strategy == CHEAPEST_VEHICLE_FIRST) {
+                            cost = cost * virt_vehs[v].cost_per_km;
+                        }
                         
                         if (cost < best.delta_cost &&
                             is_capacity_valid(routes[v], p, e, virt_vehs[v], emps, enforce_soft) &&
@@ -140,7 +162,7 @@ public:
                         
                         // First: try Trip 1 vehicles only (v%3 == 0)
                         for (int v = 0; v < n_veh && !placed; v++) {
-                            if (v % 3 != 0) continue;  // Skip Trip 2/3
+                            if (v % 4 != 0) continue;  // Skip Trip 2/3/4
                             if ((int)routes[v].size() >= virt_vehs[v].capacity) continue;
                             
                             // Check compatibility - prefer compatible placements
@@ -160,7 +182,7 @@ public:
                         // Second: try any Trip 1 (even if incompatible)
                         if (!placed) {
                             for (int v = 0; v < n_veh && !placed; v++) {
-                                if (v % 3 != 0) continue;
+                                if (v % 4 != 0) continue;
                                 if ((int)routes[v].size() >= virt_vehs[v].capacity) continue;
                                 routes[v].push_back(e);
                                 routed[e] = true;

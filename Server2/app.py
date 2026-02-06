@@ -134,13 +134,18 @@ def run_optimization():
         if not os.path.exists(solver_exe):
             return jsonify({'error': 'Solver executable not found. Please build the solver first.'}), 500
         
-        # Execute solver
-        result = subprocess.run(
-            [solver_exe, input_json, output_json],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
+        # Execute solver with proper timeout handling
+        try:
+            result = subprocess.run(
+                [solver_exe, input_json, output_json],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+        except subprocess.TimeoutExpired as e:
+            # On Windows, subprocess.run with timeout may leave orphan processes
+            # The TimeoutExpired exception includes the process ref for cleanup
+            return jsonify({'error': 'Solver timed out after 60 seconds'}), 500
         
         if result.returncode != 0:
             return jsonify({'error': f'Solver failed: {result.stderr}'}), 500
@@ -206,7 +211,13 @@ def run_optimization():
                     
                     # Extract employee ID and type from location
                     if 'Pickup' in location and location not in ['Office (Drop-off)', 'Vehicle Depot']:
-                        emp_id = location.split()[0]  # e.g., "E01 Pickup" -> "E01"
+                        # Extract employee ID: "E01 Pickup" -> "E01"
+                        # Handle both "E01 Pickup" and "E01Pickup" formats
+                        emp_id = location.replace(' Pickup', '').replace('Pickup', '').strip()
+                        if not emp_id:
+                            # Fallback: split on whitespace
+                            parts = location.split()
+                            emp_id = parts[0] if parts else ''
                         
                         # Find employee data
                         emp_data = next((e for e in input_data.get('employees', []) if e.get('employee_id') == emp_id), None)
@@ -256,13 +267,23 @@ def run_optimization():
                 vehicle_info = next((v for v in input_data.get('vehicles', []) if v.get('vehicle_id') == vehicle_id), None)
                 capacity = vehicle_info.get('capacity', 4) if vehicle_info else 4
                 
+                # Calculate per-trip max utilization (not total across all trips)
+                max_trip_passengers = 0
+                for trip in trips:
+                    trip_passengers = sum(
+                        1 for stop in trip.get('stops', [])
+                        if 'Pickup' in stop.get('location', '') 
+                        and stop.get('location', '') not in ['Office (Drop-off)', 'Vehicle Depot']
+                    )
+                    max_trip_passengers = max(max_trip_passengers, trip_passengers)
+                
                 transformed_routes.append({
                     'vehicle_id': vehicle_id,
                     'route_points': route_points,
                     'total_distance': vehicle.get('total_distance', 0),
                     'total_cost': vehicle.get('total_cost', 0),
                     'passengers_count': len(all_employees),
-                    'capacity_utilization': (len(all_employees) / capacity * 100) if capacity > 0 else 0,
+                    'capacity_utilization': (max_trip_passengers / capacity * 100) if capacity > 0 else 0,
                     'trips_count': len(trips)
                 })
         

@@ -69,10 +69,6 @@ private:
     int total_employees = 0;
     bool user_enforce_soft = true;  // The user's setting (preserved for output)
     
-    // Physical vehicle info for consolidation
-    std::vector<int> phys_vehicle_of;  // virtual_idx -> physical_idx
-    std::vector<std::vector<int>> trips_of_phys; // physical_idx -> list of virtual_idxs
-    
     std::mt19937 rng;
     const ConstraintEngine* cp_ptr = nullptr;
     
@@ -100,57 +96,28 @@ public:
         return count;
     }
     
-    // Count preference violations (vehicle + sharing) — these are HARD constraints
-    // Always counted regardless of enforce_soft flag
-    int count_preference_violations(const std::vector<std::vector<int>>& routes,
-                                     const std::vector<Vehicle>& vehs,
-                                     const std::vector<Employee>& emps) const {
-        int pref_v = 0;
-        for (size_t v = 0; v < routes.size(); v++) {
-            if (routes[v].empty()) continue;
-            int sz = (int)routes[v].size();
-            // Sharing preference violations
-            for (int e : routes[v]) {
-                if (emps[e].sharing_pref < sz) pref_v++;
-            }
-            // Vehicle preference violations
-            for (int e : routes[v]) {
-                if (emps[e].vehicle_pref == 1 && vehs[v].category != 1) pref_v++;
-                if (emps[e].vehicle_pref == 2 && vehs[v].category == 1) pref_v++;
-            }
-        }
-        return pref_v;
-    }
+    // Count all violations across all routes using shared utilities
+    // Returns {total_hard_violations (time + pref), total_pref_violations, total_lateness}
+    struct AllViolations {
+        int hard_time;
+        int pref;
+        int total_lateness;
+        int total_hard() const { return hard_time + pref; }
+    };
     
-    // Count hard violations: time window breaches (office arrival > deadline)
-    // Returns {count, total_lateness_minutes}
-    std::pair<int,int> count_hard_violations(const std::vector<std::vector<int>>& routes,
-                                              const std::vector<Vehicle>& vehs,
-                                              const std::vector<Employee>& emps) const {
-        int hard_v = 0;
-        int total_lateness = 0;
+    AllViolations count_all_violations(const std::vector<std::vector<int>>& routes,
+                                       const std::vector<Vehicle>& vehs,
+                                       const std::vector<Employee>& emps) const {
+        AllViolations av = {0, 0, 0};
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
-            int curr_time = vehs[v].available_from;
-            int curr_node = vehs[v].start_node;
-            for (int e : routes[v]) {
-                double d = dist_matrix[curr_node][emps[e].node_idx];
-                int travel = (int)std::round((d / vehs[v].speed_kmph) * 60.0);
-                int arrival = curr_time + travel;
-                curr_time = std::max(arrival, emps[e].earliest_pickup);
-                curr_node = emps[e].node_idx;
-            }
-            double d_off = dist_matrix[curr_node][OFFICE_NODE];
-            int travel_off = (int)std::round((d_off / vehs[v].speed_kmph) * 60.0);
-            int office_arrival = curr_time + travel_off;
-            for (int e : routes[v]) {
-                if (office_arrival > emps[e].latest_arrival_deadline) {
-                    hard_v++;
-                    total_lateness += (office_arrival - emps[e].latest_arrival_deadline);
-                }
-            }
+            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+            ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+            av.hard_time += vc.hard_time_violations;
+            av.pref += vc.pref_violations;
+            av.total_lateness += vc.total_lateness;
         }
-        return {hard_v, total_lateness};
+        return av;
     }
     
     // Cost function with PRIORITY ORDER:
@@ -169,29 +136,18 @@ public:
         double total_time = 0.0;
         int assigned = 0;
         
+        AllViolations av = {0, 0, 0};
+        
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
-            double dist = 0;
-            int curr_node = vehs[v].start_node;
-            int curr_time = vehs[v].available_from;
-            
-            for (int e : routes[v]) {
-                int next = emps[e].node_idx;
-                double d = dist_matrix[curr_node][next];
-                dist += d;
-                int travel = (int)std::round((d / vehs[v].speed_kmph) * 60.0);
-                int arrival = curr_time + travel;
-                curr_time = std::max(arrival, emps[e].earliest_pickup);
-                curr_node = next;
-                assigned++;
-            }
-            double d_off = dist_matrix[curr_node][OFFICE_NODE];
-            dist += d_off;
-            int travel_off = (int)std::round((d_off / vehs[v].speed_kmph) * 60.0);
-            int office_arrival = curr_time + travel_off;
-            
-            total_dist_cost += dist * vehs[v].cost_per_km;
-            total_time += (office_arrival - vehs[v].available_from);
+            assigned += (int)routes[v].size();
+            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+            total_dist_cost += sim.total_distance * vehs[v].cost_per_km;
+            total_time += (sim.office_arrival - vehs[v].available_from);
+            ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+            av.hard_time += vc.hard_time_violations;
+            av.pref += vc.pref_violations;
+            av.total_lateness += vc.total_lateness;
         }
         
         // Score = cost_weight * cost + time_weight * time
@@ -201,16 +157,9 @@ public:
         int unassigned_count = total_employees - assigned;
         score += unassigned_count * UNASSIGNED_PENALTY;
         
-        // PRIORITY 1: Hard violations get very heavy penalty
-        // Penalty is proportional to lateness so solver minimizes HOW LATE, not just count
-        auto [hard_v, lateness] = count_hard_violations(routes, vehs, emps);
-        score += hard_v * HARD_VIOLATION_PENALTY;
-        score += lateness * LATENESS_PENALTY_PER_MIN;
-        
-        // PRIORITY 1b: Preference violations (vehicle + sharing) are ALSO hard constraints
-        // These must ALWAYS be penalized, even when enforce_soft=false
-        int pref_v = count_preference_violations(routes, vehs, emps);
-        score += pref_v * HARD_VIOLATION_PENALTY;
+        // PRIORITY 1: Hard violations (time + preference) get very heavy penalty
+        score += av.total_hard() * HARD_VIOLATION_PENALTY;
+        score += av.total_lateness * LATENESS_PENALTY_PER_MIN;
         
         return score;
     }
@@ -262,7 +211,6 @@ public:
         
         while (!unassigned.empty()) {
             int emp = unassigned.back();
-            bool placed = false;
             
             // Level 1: Find cheapest feasible position (with soft constraints)
             {
@@ -291,7 +239,6 @@ public:
                 if (best_v >= 0) {
                     routes[best_v].insert(routes[best_v].begin() + best_pos, emp);
                     unassigned.pop_back();
-                    placed = true;
                     continue;
                 }
             }
@@ -323,7 +270,6 @@ public:
                 if (best_v >= 0) {
                     routes[best_v].insert(routes[best_v].begin() + best_pos, emp);
                     unassigned.pop_back();
-                    placed = true;
                     continue;
                 }
             }
@@ -343,37 +289,15 @@ public:
                         // Allow hard violations — just measure how bad
                         validate_full_route(temp, vehs[v], emps, h, s, false, meta, true);
                         
-                        // Calculate lateness-aware cost for this position
-                        int curr_time = vehs[v].available_from;
-                        int curr_node = vehs[v].start_node;
-                        double dist = 0;
-                        for (int e : temp) {
-                            double d = dist_matrix[curr_node][emps[e].node_idx];
-                            dist += d;
-                            int travel = (int)std::round((d / vehs[v].speed_kmph) * 60.0);
-                            int arrival = curr_time + travel;
-                            curr_time = std::max(arrival, emps[e].earliest_pickup);
-                            curr_node = emps[e].node_idx;
-                        }
-                        double d_off = dist_matrix[curr_node][OFFICE_NODE];
-                        dist += d_off;
-                        int travel_off = (int)std::round((d_off / vehs[v].speed_kmph) * 60.0);
-                        int office_arr = curr_time + travel_off;
+                        // Use shared simulation + violation counting
+                        RouteSimResult sim = simulate_route(temp, vehs[v], emps);
+                        ViolationCount vc = count_route_violations(temp, vehs[v], emps, sim.office_arrival);
                         
-                        // Cost = heavy penalty per hard violation + pref violations + lateness + distance cost
-                        double cost = h * 50000.0;
-                        // Penalize preference violations (vehicle + sharing)
-                        for (int e : temp) {
-                            if (emps[e].sharing_pref < (int)temp.size()) cost += 50000.0;
-                            if (emps[e].vehicle_pref == 1 && vehs[v].category != 1) cost += 50000.0;
-                            if (emps[e].vehicle_pref == 2 && vehs[v].category == 1) cost += 50000.0;
-                        }
-                        for (int e : temp) {
-                            if (office_arr > emps[e].latest_arrival_deadline) {
-                                cost += (office_arr - emps[e].latest_arrival_deadline) * 500.0;
-                            }
-                        }
-                        cost += dist * vehs[v].cost_per_km;
+                        // Cost = heavy penalty per violation + lateness + distance cost
+                        double cost = h * HARD_VIOLATION_PENALTY;
+                        cost += vc.pref_violations * HARD_VIOLATION_PENALTY;
+                        cost += vc.total_lateness * LATENESS_PENALTY_PER_MIN;
+                        cost += sim.total_distance * vehs[v].cost_per_km;
                         
                         if (cost < best_cost) {
                             best_cost = cost;
@@ -385,7 +309,6 @@ public:
                 if (best_v >= 0) {
                     routes[best_v].insert(routes[best_v].begin() + best_pos, emp);
                     unassigned.pop_back();
-                    placed = true;
                     continue;
                 }
             }
@@ -439,26 +362,9 @@ public:
                         // ALLOW hard violations — just measure them
                         validate_full_route(temp, vehs[v], emps, h, s, false, meta, true);
                         
-                        // Calculate full route arrival to measure lateness
-                        int curr_time = vehs[v].available_from;
-                        int curr_node = vehs[v].start_node;
-                        for (int e : temp) {
-                            double d = dist_matrix[curr_node][emps[e].node_idx];
-                            int travel = (int)std::round((d / vehs[v].speed_kmph) * 60.0);
-                            int arrival = curr_time + travel;
-                            curr_time = std::max(arrival, emps[e].earliest_pickup);
-                            curr_node = emps[e].node_idx;
-                        }
-                        double d_off = dist_matrix[curr_node][OFFICE_NODE];
-                        int office_arr = curr_time + (int)std::round((d_off / vehs[v].speed_kmph) * 60.0);
-                        
-                        // Score: heavily penalize lateness + violations + distance cost
-                        double lateness = 0;
-                        for (int e : temp) {
-                            if (office_arr > emps[e].latest_arrival_deadline) {
-                                lateness += (office_arr - emps[e].latest_arrival_deadline);
-                            }
-                        }
+                        // Use shared simulation + violation counting
+                        RouteSimResult sim = simulate_route(temp, vehs[v], emps);
+                        ViolationCount vc = count_route_violations(temp, vehs[v], emps, sim.office_arrival);
                         
                         double dist_cost = 0;
                         {
@@ -472,16 +378,9 @@ public:
                             dist_cost = (dist_matrix[prev][curr_n] + dist_matrix[curr_n][next]) * vehs[v].cost_per_km;
                         }
                         
-                        // Count preference violations for this placement
-                        int pref_violations = 0;
-                        for (int e : temp) {
-                            if (emps[e].sharing_pref < (int)temp.size()) pref_violations++;
-                            if (emps[e].vehicle_pref == 1 && vehs[v].category != 1) pref_violations++;
-                            if (emps[e].vehicle_pref == 2 && vehs[v].category == 1) pref_violations++;
-                        }
-                        
                         // Priority: minimize hard violations + pref violations → minimize lateness → minimize cost
-                        double score = h * 50000.0 + pref_violations * 50000.0 + s * 10000.0 + lateness * 500.0 + dist_cost;
+                        double score = h * HARD_VIOLATION_PENALTY + vc.pref_violations * HARD_VIOLATION_PENALTY
+                                     + s * SOFT_VIOLATION_PENALTY + vc.total_lateness * LATENESS_PENALTY_PER_MIN + dist_cost;
                         
                         if (score < best_score) {
                             best_score = score;
@@ -537,7 +436,8 @@ public:
                                    const std::vector<Vehicle>& vehs,
                                    const std::vector<Employee>& emps) {
         std::vector<int> removed;
-        std::vector<std::tuple<double, int, int>> costs;
+        // Store {saving, employee_id} instead of positions to avoid index invalidation
+        std::vector<std::pair<double, int>> costs;
         
         for (size_t v = 0; v < routes.size(); v++) {
             for (size_t i = 0; i < routes[v].size(); i++) {
@@ -546,32 +446,32 @@ public:
                 int curr = emps[emp].node_idx;
                 int next = (i == routes[v].size()-1) ? OFFICE_NODE : emps[routes[v][i+1]].node_idx;
                 double saving = dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next];
-                costs.push_back({saving, (int)v, (int)i});
+                costs.push_back({saving, emp});
             }
         }
         if (costs.empty()) return removed;
         
         std::sort(costs.begin(), costs.end(), [](const auto& a, const auto& b) {
-            return std::get<0>(a) > std::get<0>(b);
+            return a.first > b.first;
         });
         
         num_remove = std::min(num_remove, (int)costs.size());
         int pool = std::min((int)costs.size(), std::max(num_remove, num_remove * 2));
         std::shuffle(costs.begin(), costs.begin() + pool, rng);
         
-        std::vector<std::pair<int, int>> to_remove;
+        // Collect employee IDs to remove
+        std::unordered_set<int> to_remove_set;
         for (int i = 0; i < num_remove; i++) {
-            to_remove.push_back({std::get<1>(costs[i]), std::get<2>(costs[i])});
+            to_remove_set.insert(costs[i].second);
         }
-        std::sort(to_remove.begin(), to_remove.end(),
-                 [](const auto& a, const auto& b) {
-                     return a.first != b.first ? a.first > b.first : a.second > b.second;
-                 });
         
-        for (auto& [v, pos] : to_remove) {
-            if (pos < (int)routes[v].size()) {
-                removed.push_back(routes[v][pos]);
-                routes[v].erase(routes[v].begin() + pos);
+        // Remove by employee ID (safe regardless of index shifts)
+        for (auto& route : routes) {
+            for (int i = (int)route.size() - 1; i >= 0; i--) {
+                if (to_remove_set.count(route[i])) {
+                    removed.push_back(route[i]);
+                    route.erase(route.begin() + i);
+                }
             }
         }
         return removed;
@@ -653,6 +553,7 @@ public:
         
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
+            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
             int sz = (int)routes[v].size();
             for (size_t i = 0; i < routes[v].size(); i++) {
                 int e = routes[v][i];
@@ -662,6 +563,8 @@ public:
                 // Vehicle pref violation  
                 if (emps[e].vehicle_pref == 1 && vehs[v].category != 1) violations++;
                 if (emps[e].vehicle_pref == 2 && vehs[v].category == 1) violations++;
+                // Time window violation
+                if (sim.office_arrival > emps[e].latest_arrival_deadline) violations++;
                 if (violations > 0) {
                     violation_emps.push_back({violations, e});
                 }
@@ -802,24 +705,24 @@ public:
         std::sort(move_benefit.begin(), move_benefit.end(),
                  [](const auto& a, const auto& b) { return std::get<0>(a) > std::get<0>(b); });
         
-        // Remove top candidates
+        // Remove top candidates using employee-ID-based removal (avoids index invalidation)
         num_remove = std::min(num_remove, (int)move_benefit.size());
         
-        // Collect positions to remove (need careful ordering)
-        std::vector<std::pair<int, int>> to_remove;
+        std::unordered_set<int> to_remove_set;
         for (int i = 0; i < num_remove; i++) {
-            to_remove.push_back({std::get<1>(move_benefit[i]), std::get<2>(move_benefit[i])});
+            int v_idx = std::get<1>(move_benefit[i]);
+            int pos = std::get<2>(move_benefit[i]);
+            if (pos < (int)routes[v_idx].size()) {
+                to_remove_set.insert(routes[v_idx][pos]);
+            }
         }
-        // Sort reverse so erasing doesn't shift indices
-        std::sort(to_remove.begin(), to_remove.end(),
-                 [](const auto& a, const auto& b) {
-                     return a.first != b.first ? a.first > b.first : a.second > b.second;
-                 });
         
-        for (auto& [v, pos] : to_remove) {
-            if (pos < (int)routes[v].size()) {
-                removed.push_back(routes[v][pos]);
-                routes[v].erase(routes[v].begin() + pos);
+        for (auto& route : routes) {
+            for (int i = (int)route.size() - 1; i >= 0; i--) {
+                if (to_remove_set.count(route[i])) {
+                    removed.push_back(route[i]);
+                    route.erase(route.begin() + i);
+                }
             }
         }
         return removed;
@@ -1159,9 +1062,8 @@ public:
         
         best_routes = routes;
         best_cost = calculate_cost(routes, vehs, emps, meta);
-        auto [init_hard_v, init_lateness] = count_hard_violations(routes, vehs, emps);
-        int best_hard_v = init_hard_v + count_preference_violations(routes, vehs, emps);
-        int best_soft_v = 0;  // Preference violations now counted as hard
+        AllViolations init_av = count_all_violations(routes, vehs, emps);
+        int best_hard_v = init_av.total_hard();
         double current_cost = best_cost;
         auto current_routes = routes;
         
@@ -1172,10 +1074,9 @@ public:
         
         std::cout << "Initial cost: $" << best_cost 
                   << " (" << count_assigned(routes) << "/" << total_employees << " assigned"
-                  << ", hard_v=" << best_hard_v
-                  << ", soft_v=" << best_soft_v << ")" << std::endl;
+                  << ", hard_v=" << best_hard_v << ")" << std::endl;
         std::cout << "Temperature: " << temperature << ", Cooling: " << cooling_rate << "\n";
-        std::cout << "OPTIMIZATION PRIORITY: 0 violations > fewer violations > lower cost\n\n";
+        std::cout << "OPTIMIZATION PRIORITY: fewer hard violations > lower cost\n\n";
         
         while (true) {
             auto now = std::chrono::high_resolution_clock::now();
@@ -1196,8 +1097,7 @@ public:
                 std::cout << "Best: $" << best_cost << " | Current: $" << current_cost
                          << " | Temp: " << temperature
                          << " | Assigned: " << count_assigned(best_routes) << "/" << total_employees
-                         << " | HardV: " << best_hard_v
-                         << " | SoftV: " << best_soft_v << std::endl;
+                         << " | HardV: " << best_hard_v << std::endl;
                 std::cout << "Accepts: " << accept_count << " | Improves: " << improve_count << std::endl;
                 
                 std::fill(destroy_attempts.begin(), destroy_attempts.end(), 0);
@@ -1265,34 +1165,22 @@ public:
             
             bool accept = false;
             
-            auto [new_hard_v_time, new_lateness] = count_hard_violations(temp_routes, vehs, emps);
-            int new_pref_v = count_preference_violations(temp_routes, vehs, emps);
-            int new_hard_v = new_hard_v_time + new_pref_v;
-            int new_soft_v = 0;  // Preference violations now counted as hard
+            AllViolations new_av = count_all_violations(temp_routes, vehs, emps);
+            int new_hard_v = new_av.total_hard();
             
-            // Violation-first comparison: fewer hard > fewer soft > lower cost
-            bool is_new_best = false;
-            if (new_hard_v < best_hard_v) {
-                is_new_best = true;  // Fewer hard violations always better
-            } else if (new_hard_v == best_hard_v) {
-                if (new_soft_v < best_soft_v) {
-                    is_new_best = true;  // Same hard, fewer soft
-                } else if (new_soft_v == best_soft_v && new_cost < best_cost) {
-                    is_new_best = true;  // Same violations, lower cost
-                }
-            }
+            // Use shared comparison function
+            bool is_new_best = is_solution_better(new_hard_v, 0, new_cost,
+                                                   best_hard_v, 0, best_cost);
             
             if (is_new_best) {
                 accept = true;
                 best_cost = new_cost;
                 best_hard_v = new_hard_v;
-                best_soft_v = new_soft_v;
                 best_routes = temp_routes;
                 improve_count++;
                 std::cout << "  ★ NEW BEST: $" << best_cost
                          << " (" << count_assigned(best_routes) << "/" << total_employees
                          << " assigned, hard_v=" << best_hard_v
-                         << ", soft_v=" << best_soft_v
                          << ", iter " << iteration << ")" << std::endl;
             } else if (delta < 0) {
                 accept = true;
@@ -1335,9 +1223,8 @@ public:
         std::cout << "\n" << std::string(60, '=') << std::endl;
         std::cout << "ALNS COMPLETE" << std::endl;
         std::cout << "Total iterations: " << iteration << std::endl;
-        std::cout << "Final best cost: $" << best_cost << std::endl;
+        std::cout << "Final best score (weighted): $" << best_cost << std::endl;
         std::cout << "Hard violations: " << best_hard_v << std::endl;
-        std::cout << "Soft violations: " << best_soft_v << std::endl;
         std::cout << "Employees assigned: " << count_assigned(best_routes) << "/" << total_employees << std::endl;
         std::cout << "Total accepts: " << accept_count << " ("
                  << (iteration > 0 ? (100.0 * accept_count / iteration) : 0) << "%)" << std::endl;

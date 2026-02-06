@@ -97,19 +97,9 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
                   << " Hard=" << sol.hard_violations 
                   << " Soft=" << sol.soft_violations << "\n";
         
-        // Compare: hard violations > soft violations > cost
-        bool is_better = false;
-        if (sol.hard_violations < best_sol.hard_violations) {
-            is_better = true;
-        } else if (sol.hard_violations == best_sol.hard_violations) {
-            if (sol.soft_violations < best_sol.soft_violations) {
-                is_better = true;
-            } else if (sol.soft_violations == best_sol.soft_violations && sol.total_cost < best_sol.total_cost) {
-                is_better = true;
-            }
-        }
-        
-        if (is_better) {
+        // Compare using shared comparison function (use score = weighted objective, not raw cost)
+        if (is_solution_better(sol.hard_violations, sol.soft_violations, sol.score,
+                                best_sol.hard_violations, best_sol.soft_violations, best_sol.score)) {
             best_sol = sol;
             std::cout << "✓ New best solution!\n";
         }
@@ -163,12 +153,25 @@ int main(int argc, char* argv[]) {
             
             json out = OutputFormatter::to_json(best);
             std::ofstream f(output_file);
+            if (!f.is_open()) {
+                std::cerr << "Error: Cannot write to " << output_file << std::endl;
+                return 1;
+            }
             f << out.dump(2);
             f.close();
+            if (f.fail()) {
+                std::cerr << "Error: Write failed for " << output_file << std::endl;
+                return 1;
+            }
             std::cout << "\nSaved: " << output_file << "\n\n" << out.dump(2) << std::endl;
             return 0;
         }
         best = s1;
+        // Set descriptive solution_type for Stage 1 results
+        if (s1.hard_violations > 0) {
+            s1.solution_type = "STAGE1 - " + std::to_string(s1.hard_violations) + " hard, " + std::to_string(s1.soft_violations) + " soft";
+            best = s1;
+        }
     } catch (const std::exception& e) {
         std::cerr << "⚠️ Stage 1 error: " << e.what() << std::endl;
     }
@@ -177,21 +180,9 @@ int main(int argc, char* argv[]) {
     try {
         Solution s2 = solve_stage(false, emps, phys, virt, meta, 2, time_limit);
         
-        // Compare solutions - PRIORITY ORDER:
-        // 1. Fewer hard violations
-        // 2. Fewer soft violations
-        // 3. Lower cost
-        bool s2_better = false;
-        
-        if (s2.hard_violations < best.hard_violations) {
-            s2_better = true;
-        } else if (s2.hard_violations == best.hard_violations) {
-            if (s2.soft_violations < best.soft_violations) {
-                s2_better = true;
-            } else if (s2.soft_violations == best.soft_violations && s2.total_cost < best.total_cost) {
-                s2_better = true;
-            }
-        }
+        // Compare solutions using shared comparison function
+        bool s2_better = is_solution_better(s2.hard_violations, s2.soft_violations, s2.score,
+                                             best.hard_violations, best.soft_violations, best.score);
         
         if (s2_better) {
             if (s2.hard_violations == 0 && s2.soft_violations == 0) {
@@ -222,8 +213,16 @@ int main(int argc, char* argv[]) {
         
         json out = OutputFormatter::to_json(best);
         std::ofstream f(output_file);
+        if (!f.is_open()) {
+            std::cerr << "Error: Cannot write to " << output_file << std::endl;
+            return 1;
+        }
         f << out.dump(2);
         f.close();
+        if (f.fail()) {
+            std::cerr << "Error: Write failed for " << output_file << std::endl;
+            return 1;
+        }
         
         std::cout << "\nSaved: " << output_file << "\n\n" << out.dump(2) << std::endl;
         return 0;

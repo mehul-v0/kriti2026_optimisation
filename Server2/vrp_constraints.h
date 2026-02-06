@@ -11,7 +11,7 @@ public:
     std::vector<std::vector<int>> incompatible_pairs;
     
     void setup(bool enforce_soft, const std::vector<Employee>& emps,
-               const std::vector<Vehicle>& virt_vehs, const Metadata& meta) {
+               const std::vector<Vehicle>& virt_vehs, const Metadata& /*meta*/) {
         
         int n_emp = emps.size();
         int n_veh = virt_vehs.size();

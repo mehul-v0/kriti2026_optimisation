@@ -123,9 +123,15 @@ function App() {
       setState('optimizing');
       setOptimizationLog(['Starting optimization...', 'Running VRP solver...', 'This may take a few moments...']);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+
       const response = await fetch(`${API_BASE_URL}/optimize`, {
         method: 'POST',
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const error = await response.json();

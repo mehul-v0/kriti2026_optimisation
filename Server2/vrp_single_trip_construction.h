@@ -40,19 +40,45 @@ public:
         
         int n_emp = emps.size();
         int n_veh = virt_vehs.size();
+        int trips_per_vehicle = 4;
         
         routes.clear();
         routes.resize(n_veh);
         
-        // Sort employees by deadline (tightest first)
+        // Pre-detect inherently infeasible employees —
+        // those who can't meet deadline on ANY trip 1 vehicle
+        std::vector<bool> is_infeasible(n_emp, false);
+        for (int i = 0; i < n_emp; i++) {
+            bool any_feasible = false;
+            for (int v = 0; v < n_veh; v++) {
+                if (v % trips_per_vehicle != 0) continue; // Only trip 1
+                std::vector<int> test = {i};
+                int h = 0, s = 0;
+                validate_full_route(test, virt_vehs[v], emps, h, s, false, meta, true);
+                RouteSimResult sim = simulate_route(test, virt_vehs[v], emps);
+                if (sim.office_arrival <= emps[i].latest_arrival_deadline) {
+                    any_feasible = true;
+                    break;
+                }
+            }
+            if (!any_feasible) {
+                is_infeasible[i] = true;
+                std::cout << "   DETECTED: " << emps[i].employee_id 
+                          << " is inherently infeasible (deadline too tight)\n";
+            }
+        }
+        
+        // Sort employees: feasible by deadline first, infeasible at the end
         std::vector<int> emp_order(n_emp);
         for (int i = 0; i < n_emp; i++) emp_order[i] = i;
-        std::sort(emp_order.begin(), emp_order.end(), [&emps](int a, int b) {
+        std::sort(emp_order.begin(), emp_order.end(), [&emps, &is_infeasible](int a, int b) {
+            if (is_infeasible[a] != is_infeasible[b]) return !is_infeasible[a]; // feasible first
             return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
         });
         
-        std::cout << "Trying single-employee trips for each: ";
-        for (int e : emp_order) std::cout << emps[e].employee_id << " ";
+        std::cout << "Employee order (infeasible last): ";
+        for (int e : emp_order) std::cout << emps[e].employee_id 
+                    << (is_infeasible[e] ? "*" : "") << " ";
         std::cout << std::endl;
         
         // Try to assign each employee to their own trip (minimize sharing)
@@ -96,47 +122,118 @@ public:
                 std::cout << "   " << emps[e].employee_id << " -> " << virt_vehs[best_v].vehicle_id 
                           << " (H:" << best_h << " S:" << best_s << ")\n";
             } else {
-                // Fallback: add to an existing trip that can accommodate
-                std::cout << "   " << emps[e].employee_id << " -> Looking for shared trip...\n";
-                bool placed = false;
-                
-                for (int v = 0; v < n_veh && !placed; v++) {
-                    if ((int)routes[v].size() >= virt_vehs[v].capacity) continue;
-                    if (!cp.employee_vars[e].is_vehicle_valid(v)) continue;
+                // Infeasible employee — place on the LATEST available trip
+                // to avoid cascading delays to other trips on the same vehicle
+                if (is_infeasible[e]) {
+                    std::cout << "   " << emps[e].employee_id 
+                              << " -> Placing infeasible employee on latest trip...\n";
                     
-                    // Check compatibility
-                    bool compat = true;
-                    for (int ex : routes[v]) {
-                        if (!cp.are_compatible(e, ex)) {
-                            compat = false;
-                            break;
+                    // Find the latest empty trip on a compatible vehicle
+                    // Prefer vehicles that already have earlier trips used (so this
+                    // employee goes as the last trip, not poisoning future trips)
+                    int best_late_v = -1;
+                    int best_trip_idx = -1;
+                    double best_late_score = 1e18;
+                    
+                    for (int v = n_veh - 1; v >= 0; v--) {
+                        if (!routes[v].empty()) continue;
+                        if (!cp.employee_vars[e].is_vehicle_valid(v)) continue;
+                        
+                        int trip_idx = v % trips_per_vehicle;
+                        int phys_base = v - trip_idx;
+                        
+                        // Check if there's at least one earlier trip used on this vehicle
+                        bool has_earlier = false;
+                        for (int t = 0; t < trip_idx; t++) {
+                            if (!routes[phys_base + t].empty()) { has_earlier = true; break; }
+                        }
+                        
+                        // Check no LATER trips are used (don't insert before used trips)
+                        bool has_later = false;
+                        for (int t = trip_idx + 1; t < trips_per_vehicle; t++) {
+                            if (phys_base + t < n_veh && !routes[phys_base + t].empty()) {
+                                has_later = true; break;
+                            }
+                        }
+                        if (has_later) continue;
+                        
+                        // Simulate to get lateness for this placement
+                        std::vector<int> test = {e};
+                        RouteSimResult sim = simulate_route(test, virt_vehs[v], emps);
+                        int lateness = std::max(0, sim.office_arrival - emps[e].latest_arrival_deadline);
+                        
+                        // Score: prefer vehicles with earlier trips used (infeasible goes last),
+                        // minimize lateness, prefer later trip indices
+                        double score = lateness * 1000.0 - trip_idx * 100.0 + (has_earlier ? -5000.0 : 0.0);
+                        
+                        if (score < best_late_score || best_late_v == -1) {
+                            best_late_score = score;
+                            best_late_v = v;
+                            best_trip_idx = trip_idx;
                         }
                     }
                     
-                    if (compat) {
-                        // Try adding
-                        std::vector<int> test = routes[v];
-                        test.push_back(e);
-                        int h=0, s=0;
-                        if (validate_full_route(test, virt_vehs[v], emps, h, s, enforce_soft, meta)) {
-                            routes[v] = test;
-                            routed[e] = true;
-                            placed = true;
-                            std::cout << "   " << emps[e].employee_id << " -> " << virt_vehs[v].vehicle_id 
-                                      << " (shared, H:" << h << " S:" << s << ")\n";
+                    if (best_late_v >= 0) {
+                        routes[best_late_v].push_back(e);
+                        routed[e] = true;
+                        std::cout << "   " << emps[e].employee_id << " -> " 
+                                  << virt_vehs[best_late_v].vehicle_id 
+                                  << " (infeasible, placed on late trip " << (best_trip_idx+1) << ")\n";
+                    } else {
+                        // Absolute last resort for infeasible
+                        for (int v = n_veh - 1; v >= 0; v--) {
+                            if (routes[v].empty() || (int)routes[v].size() < virt_vehs[v].capacity) {
+                                routes[v].push_back(e);
+                                routed[e] = true;
+                                std::cout << "   " << emps[e].employee_id 
+                                          << " -> FORCED (last resort) on " << virt_vehs[v].vehicle_id << "\n";
+                                break;
+                            }
                         }
                     }
-                }
-                
-                if (!placed) {
-                    // Last resort: force on first trip of first vehicle
-                    for (int v = 0; v < n_veh; v++) {
-                        if (v % 3 == 0) {  // Trip 1 only
-                            routes[v].push_back(e);
-                            routed[e] = true;
-                            std::cout << "   " << emps[e].employee_id << " -> FORCED on " 
-                                      << virt_vehs[v].vehicle_id << "\n";
-                            break;
+                } else {
+                    // Feasible employee that couldn't find an empty trip
+                    std::cout << "   " << emps[e].employee_id << " -> Looking for shared trip...\n";
+                    bool placed = false;
+                    
+                    for (int v = 0; v < n_veh && !placed; v++) {
+                        if ((int)routes[v].size() >= virt_vehs[v].capacity) continue;
+                        if (!cp.employee_vars[e].is_vehicle_valid(v)) continue;
+                        
+                        // Check compatibility
+                        bool compat = true;
+                        for (int ex : routes[v]) {
+                            if (!cp.are_compatible(e, ex)) {
+                                compat = false;
+                                break;
+                            }
+                        }
+                        
+                        if (compat) {
+                            // Try adding
+                            std::vector<int> test = routes[v];
+                            test.push_back(e);
+                            int h=0, s=0;
+                            if (validate_full_route(test, virt_vehs[v], emps, h, s, enforce_soft, meta)) {
+                                routes[v] = test;
+                                routed[e] = true;
+                                placed = true;
+                                std::cout << "   " << emps[e].employee_id << " -> " << virt_vehs[v].vehicle_id 
+                                          << " (shared, H:" << h << " S:" << s << ")\n";
+                            }
+                        }
+                    }
+                    
+                    if (!placed) {
+                        // Force on trip 1 vehicle with available capacity
+                        for (int v = 0; v < n_veh; v++) {
+                            if (v % trips_per_vehicle == 0 && (int)routes[v].size() < virt_vehs[v].capacity) {
+                                routes[v].push_back(e);
+                                routed[e] = true;
+                                std::cout << "   " << emps[e].employee_id << " -> FORCED on " 
+                                          << virt_vehs[v].vehicle_id << "\n";
+                                break;
+                            }
                         }
                     }
                 }

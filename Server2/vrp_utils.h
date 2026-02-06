@@ -8,6 +8,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <iostream>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -26,12 +27,22 @@ inline double haversine_km(double lat1, double lon1, double lat2, double lon2) {
 
 inline int time_to_min(const std::string& time_str) {
     if (time_str.empty()) return 0;
-    size_t colon = time_str.find(':');
-    if (colon == std::string::npos) return std::stoi(time_str);
-    return std::stoi(time_str.substr(0, colon)) * 60 + std::stoi(time_str.substr(colon + 1));
+    try {
+        size_t colon = time_str.find(':');
+        if (colon == std::string::npos) return std::stoi(time_str);
+        int hours = std::stoi(time_str.substr(0, colon));
+        int mins = std::stoi(time_str.substr(colon + 1));
+        return hours * 60 + mins;
+    } catch (const std::exception&) {
+        std::cerr << "Warning: Invalid time string '" << time_str << "', defaulting to 0" << std::endl;
+        return 0;
+    }
 }
 
 inline std::string min_to_time(int minutes) {
+    // Clamp to valid range [0, 1440) to prevent negative or >24h output
+    if (minutes < 0) minutes = 0;
+    minutes = minutes % 1440;
     std::ostringstream oss;
     oss << std::setfill('0') << std::setw(2) << (minutes/60) << ":"
         << std::setfill('0') << std::setw(2) << (minutes%60);

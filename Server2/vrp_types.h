@@ -3,57 +3,58 @@
 
 #include <string>
 #include <vector>
-#include <cstdint>
 
 // ============================================================================
 // CORE DATA STRUCTURES
 // ============================================================================
 
 struct Employee {
-    int id;
-    int node_idx;
-    double pickup_lat, pickup_lng;
-    double drop_lat, drop_lng;
-    int priority;
-    int earliest_pickup;
-    int latest_drop;
-    int latest_arrival_deadline;
-    int vehicle_pref;        // 0=any, 1=premium, 2=normal
-    int sharing_pref;        // 1=single, 2=double, 3=triple
+    int id = 0;
+    int node_idx = 0;
+    double pickup_lat = 0, pickup_lng = 0;
+    double drop_lat = 0, drop_lng = 0;
+    int priority = 3;
+    int earliest_pickup = 0;
+    int latest_drop = 0;
+    int latest_arrival_deadline = 0;
+    int vehicle_pref = 0;        // 0=any, 1=premium, 2=normal
+    int sharing_pref = 3;        // 1=single, 2=double, 3=triple
     std::string employee_id;
 };
 
 struct Vehicle {
-    int id;
-    int physical_id;
-    int node_idx;
-    int start_node;
-    double current_lat, current_lng;
-    int capacity;
-    double cost_per_km;
-    double speed_kmph;
-    int available_from;
-    int category;            // 0=any, 1=premium, 2=normal
+    int id = 0;
+    int physical_id = 0;
+    int node_idx = 0;
+    int start_node = 0;
+    double current_lat = 0, current_lng = 0;
+    int capacity = 4;
+    double cost_per_km = 10.0;
+    double speed_kmph = 40.0;
+    int available_from = 0;
+    int category = 0;            // 0=any, 1=premium, 2=normal
     std::string vehicle_id;
 };
 
 struct Metadata {
-    int priority_max_delays[6];
-    double cost_weight;
-    double time_weight;
+    int priority_max_delays[6] = {0, 5, 10, 15, 20, 30};  // index 0 = default 0
+    double cost_weight = 0.7;
+    double time_weight = 0.3;
 };
 
-// Constraint Programming Variable
+// Constraint Programming Variable — supports arbitrary vehicle counts
 struct IntVar {
     int employee_id;
-    uint64_t vehicle_domain;
+    std::vector<bool> vehicle_domain;
     
-    explicit IntVar(int num_vehicles) : employee_id(-1) {
-        vehicle_domain = (num_vehicles <= 64) ? ((1ULL << num_vehicles) - 1) : 0xFFFFFFFFFFFFFFFFULL;
+    explicit IntVar(int num_vehicles) : employee_id(-1), vehicle_domain(num_vehicles, true) {}
+    
+    void remove_vehicle(int v) {
+        if (v >= 0 && v < (int)vehicle_domain.size()) vehicle_domain[v] = false;
     }
-    
-    void remove_vehicle(int v) { vehicle_domain &= ~(1ULL << v); }
-    bool is_vehicle_valid(int v) const { return (vehicle_domain & (1ULL << v)) != 0; }
+    bool is_vehicle_valid(int v) const {
+        return v >= 0 && v < (int)vehicle_domain.size() && vehicle_domain[v];
+    }
 };
 
 struct InsertionInfo {

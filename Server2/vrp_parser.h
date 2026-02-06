@@ -35,6 +35,10 @@ public:
         }
         
         // Office location
+        if (!data.contains("employees") || data["employees"].empty()) {
+            std::cerr << "Error: No employees found in input" << std::endl;
+            return false;
+        }
         double office_lat = data["employees"][0].value("drop_lat", 0.0);
         double office_lng = data["employees"][0].value("drop_lng", 0.0);
         
@@ -55,6 +59,8 @@ public:
             emp.drop_lat = e.value("drop_lat", office_lat);
             emp.drop_lng = e.value("drop_lng", office_lng);
             emp.priority = e.value("priority", 3);
+            // Clamp priority to valid range [1, 5]
+            emp.priority = std::max(1, std::min(5, emp.priority));
             emp.earliest_pickup = time_to_min(e.value("earliest_pickup", "08:00"));
             emp.latest_drop = time_to_min(e.value("latest_drop", "18:00"));
             emp.latest_arrival_deadline = emp.latest_drop + meta.priority_max_delays[emp.priority];
@@ -65,7 +71,6 @@ public:
         }
         
         // Vehicles
-        int veh_start = node_idx;
         for (auto& v : data["vehicles"]) {
             Vehicle veh;
             veh.id = phys_vehs.size();
@@ -84,16 +89,16 @@ public:
             locs.push_back({veh.current_lat, veh.current_lng});
         }
         
-        // Expand virtual vehicles (3 trips per physical)
-        // Stagger by 40min per trip - typical time for a quick single-person trip
+        // Expand virtual vehicles (4 trips per physical)
+        // Stagger by 20min per trip - allows tighter packing
         // The actual start times will be adjusted in output based on when previous trip ends
         for (const auto& pv : phys_vehs) {
-            for (int trip = 0; trip < 3; trip++) {
+            for (int trip = 0; trip < 4; trip++) {
                 Vehicle vv = pv;
                 vv.id = virt_vehs.size();
                 vv.start_node = (trip == 0) ? pv.start_node : office;
                 vv.vehicle_id = pv.vehicle_id + "_trip" + std::to_string(trip+1);
-                vv.available_from = pv.available_from + (trip * 40);
+                vv.available_from = pv.available_from + (trip * 20);
                 virt_vehs.push_back(vv);
             }
         }
