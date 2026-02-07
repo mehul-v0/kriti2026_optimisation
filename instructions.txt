@@ -1,0 +1,1134 @@
+# Velora Mobitech — Frontend & UX Ideation Report (Revised Edition)
+
+## Executive Vision
+
+The goal is to create a **data-rich yet visually digestible** interface that transforms complex route optimization into an intuitive, compelling narrative. Every screen should answer: *"How much are we saving, and why should I trust this system?"*
+
+The interface prioritizes **transparency** — users see exactly what constraints were honored, which were violated, and why the system made specific decisions.
+
+---
+
+## Information Architecture
+
+### Page Structure Overview
+
+The application follows a **three-act story structure**: Setup (upload & understand data) → Transformation (optimization) → Resolution (results, validation, and insights).
+
+**Primary Pages:**
+1. Landing / Dashboard
+2. Data Upload & Configuration
+3. Data Insights Preview
+4. Optimization Processing View
+5. Results Overview
+6. Constraint Validation Report
+7. Route Explorer (Interactive Map)
+8. Vehicle Fleet Analysis
+9. Employee Assignment Details
+10. Cost & Savings Breakdown
+11. Export & Reports
+
+---
+
+## Page-by-Page Detailed Breakdown
+
+### 1. Landing Dashboard
+
+**Purpose:** First impression and mission control center
+
+**Hero Section:**
+A full-width header with a subtle animated background showing an abstract network of connected nodes morphing slowly — representing dynamic route connections. The Velora logo sits prominently with the tagline: *"Driven by Possibility"* and a large "Start New Optimization" button.
+
+*[Image suggestion: Abstract geometric network animation with nodes and connecting lines in brand colors, suggesting intelligent connectivity]*
+
+**Key Metrics Strip:**
+Four large stat cards displaying lifetime metrics pulled from local storage — Total Optimizations Run, Cumulative Cost Saved (₹), Total Employees Transported, Total Kilometers Optimized. These accumulate across sessions and provide credibility.
+
+**Session History Panel:**
+A timeline-style list showing previous optimization runs stored in browser local storage. Each entry displays: session date/time, employee count, vehicles used, total savings achieved, and a completion status badge. Users can click any session to reload its complete results. A "Clear History" option exists in the corner for privacy.
+
+*[Image suggestion: Small calendar or clock icon next to each history entry, subtle timeline connector line between entries]*
+
+**Quick Actions Grid:**
+Three cards arranged horizontally:
+- "New Optimization" — upload fresh data and run
+- "View Last Session" — jump directly to most recent results
+- "About the Algorithm" — explains the optimization approach (builds judge confidence)
+
+Each card has a custom illustration icon and subtle lift animation on hover.
+
+*[Image suggestion: Custom line-art icons — upload cloud for new optimization, chart/graph for last session, gear/brain for algorithm explanation]*
+
+---
+
+### 2. Data Upload & Configuration
+
+**Purpose:** Flexible, guided data ingestion from multiple sources
+
+**Layout Philosophy:**
+Clean single-column centered layout with clear step indicators. The page feels like a focused wizard step, not an overwhelming form.
+
+**Step Indicator:**
+A horizontal progress bar at top showing: "1. Upload Data → 2. Review Insights → 3. Configure → 4. Optimize" with step 1 highlighted.
+
+**Upload Zone:**
+A large, prominent drag-and-drop area with animated dashed border that pulses gently on hover. The zone accepts Excel files (.xlsx, .xls).
+
+Inside the zone, centered text reads: "Drag and drop your Excel file here"
+
+Below the drop zone, a horizontal row of three upload alternative buttons:
+
+**"Browse Files"** — opens system file picker
+**"Import from Google Drive"** — opens Google Drive picker modal, user authenticates and selects file directly from their Drive
+**"Import from Dropbox"** — opens Dropbox chooser, user selects file from their Dropbox account
+
+*[Image suggestion: Cloud service logos (Google Drive, Dropbox) as small icons on their respective buttons, maintaining brand recognition]*
+
+Below these options, a subtle link: "Or try with sample dataset →" for demo purposes, which loads pre-configured test data.
+
+**File Confirmation Card:**
+Once a file is selected (from any source), a confirmation card appears showing:
+- File icon (Excel icon)
+- File name
+- File size
+- Source badge (Local / Google Drive / Dropbox)
+- "Remove" button to clear and re-select
+
+**Validation Status:**
+Immediately upon upload, the system parses the file and displays validation feedback:
+
+A green checkmark with "File parsed successfully" or a red alert with specific error messages and row numbers.
+
+Below this, a quick summary: "Found X employee requests and Y vehicles"
+
+**Continue Button:**
+A prominent "Review Data Insights →" button at the bottom, disabled until validation passes.
+
+---
+
+### 3. Data Insights Preview
+
+**Purpose:** Give users complete understanding of their data before optimization
+
+**Layout Philosophy:**
+A rich dashboard-style page with multiple information cards. This page answers: "What exactly did I upload, and what are its characteristics?"
+
+**Step Indicator:**
+Progress bar shows step 2 highlighted.
+
+**Section A: Time Window Overview**
+
+A prominent card at the top spanning full width.
+
+**Title:** "Planning Window"
+
+**Content:**
+- **Start Time:** The earliest vehicle availability time found in the data (e.g., "6:00 AM")
+- **End Time:** The latest employee drop-off deadline (e.g., "10:30 AM")
+- **Total Window Duration:** Calculated span (e.g., "4 hours 30 minutes")
+
+Displayed as a horizontal timeline visualization with start and end markers, and the duration labeled in the middle.
+
+*[Image suggestion: A clean horizontal timeline bar with clock icons at start and end points, gradient fill showing the active window]*
+
+---
+
+**Section B: Employee Request Summary**
+
+A card showing demand-side statistics.
+
+**Title:** "Employee Requests Overview"
+
+**Metrics displayed:**
+- **Total Employees:** Count with a person icon
+- **Priority Distribution:** A horizontal stacked bar showing percentage breakdown
+  - High Priority: X% (shown in red/orange)
+  - Medium Priority: Y% (shown in yellow)
+  - Low Priority: Z% (shown in green)
+  
+  The actual counts are shown below each segment.
+
+- **Vehicle Preference Split:**
+  - Premium requests: X employees
+  - Normal requests: Y employees
+  
+- **Sharing Preference Split:**
+  - Single (solo ride): X employees
+  - Double (share with one other): Y employees
+  - Triple (share with two others): Z employees
+
+Displayed as a clean grid of stat blocks with small icons.
+
+*[Image suggestion: Small person icon for employee count, crown/star icon for premium, group icons for sharing preferences]*
+
+---
+
+**Section C: Vehicle Fleet Composition**
+
+A card showing supply-side statistics.
+
+**Title:** "Available Fleet"
+
+**Total Vehicles:** Large number with vehicle icon
+
+**By Fuel Type:**
+Three blocks arranged horizontally:
+- **Electric:** Count with EV/battery icon, percentage of fleet
+- **Petrol:** Count with fuel pump icon, percentage of fleet
+- **Diesel:** Count with diesel icon, percentage of fleet
+
+A small horizontal bar below shows the proportional split visually.
+
+**By Vehicle Mode:**
+Three blocks arranged horizontally:
+- **2-Wheeler:** Count with bike icon
+- **4-Wheeler:** Count with car icon
+- **Van:** Count with van icon
+
+A small horizontal bar below shows the proportional split visually.
+
+*[Image suggestion: Clean vehicle silhouette icons — motorcycle for 2-wheeler, sedan for 4-wheeler, minivan for van. Leaf icon or battery for EV, droplet for petrol/diesel]*
+
+---
+
+**Section D: Data Tables Preview**
+
+Two collapsible accordion sections:
+
+**"Preview Employee Requests"** — Expands to show a clean table of the first 10 employee records with columns: Employee ID, Priority, Pickup Location, Destination, Time Window, Vehicle Preference, Sharing Preference, Baseline Cost
+
+**"Preview Vehicle Fleet"** — Expands to show a clean table of the first 10 vehicle records with columns: Vehicle ID, Fuel Type, Mode, Capacity, Cost/km, Current Location, Availability Time
+
+Tables have zebra striping for readability and horizontal scroll if needed.
+
+---
+
+**Section E: Solver Configuration**
+
+A distinct card with configuration options.
+
+**Title:** "Optimization Settings"
+
+**Solver Runtime Selection:**
+
+A prominent control allowing users to select how long the optimization algorithm should run:
+
+Label: "Solver Duration"
+
+Options presented as a segmented button group or slider with discrete stops:
+- **Quick (30 seconds)** — Fast results, good for testing
+- **Standard (2 minutes)** — Balanced quality and speed
+- **Thorough (5 minutes)** — Best results, recommended for final runs
+- **Maximum (10 minutes)** — Exhaustive search, use for critical planning
+
+Below the selection, helper text explains: "Longer runtime allows the solver to explore more solutions and typically produces better cost savings."
+
+**Optimization Priority:**
+
+A slider or toggle:
+- **Minimize Cost** ←→ **Minimize Travel Time**
+
+With center position being "Balanced"
+
+Helper text: "Adjust the trade-off between total operational cost and total travel time."
+
+---
+
+**Action Footer:**
+Fixed bottom bar with "← Back to Upload" and "Run Optimization →" buttons.
+
+The Run button shows the selected solver duration: "Run Optimization (2 min)"
+
+---
+
+### 4. Optimization Processing View
+
+**Purpose:** Keep users informed during computation without requiring constant backend communication
+
+**Layout Philosophy:**
+A focused, calming screen that indicates progress without live data streaming. Progress is stage-based, not real-time metric streaming.
+
+**Step Indicator:**
+Progress bar shows step 4 highlighted, with a pulsing animation indicating active processing.
+
+**Central Visual:**
+A large circular progress indicator in the center of the screen. The circle fills gradually based on elapsed time relative to the selected solver duration.
+
+Inside the circle: percentage complete and elapsed time ("1:24 / 2:00")
+
+*[Image suggestion: Clean circular progress ring with gradient fill, subtle pulsing glow effect around the active edge]*
+
+**Stage Indicators:**
+Below the circle, a vertical list of processing stages with status icons:
+
+1. ✓ Data Parsing Complete
+2. ✓ Constraint Analysis Complete
+3. ◉ Route Optimization In Progress (spinning indicator)
+4. ○ Cost Calculation (pending)
+5. ○ Results Compilation (pending)
+
+Each completed stage has a green checkmark, current stage has a spinning loader, pending stages have empty circles.
+
+**Context Information:**
+A text block below stages showing what's being processed:
+- "Optimizing routes for 150 employees across 28 vehicles"
+- "Using Thorough mode (5 minutes allocated)"
+
+**Estimated Completion:**
+"Optimization will complete at approximately 10:34 AM"
+
+**Cancel Option:**
+A subtle "Cancel optimization" link at the bottom that returns to the configuration page with data preserved.
+
+**Background Animation:**
+The page background has a subtle, slow-moving abstract pattern — perhaps very faint route-like lines that drift slowly — creating visual interest without distraction or implying real-time data.
+
+*[Image suggestion: Very subtle, slow-moving abstract lines in the background at low opacity, suggesting route calculations without being literal]*
+
+---
+
+### 5. Results Overview
+
+**Purpose:** Immediate impact summary — the payoff moment
+
+**Layout Philosophy:**
+Clean, scannable layout that answers the key question immediately: "How much did we save?" No dramatic overlays — straightforward, professional presentation.
+
+**Page Header:**
+Session identifier and timestamp: "Optimization Results — February 6, 2026, 10:35 AM"
+
+A "Save to History" button (if not auto-saved) and "New Optimization" button in the header.
+
+---
+
+**Section A: Primary Savings Summary**
+
+A clean, full-width card with three columns of large metrics:
+
+**Column 1 — Baseline Cost:**
+- Label: "Baseline Cost (Individual Rides)"
+- Value: ₹XX,XXX (large typography)
+- Subtext: "Sum of baseline costs from input data"
+
+**Column 2 — Optimized Cost:**
+- Label: "Optimized Fleet Cost"
+- Value: ₹XX,XXX (large typography)
+- Subtext: "Total operational cost with optimization"
+
+**Column 3 — Net Savings:**
+- Label: "Total Savings"
+- Value: ₹XX,XXX (large typography, highlighted in accent color)
+- Percentage: "XX% reduction" in a badge below
+- Subtext: "Your cost advantage"
+
+*[Image suggestion: Subtle downward arrow icon next to savings to indicate reduction, or a small celebration icon like a subtle checkmark or trophy]*
+
+---
+
+**Section B: Key Performance Metrics**
+
+A row of six metric cards:
+
+1. **Vehicles Utilized**
+   - Value: X of Y available
+   - Small utilization percentage
+
+2. **Total Trips**
+   - Value: X trips
+   - Subtext: "Across all vehicles"
+
+3. **Total Distance**
+   - Value: X km
+   - Small comparison if relevant
+
+4. **Average Occupancy**
+   - Value: X.X passengers/trip
+   - Visual: small seat-fill indicator
+
+5. **Employees Served**
+   - Value: X of Y requests
+   - Should be 100% in successful optimization
+
+6. **Planning Window Utilized**
+   - Value: X hours Y minutes
+   - From first pickup to last drop-off
+
+---
+
+**Section C: Quick Navigation Cards**
+
+Three prominent cards leading to detailed views:
+
+**"Explore Routes on Map"**
+- Icon: Map pin/route illustration
+- Description: "Interactive visualization of all vehicle routes"
+- Arrow indicator
+
+*[Image suggestion: Stylized map with route lines icon]*
+
+**"View Constraint Compliance"**
+- Icon: Checklist/validation illustration
+- Description: "See which constraints were honored and any violations"
+- Arrow indicator
+
+*[Image suggestion: Clipboard with checkmarks and X marks icon]*
+
+**"Analyze Cost Breakdown"**
+- Icon: Chart/money illustration
+- Description: "Detailed cost analysis and per-vehicle economics"
+- Arrow indicator
+
+*[Image suggestion: Bar chart with currency symbol icon]*
+
+---
+
+**Section D: Session Summary**
+
+A compact info block showing:
+- Solver duration used
+- Optimization priority setting
+- Data file name and source
+- "Download Full Report" button
+
+---
+
+### 6. Constraint Validation Report
+
+**Purpose:** Complete transparency on what rules were followed and what trade-offs were made
+
+**Layout Philosophy:**
+This is a critical differentiator. Judges will want to see that the system understands and respects constraints. This page provides complete accountability.
+
+**Page Header:**
+"Constraint Compliance Report" with a summary badge: "X of Y constraints fully satisfied"
+
+---
+
+**Section A: Compliance Overview**
+
+A visual summary showing overall constraint health.
+
+**Two large metric blocks:**
+
+**Hard Constraints:**
+- Total: X
+- Satisfied: Y (with green indicator)
+- Violated: Z (with red indicator if any)
+- Compliance Rate: XX%
+
+**Soft Constraints:**
+- Total: X
+- Satisfied: Y (with green indicator)
+- Relaxed/Violated: Z (with yellow indicator)
+- Compliance Rate: XX%
+
+*[Image suggestion: Shield icon with checkmark for satisfied, warning triangle for violations]*
+
+A horizontal stacked bar below shows the visual proportion of satisfied vs. violated for each category.
+
+---
+
+**Section B: Hard Constraints Detail**
+
+A card with the header "Hard Constraints" and subtext "These must never be violated for a valid solution"
+
+Each constraint is listed as a row:
+
+**Constraint 1: Vehicle Capacity Limits**
+- Status: ✓ Satisfied (green badge)
+- Detail: "No vehicle exceeded seating capacity"
+- Violations: None
+
+**Constraint 2: Employee Time Windows**
+- Status: ✓ Satisfied (green badge) OR ⚠ X Violations (red badge)
+- Detail: "All employees picked up within their specified time windows"
+- If violations exist, expandable section lists:
+  - Employee ID, Requested Window, Actual Pickup Time, Deviation
+
+**Constraint 3: Vehicle Availability**
+- Status: ✓ Satisfied
+- Detail: "All vehicles deployed only during their available hours"
+
+**Constraint 4: Vehicle Starting Locations**
+- Status: ✓ Satisfied
+- Detail: "All routes begin from vehicle's registered current location"
+
+Each row is expandable. If violations exist, the expanded view shows a table of specific instances.
+
+---
+
+**Section C: Soft Constraints Detail**
+
+A card with the header "Soft Constraints" and subtext "These are preferences that may be relaxed for better optimization"
+
+**Constraint 1: Vehicle Type Preference**
+- Requested Premium: X employees
+- Received Premium: Y employees
+- Match Rate: XX%
+- Status: ✓ Fully Honored OR ⚠ Y employees assigned to Normal vehicles
+- Expandable list of employees whose preference was not met, with reason if available
+
+**Constraint 2: Sharing Preference**
+- Single requested: X, honored: Y
+- Double requested: X, honored: Y
+- Triple requested: X, honored: Y
+- Overall Match Rate: XX%
+- Status badge
+- Expandable list of mismatches
+
+**Constraint 3: Priority-Based Delay Tolerance**
+- High priority employees: Max delay encountered: X minutes
+- Medium priority: Max delay encountered: Y minutes
+- Low priority: Max delay encountered: Z minutes
+- Any high-priority delays are flagged prominently
+
+---
+
+**Section D: Constraint Violation Summary Table**
+
+If any violations exist, a consolidated table:
+
+| Constraint Type | Category | Count | Severity | Affected Entities |
+|-----------------|----------|-------|----------|-------------------|
+| Time Window | Hard | 2 | High | EMP-045, EMP-112 |
+| Vehicle Preference | Soft | 5 | Low | EMP-023, EMP-056... |
+
+Clicking any row navigates to the specific employee or vehicle detail.
+
+---
+
+**Section E: Compliance Visualization**
+
+A visual diagram showing constraints as a checklist with connecting lines to affected entities (employees/vehicles). Successfully met constraints have green lines; violations have red lines leading to the specific problem areas.
+
+*[Image suggestion: A flow diagram or sankey-style visualization showing constraints on the left, entities on the right, with colored connection lines indicating pass/fail relationships]*
+
+---
+
+### 7. Route Explorer (Interactive Map)
+
+**Purpose:** The visual centerpiece — see all routes geographically
+
+**Layout Philosophy:**
+Full-screen immersive map experience with slide-out panels for details. The map is the hero; controls are minimal and contextual.
+
+**Map Canvas:**
+Full-viewport map using a clean, professional base style (light theme recommended for clarity). The map shows the actual geographic region covered by the routes.
+
+*[Image suggestion: The map itself serves as the visual — ensure a clean, modern map tile style like Mapbox Light or similar]*
+
+---
+
+**Route Rendering:**
+
+Each vehicle's route is rendered as a distinct colored polyline following actual road paths (not straight lines). Colors are assigned from a carefully chosen palette ensuring adjacent routes are visually distinguishable.
+
+**Pickup points:** Circular markers with employee initials or number
+**Drop-off points (office):** Diamond or building icon marker, distinctly styled
+**Vehicle starting point:** Small vehicle icon in the route's color
+
+Routes show directional indicators (small arrows along the path) to indicate travel direction.
+
+**Critical: Office Location Handling**
+
+When a vehicle completes a trip (drops employees at office) and then starts another trip, the office location must be clearly marked and labeled on the route. The office appears as a prominent landmark marker with a building icon and label "Office — Destination"
+
+Between trips, a visual break or dotted line indicates the vehicle's return or repositioning.
+
+---
+
+**Vehicle Selector Panel:**
+
+A collapsible left sidebar (default: collapsed to show just vehicle icons vertically).
+
+Expanded view lists all vehicles with:
+- Vehicle ID
+- Color swatch matching route color
+- Vehicle type icon (bike/car/van)
+- Fuel type badge (EV/Petrol/Diesel)
+- Trip count for this vehicle (e.g., "2 trips")
+- Total passengers
+- Total distance
+
+**Interaction:** Clicking a vehicle:
+- Highlights only that vehicle's route(s)
+- Dims all other routes to 20% opacity
+- Zooms map to fit that vehicle's route bounds
+- Opens detail panel on right
+
+**"Show All" button** resets to display all routes.
+
+---
+
+**Route Detail Panel (Right Side):**
+
+When a vehicle is selected, a right-side panel slides in showing:
+
+**Vehicle Header:**
+- Vehicle ID, type, fuel type
+- Total trips: X
+- Total distance: X km
+- Total cost: ₹X
+
+**Trip Breakdown:**
+
+If vehicle makes multiple trips, display as tabs or accordion:
+
+**Trip 1:**
+- Pickup sequence with times:
+  1. 6:15 AM — Pickup EMP-034 at [Location]
+  2. 6:28 AM — Pickup EMP-067 at [Location]
+  3. 6:45 AM — **Arrive at Office** (drop all passengers)
+
+**Trip 2:**
+- Pickup sequence with times:
+  1. 7:30 AM — Pickup EMP-112 at [Location]
+  2. 7:42 AM — **Arrive at Office** (drop all passengers)
+
+The office arrival is always explicitly labeled and visually distinct (bold, different icon).
+
+---
+
+**Stop Detail Popups:**
+
+Clicking any point on the map shows a popup:
+
+For pickup points:
+- Employee ID
+- Employee name (if available)
+- Address
+- Scheduled pickup time
+- Which trip this belongs to
+- Which stop number in sequence
+
+For office/drop-off:
+- "Office — Employee Destination"
+- Address
+- Arrival time
+- Passengers dropped: X
+- "End of Trip X"
+
+---
+
+**Playback Mode:**
+
+A timeline control at the bottom of the screen:
+
+- Play/Pause button
+- Speed control (1x, 2x, 4x)
+- Time scrubber showing the planning window (6:00 AM to 10:30 AM)
+- Current simulated time display
+
+When playing, vehicle icons animate along their routes at the simulated time. Pickup and drop-off events are highlighted as they occur.
+
+*[Image suggestion: A sleek transport/mobility themed play button design, timeline with time markers]*
+
+---
+
+**Filter Controls:**
+
+A top toolbar (collapsible) with filter chips:
+
+- Vehicle type: 2-Wheeler | 4-Wheeler | Van
+- Fuel type: EV | Petrol | Diesel
+- Trip count: Single trip | Multiple trips
+- Show/hide office marker
+- Show/hide vehicle starting points
+
+---
+
+**Legend:**
+
+A compact, collapsible legend in the corner:
+- Route line colors correspond to vehicles (with vehicle ID labels)
+- Pickup point symbol
+- Office/drop-off symbol
+- Vehicle start symbol
+- Directional arrow meaning
+
+---
+
+### 8. Vehicle Fleet Analysis
+
+**Purpose:** Deep dive into how each vehicle is utilized
+
+**Layout Philosophy:**
+A fleet management dashboard showing both aggregate fleet health and individual vehicle details.
+
+---
+
+**Section A: Fleet Summary Bar**
+
+A horizontal strip showing:
+- Total Vehicles: X
+- Vehicles Used: Y
+- Vehicles Unused: Z
+- Total Trips (across all vehicles): XX
+- Fleet Utilization Rate: XX%
+
+---
+
+**Section B: Fleet Composition Breakdown**
+
+Three mini-charts:
+
+**By Fuel Type:** Donut chart showing EV / Petrol / Diesel split with counts
+
+**By Vehicle Mode:** Donut chart showing 2-Wheeler / 4-Wheeler / Van split with counts
+
+**By Trip Assignment:** Bar chart showing how many vehicles made 0, 1, 2, 3+ trips
+
+*[Image suggestion: Clean, minimal donut/pie charts with the brand color palette]*
+
+---
+
+**Section C: Vehicle Cards Grid**
+
+A responsive grid of cards, one per vehicle.
+
+**Each vehicle card shows:**
+
+- **Header:** Vehicle ID and type icon
+- **Badges:** Fuel type badge, mode badge
+- **Trip Count:** "X trips" prominently displayed
+- **Key Stats:**
+  - Total passengers: X
+  - Total distance: X km
+  - Total cost: ₹X
+  - Cost per passenger: ₹X
+- **Capacity Utilization:** Visual indicator (e.g., 3/4 seats shown as filled icons)
+- **Status:** "Active" (used) or "Unused" badge
+
+**Unused vehicles** have a muted/greyed appearance.
+
+**Hover effect:** Card lifts slightly, shows "View Details →" prompt.
+
+---
+
+**Sorting and Filtering Toolbar:**
+
+Above the grid:
+
+**Sort by:** Trip count | Distance | Cost | Utilization | Vehicle ID
+
+**Filter by:**
+- Fuel type chips
+- Vehicle mode chips
+- "Used only" / "Unused only" toggle
+
+**Search:** Search by vehicle ID
+
+---
+
+**Section D: Vehicle Detail Drawer**
+
+Clicking any vehicle card opens a slide-in drawer from the right (similar to map route detail).
+
+**Drawer Contents:**
+
+**Vehicle Specifications:**
+- Vehicle ID
+- Fuel Type
+- Vehicle Mode
+- Seating Capacity
+- Cost per Kilometer
+- Current Starting Location
+- Availability Time
+- Performance History:
+  - Average Mileage
+  - Average Speed
+  - Vehicle Age
+
+**Trip Summary:**
+- Total Trips: X
+- Total Passengers: X
+- Total Distance: X km
+- Total Operational Cost: ₹X
+
+**Trip-by-Trip Breakdown:**
+
+Accordion or tabs for each trip:
+
+**Trip 1:**
+- Trip start time
+- Trip end time
+- Distance: X km
+- Passengers: X
+- Pickup sequence:
+  1. EMP-034 — [Location] — 6:15 AM
+  2. EMP-067 — [Location] — 6:28 AM
+  3. **Office — [Office Address] — 6:45 AM** ← Clearly marked
+  
+**Trip 2:**
+- [Same structure]
+- Office arrival clearly marked
+
+The office is always explicitly mentioned at the end of each trip's sequence with distinct styling (bold, building icon, "OFFICE" label).
+
+**Mini-Map:**
+A small static map showing just this vehicle's route(s), embedded in the drawer.
+
+**Cost Breakdown:**
+- Distance × Cost/km = Total fuel/operational cost
+- Per-passenger cost calculation
+
+---
+
+### 9. Employee Assignment Details
+
+**Purpose:** Every employee's journey explained with full traceability
+
+**Layout Philosophy:**
+A comprehensive data table with powerful filtering and expansion, plus summary statistics.
+
+---
+
+**Section A: Summary Statistics Bar**
+
+A horizontal strip showing:
+- Total Employees: X
+- Successfully Assigned: X
+- High Priority: X | Medium: Y | Low: Z
+- Vehicle Preference Match Rate: XX%
+- Sharing Preference Match Rate: XX%
+- Time Window Compliance: XX%
+
+---
+
+**Section B: Employee Data Table**
+
+A full-featured, sortable, filterable data table.
+
+**Columns:**
+
+| Employee ID | Priority | Pickup Location | Destination | Baseline Cost | Assigned Vehicle | Trip # | Pickup Time | Drop-off Time | Sharing | Vehicle Pref | Status |
+
+**Column Explanations:**
+
+- **Employee ID:** Unique identifier
+- **Priority:** Color-coded badge (High = red, Medium = yellow, Low = green)
+- **Pickup Location:** Address or location name
+- **Destination:** "Office" (since all go to office) or specific address
+- **Baseline Cost:** ₹X — the individual ride cost from input data
+- **Assigned Vehicle:** Vehicle ID with small type icon
+- **Trip #:** Which trip of that vehicle (e.g., "Trip 1", "Trip 2") ← **Critical new field**
+- **Pickup Time:** Scheduled pickup time
+- **Drop-off Time:** Estimated arrival at office
+- **Sharing:** Actual sharing arrangement (Solo / +1 / +2)
+- **Vehicle Pref:** Met ✓ or Unmet ✗ indicator
+- **Status:** "Assigned" (green), "Constraint Relaxed" (yellow), "Issue" (red)
+
+---
+
+**Table Features:**
+
+**Search:** By employee ID or location
+
+**Filters:**
+- Priority level
+- Vehicle type assigned
+- Trip number
+- Preference met / unmet
+- Status
+
+**Sort:** By any column
+
+**Pagination:** For large datasets, paginated with page size selector
+
+---
+
+**Row Expansion:**
+
+Clicking any row expands inline to show:
+
+**Full Employee Details:**
+- All input attributes (ID, priority, locations, time window, preferences)
+- Baseline cost from input
+
+**Assignment Details:**
+- Assigned Vehicle: [ID] ([Type], [Fuel])
+- Assigned to Trip: **Trip X of Y** for this vehicle ← Prominently shown
+- Position in sequence: Stop #X of Y stops in this trip
+- Pickup time: X:XX AM
+- Drop-off time: X:XX AM (at Office)
+- Actual sharing: With employees [IDs] or "Solo"
+
+**Preference Compliance:**
+- Vehicle preference: Requested [X], Received [Y] — Met/Unmet
+- Sharing preference: Requested [X], Actual [Y] — Met/Unmet
+- Time window: Requested [X-Y], Scheduled [Z] — Within/Outside
+
+**Mini-Map:**
+Small map showing just this employee's pickup location and route to office.
+
+---
+
+**Section C: Export Options**
+
+A button bar:
+- "Export Table as Excel" — downloads the full table with all columns
+- "Export Filtered View" — downloads only currently filtered/visible rows
+- "Print View" — formatted for printing
+
+---
+
+### 10. Cost & Savings Breakdown
+
+**Purpose:** Financial justification with complete transparency on calculations
+
+**Layout Philosophy:**
+A detailed financial analysis page showing exactly how savings are calculated, using only the baseline costs provided in input data.
+
+---
+
+**Section A: Top-Level Summary**
+
+Three large metric cards arranged horizontally:
+
+**Total Baseline Cost:**
+- Value: ₹XX,XXX
+- Subtext: "Sum of baseline costs for all employees from input data"
+- Small info icon that expands to explain: "This represents the cost if each employee traveled individually using their specified baseline rate"
+
+**Total Optimized Cost:**
+- Value: ₹XX,XXX
+- Subtext: "Fleet operational cost after optimization"
+- Small info icon explaining calculation method
+
+**Net Savings:**
+- Value: ₹XX,XXX
+- Percentage: XX% reduction
+- Subtext: "Your optimization advantage"
+- Highlighted with accent color
+
+---
+
+**Section B: Savings Waterfall Visualization**
+
+A waterfall chart showing how the savings accumulate:
+
+Starting bar: Baseline Cost (₹XX,XXX)
+↓ Shared ride consolidation: -₹X,XXX
+↓ Route optimization: -₹X,XXX
+↓ Efficient vehicle selection: -₹X,XXX
+Final bar: Optimized Cost (₹XX,XXX)
+
+Each bar segment is labeled with the saving amount and percentage of total savings.
+
+*[Image suggestion: Clean waterfall chart with descending green bars showing reductions, clear labels on each segment]*
+
+---
+
+**Section C: Cost Methodology Explanation**
+
+A clear text block explaining the calculation:
+
+**"How We Calculate Costs"**
+
+**Baseline Cost:** For each employee, the baseline cost is provided directly in the input data. This represents the estimated cost of an individual ride for that employee. The total baseline cost is the sum of all individual baseline costs.
+
+**Optimized Cost:** The optimized cost is calculated as the sum of operational costs for all vehicles used:
+- For each vehicle: Distance traveled (km) × Cost per kilometer (from vehicle data)
+- Total = Sum across all vehicles and all trips
+
+**Savings:** The difference between baseline and optimized costs.
+
+---
+
+**Section D: Per-Vehicle Cost Analysis**
+
+A detailed table:
+
+| Vehicle ID | Type | Fuel | Trips | Distance (km) | Cost/km | Total Cost | Passengers | Cost/Passenger |
+
+**Totals row** at bottom sums distance and total cost.
+
+Each row expandable to show trip-by-trip breakdown:
+- Trip 1: X km, ₹Y, Z passengers
+- Trip 2: X km, ₹Y, Z passengers
+
+---
+
+**Section E: Per-Employee Cost Impact**
+
+A summary showing:
+
+**Average baseline cost per employee:** ₹X
+**Average optimized cost per employee:** ₹X (total optimized ÷ total employees)
+**Average savings per employee:** ₹X
+
+A small histogram showing distribution of individual baseline costs, helping understand demand variability.
+
+---
+
+**Section F: Projection Calculator**
+
+An interactive section:
+
+**"If this optimization were applied regularly:"**
+
+Input selector: Frequency — Daily / Weekly / Monthly
+
+Based on selection, show:
+- Trips per period: X
+- Cost savings per period: ₹X
+- Annual projection: ₹X saved per year
+
+Optional input: "Optimizations per day" slider for custom projections.
+
+---
+
+**Section G: Download Financial Report**
+
+Button: "Generate PDF Financial Summary"
+
+Creates a professional, printable document with:
+- Executive summary of savings
+- Methodology explanation
+- All charts and tables
+- Suitable for stakeholder presentations
+
+---
+
+### 11. Export & Reports
+
+**Purpose:** Enable data portability, stakeholder communication, and system integration
+
+**Layout Philosophy:**
+A clean export center with clear categories and one-click downloads.
+
+---
+
+**Section A: Quick Exports**
+
+A grid of export cards:
+
+**Employee Assignments (Excel)**
+- Contains: Full employee assignment table with all columns
+- Format: .xlsx
+- "Download" button
+
+**Vehicle Routes (Excel)**
+- Contains: All vehicles with their trip details, sequences, distances, costs
+- Format: .xlsx
+- "Download" button
+
+**Constraint Report (PDF)**
+- Contains: Full constraint compliance report
+- Format: .pdf
+- "Download" button
+
+**Financial Summary (PDF)**
+- Contains: Cost analysis with all charts and tables
+- Format: .pdf
+- "Download" button
+
+**Complete Results (JSON)**
+- Contains: All optimization outputs in structured format
+- Format: .json
+- For developers and system integration
+- "Download" button
+
+**Map Screenshots**
+- High-resolution PNG images of the optimized routes map
+- Options: Full map, individual vehicle routes
+- "Generate & Download" button
+
+---
+
+**Section B: Custom Report Builder**
+
+A configuration panel:
+
+**Select sections to include:**
+- ☑ Executive Summary
+- ☑ Constraint Compliance
+- ☑ Route Visualizations
+- ☑ Vehicle Fleet Analysis
+- ☑ Employee Assignments
+- ☑ Cost Breakdown
+- ☑ Methodology Notes
+
+**Report format:** PDF / Excel / Both
+
+**"Generate Custom Report"** button
+
+---
+
+**Section C: Data Persistence Note**
+
+An informational banner:
+
+"Your optimization results are saved in your browser's local storage and will be available in Session History on your next visit. To save results permanently, please download the exports above."
+
+Option to "Clear local storage" with confirmation.
+
+---
+
+## Design System Principles
+
+## Image and Illustration Guidance
+
+Throughout the application, use imagery strategically to enhance understanding and create visual appeal without overwhelming data-heavy pages.
+
+### Landing Page Hero
+*Abstract network visualization with animated nodes and connections. Suggests intelligent optimization without being literal. Brand colors (navy, teal). Subtle motion.*
+
+### Empty States
+*When no data exists (e.g., first visit, no history), show friendly illustrations of the feature being explained. Example: An illustration of a route being optimized with a progress indicator for the "no session history yet" state.*
+
+### Processing Page Background
+*Very subtle, abstract route-like lines drifting slowly at low opacity. Creates atmosphere without distraction.*
+
+### Map Base Style
+*Clean, modern map tiles. Light background with minimal labels. Roads clearly visible. No satellite imagery — vector only.*
+
+### Vehicle Icons
+*Consistent set of vehicle silhouettes: motorcycle, sedan, minivan. Used throughout in cards, map markers, and tables.*
+
+### Status Illustrations
+*For the constraint compliance page, consider a small illustration header showing a checklist or validation theme. For cost savings, a subtle chart/growth visual.*
+
+### Export Page
+*Small icons for each export type (Excel icon, PDF icon, JSON icon) — recognizable file type representations.*
+
+---
+
+## Interaction Patterns
+
+### Progressive Disclosure
+
+Never overwhelm users with all information at once. Every page follows: Summary first → Details on demand.
+
+Tables have expandable rows. Cards have detail drawers. Sections are collapsible. Users control how deep they go.
+
+### Contextual Help
+
+Small "?" or "ⓘ" icons next to complex metrics or unfamiliar terms. Clicking/hovering reveals a tooltip or popover explaining the concept.
+
+Example: Next to "Baseline Cost" — "The individual ride cost for this employee as specified in your input data"
+
+### Persistence with Local Storage
+
+Session history and settings persist via browser local storage. On return visits, users see their previous sessions and can pick up where they left off.
+
+Clear data option always available for privacy.
+
+### Responsive Behavior
+
+**Desktop (1200px+):** Full experience as described, multi-column layouts, side-by-side panels.
+
+**Tablet (768-1199px):** Collapsed sidebars by default, stack cards vertically, full-width tables with horizontal scroll.
+
+**Mobile (< 768px):** Map becomes primary view on route explorer. Tables become scrollable cards. Bottom sheet patterns for details. Simplified navigation.
+
+### Keyboard Navigation
+
+All interactive elements accessible via keyboard. Logical tab order. Visible focus states. Screen reader labels for icons and graphics.
+
+### Error Handling
+
+Clear, friendly error messages. Never just "Error occurred" — always explain what went wrong and how to fix it.
+
+Validation errors highlight specific fields/rows. Success confirmations are brief and dismissible.
+
+---

@@ -7,6 +7,10 @@
 *.obj
 
 output/*.json
+compare_solutions.py
+json.hpp
+uploads
+
 ##############
 # Python virtual env
 ##############
