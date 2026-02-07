@@ -40,7 +40,7 @@ public:
         
         int n_emp = emps.size();
         int n_veh = virt_vehs.size();
-        int trips_per_vehicle = 4;
+        int trips_per_vehicle = TRIPS_PER_VEHICLE;
         
         routes.clear();
         routes.resize(n_veh);

@@ -35,7 +35,8 @@ private:
         VIOLATION_REMOVAL = 4,
         CONSOLIDATION_REMOVAL = 5,
         CROSS_VEHICLE_REMOVAL = 6,
-        NUM_DESTROY_OPS = 7
+        VEHICLE_ELIMINATION = 7,
+        NUM_DESTROY_OPS = 8
     };
     
     enum RepairOperator {
@@ -75,9 +76,10 @@ private:
 public:
     AdaptiveLargeNeighborhoodSearch() : rng(std::random_device{}()) {
         destroy_weights.resize(NUM_DESTROY_OPS, 1.0);
-        // Give consolidation and cross-vehicle higher initial weight
+        // Give consolidation, cross-vehicle, and vehicle elimination higher initial weight
         destroy_weights[CONSOLIDATION_REMOVAL] = 2.0;
         destroy_weights[CROSS_VEHICLE_REMOVAL] = 1.5;
+        destroy_weights[VEHICLE_ELIMINATION] = 2.5;
         repair_weights.resize(NUM_REPAIR_OPS, 1.0);
         repair_weights[BATCHING_INSERTION] = 2.0;  // Boost batching
         destroy_attempts.resize(NUM_DESTROY_OPS, 0);
@@ -105,21 +107,6 @@ public:
         int total_hard() const { return hard_time + pref; }
     };
     
-    AllViolations count_all_violations(const std::vector<std::vector<int>>& routes,
-                                       const std::vector<Vehicle>& vehs,
-                                       const std::vector<Employee>& emps) const {
-        AllViolations av = {0, 0, 0};
-        for (size_t v = 0; v < routes.size(); v++) {
-            if (routes[v].empty()) continue;
-            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
-            ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
-            av.hard_time += vc.hard_time_violations;
-            av.pref += vc.pref_violations;
-            av.total_lateness += vc.total_lateness;
-        }
-        return av;
-    }
-    
     // Cost function with PRIORITY ORDER:
     //   0. Unassigned employees (UNASSIGNED_PENALTY each)
     //   1. Hard violations (HARD_VIOLATION_PENALTY each + lateness penalty)
@@ -128,14 +115,29 @@ public:
     static constexpr double HARD_VIOLATION_PENALTY = 50000.0;
     static constexpr double LATENESS_PENALTY_PER_MIN = 500.0;
     
-    double calculate_cost(const std::vector<std::vector<int>>& routes,
-                         const std::vector<Vehicle>& vehs,
-                         const std::vector<Employee>& emps,
-                         const Metadata& meta) const {
+    // Combined cost + violation calculation in a single pass (avoids double simulate_route)
+    struct CostResult {
+        double cost;
+        int hard_violations;
+    };
+    
+    // Per-route cost cache for delta evaluation (opt 7)
+    struct RouteCostEntry {
+        double dist_cost;     // distance * cost_per_km
+        double time;          // office_arrival - available_from
+        int hard_time;        // hard time violations
+        int pref;             // preference violations
+        int total_lateness;   // total lateness minutes
+    };
+    std::vector<RouteCostEntry> route_cache;
+    
+    CostResult calculate_cost_and_violations(const std::vector<std::vector<int>>& routes,
+                                              const std::vector<Vehicle>& vehs,
+                                              const std::vector<Employee>& emps,
+                                              const Metadata& meta) const {
         double total_dist_cost = 0.0;
         double total_time = 0.0;
         int assigned = 0;
-        
         AllViolations av = {0, 0, 0};
         
         for (size_t v = 0; v < routes.size(); v++) {
@@ -150,18 +152,116 @@ public:
             av.total_lateness += vc.total_lateness;
         }
         
-        // Score = cost_weight * cost + time_weight * time
         double score = meta.cost_weight * total_dist_cost + meta.time_weight * total_time;
-        
-        // PRIORITY 0: Missing employees get highest penalty
         int unassigned_count = total_employees - assigned;
         score += unassigned_count * UNASSIGNED_PENALTY;
-        
-        // PRIORITY 1: Hard violations (time + preference) get very heavy penalty
         score += av.total_hard() * HARD_VIOLATION_PENALTY;
         score += av.total_lateness * LATENESS_PENALTY_PER_MIN;
         
-        return score;
+        return {score, av.total_hard()};
+    }
+    
+    // ======================== DELTA-BASED COST EVALUATION (OPT 7) ========================
+    // Build the per-route cost cache (full simulation of all routes)
+    void build_route_cache(const std::vector<std::vector<int>>& routes,
+                           const std::vector<Vehicle>& vehs,
+                           const std::vector<Employee>& emps) {
+        route_cache.resize(routes.size());
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].empty()) {
+                route_cache[v] = {0, 0, 0, 0, 0};
+            } else {
+                RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                route_cache[v] = {
+                    sim.total_distance * vehs[v].cost_per_km,
+                    (double)(sim.office_arrival - vehs[v].available_from),
+                    vc.hard_time_violations,
+                    vc.pref_violations,
+                    vc.total_lateness
+                };
+            }
+        }
+    }
+    
+    // Compute total cost from route cache
+    CostResult cost_from_cache(const Metadata& meta, int assigned) const {
+        double total_dist_cost = 0, total_time = 0;
+        AllViolations av = {0, 0, 0};
+        for (size_t v = 0; v < route_cache.size(); v++) {
+            total_dist_cost += route_cache[v].dist_cost;
+            total_time += route_cache[v].time;
+            av.hard_time += route_cache[v].hard_time;
+            av.pref += route_cache[v].pref;
+            av.total_lateness += route_cache[v].total_lateness;
+        }
+        double score = meta.cost_weight * total_dist_cost + meta.time_weight * total_time;
+        int unassigned_count = total_employees - assigned;
+        score += unassigned_count * UNASSIGNED_PENALTY;
+        score += av.total_hard() * HARD_VIOLATION_PENALTY;
+        score += av.total_lateness * LATENESS_PENALTY_PER_MIN;
+        return {score, av.total_hard()};
+    }
+    
+    // Update cache for only the modified routes, then compute total cost
+    CostResult delta_evaluate(const std::vector<std::vector<int>>& routes,
+                              const std::vector<Vehicle>& vehs,
+                              const std::vector<Employee>& emps,
+                              const Metadata& meta,
+                              const std::vector<int>& modified_vehicles) {
+        int assigned = count_assigned(routes);
+        for (int v : modified_vehicles) {
+            if (routes[v].empty()) {
+                route_cache[v] = {0, 0, 0, 0, 0};
+            } else {
+                RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                route_cache[v] = {
+                    sim.total_distance * vehs[v].cost_per_km,
+                    (double)(sim.office_arrival - vehs[v].available_from),
+                    vc.hard_time_violations,
+                    vc.pref_violations,
+                    vc.total_lateness
+                };
+            }
+        }
+        return cost_from_cache(meta, assigned);
+    }
+    
+    // ======================== CP-GUIDED FEASIBILITY CHECK (OPT 6) ========================
+    // Quick check using ConstraintEngine data to prune obviously infeasible insertions.
+    // Returns false if inserting `emp` into `route` on vehicle `v` is definitely infeasible.
+    bool cp_quick_feasible(int emp, const std::vector<int>& route, int v,
+                           const std::vector<Vehicle>& vehs,
+                           const std::vector<Employee>& emps) const {
+        if (!cp_ptr) return true; // No CP engine, skip pruning
+        
+        // Check vehicle preference compatibility
+        if (emp < (int)cp_ptr->employee_vars.size()) {
+            if (!cp_ptr->employee_vars[emp].is_vehicle_valid(v)) {
+                return false; // CP pruned this vehicle for this employee
+            }
+        }
+        
+        // Check incompatibility with existing route members
+        for (int existing : route) {
+            if (!cp_ptr->are_compatible(emp, existing)) {
+                return false; // Time-incompatible or sharing-pref violation
+            }
+        }
+        
+        // Quick capacity check
+        if ((int)route.size() >= vehs[v].capacity) return false;
+        
+        return true;
+    }
+    
+    // Backward-compatible wrapper
+    double calculate_cost(const std::vector<std::vector<int>>& routes,
+                         const std::vector<Vehicle>& vehs,
+                         const std::vector<Employee>& emps,
+                         const Metadata& meta) const {
+        return calculate_cost_and_violations(routes, vehs, emps, meta).cost;
     }
     
     int select_operator(const std::vector<double>& weights) {
@@ -220,10 +320,11 @@ public:
                 for (size_t v = 0; v < routes.size(); v++) {
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
-                        std::vector<int> temp = routes[v];
-                        temp.insert(temp.begin() + pos, emp);
+                        routes[v].insert(routes[v].begin() + pos, emp);
                         int h = 0, s = 0;
-                        if (validate_full_route(temp, vehs[v], emps, h, s, enforce_soft, meta)) {
+                        bool valid = validate_full_route(routes[v], vehs[v], emps, h, s, enforce_soft, meta);
+                        routes[v].erase(routes[v].begin() + pos);
+                        if (valid) {
                             int prev = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                             int curr = emps[emp].node_idx;
                             int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
@@ -251,10 +352,11 @@ public:
                 for (size_t v = 0; v < routes.size(); v++) {
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
-                        std::vector<int> temp = routes[v];
-                        temp.insert(temp.begin() + pos, emp);
+                        routes[v].insert(routes[v].begin() + pos, emp);
                         int h = 0, s = 0;
-                        if (validate_full_route(temp, vehs[v], emps, h, s, false, meta)) {
+                        bool valid = validate_full_route(routes[v], vehs[v], emps, h, s, false, meta);
+                        routes[v].erase(routes[v].begin() + pos);
+                        if (valid) {
                             int prev = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                             int curr = emps[emp].node_idx;
                             int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
@@ -283,15 +385,15 @@ public:
                 for (size_t v = 0; v < routes.size(); v++) {
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
-                        std::vector<int> temp = routes[v];
-                        temp.insert(temp.begin() + pos, emp);
+                        routes[v].insert(routes[v].begin() + pos, emp);
                         int h = 0, s = 0;
                         // Allow hard violations — just measure how bad
-                        validate_full_route(temp, vehs[v], emps, h, s, false, meta, true);
+                        validate_full_route(routes[v], vehs[v], emps, h, s, false, meta, true);
                         
                         // Use shared simulation + violation counting
-                        RouteSimResult sim = simulate_route(temp, vehs[v], emps);
-                        ViolationCount vc = count_route_violations(temp, vehs[v], emps, sim.office_arrival);
+                        RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                        ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                        routes[v].erase(routes[v].begin() + pos);
                         
                         // Cost = heavy penalty per violation + lateness + distance cost
                         double cost = h * HARD_VIOLATION_PENALTY;
@@ -356,15 +458,15 @@ public:
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
                     
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
-                        std::vector<int> temp = routes[v];
-                        temp.insert(temp.begin() + pos, emp);
+                        routes[v].insert(routes[v].begin() + pos, emp);
                         int h = 0, s = 0;
                         // ALLOW hard violations — just measure them
-                        validate_full_route(temp, vehs[v], emps, h, s, false, meta, true);
+                        validate_full_route(routes[v], vehs[v], emps, h, s, false, meta, true);
                         
                         // Use shared simulation + violation counting
-                        RouteSimResult sim = simulate_route(temp, vehs[v], emps);
-                        ViolationCount vc = count_route_violations(temp, vehs[v], emps, sim.office_arrival);
+                        RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                        ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                        routes[v].erase(routes[v].begin() + pos);
                         
                         double dist_cost = 0;
                         {
@@ -728,6 +830,72 @@ public:
         return removed;
     }
     
+    // VEHICLE ELIMINATION: Removes ALL employees from the most expensive active vehicle.
+    // Forces redistribution to cheaper vehicles, reducing total cost.
+    // This is the key operator for finding solutions that use fewer vehicles.
+    std::vector<int> destroy_vehicle_elimination(std::vector<std::vector<int>>& routes,
+                                                  int /*num_remove*/,
+                                                  const std::vector<Vehicle>& vehs) {
+        std::vector<int> removed;
+        
+        // Find all active physical vehicles and their total cost
+        struct PhysVehInfo {
+            int phys_id;
+            double total_cost;
+            int total_emps;
+            std::vector<int> virt_indices;
+        };
+        std::map<int, PhysVehInfo> phys_info;
+        
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].empty()) continue;
+            int pid = vehs[v].physical_id;
+            if (phys_info.find(pid) == phys_info.end()) {
+                phys_info[pid] = {pid, 0.0, 0, {}};
+            }
+            phys_info[pid].virt_indices.push_back((int)v);
+            phys_info[pid].total_emps += (int)routes[v].size();
+            // Estimate cost
+            for (size_t vi = 0; vi < route_cache.size() && vi == (size_t)v; ) {
+                phys_info[pid].total_cost += route_cache[v].dist_cost;
+                break;
+            }
+        }
+        
+        if (phys_info.size() <= 1) return removed; // Need at least 2 active vehicles
+        
+        // Strategy: Pick vehicle to eliminate based on cost-effectiveness
+        // Higher cost_per_km and fewer employees = better candidate for elimination
+        std::vector<std::pair<double, int>> candidates;
+        for (auto& [pid, info] : phys_info) {
+            // Score: higher = more worth eliminating
+            // Use cost_per_km of the physical vehicle as proxy
+            double cpm = 0;
+            for (int vi : info.virt_indices) cpm = std::max(cpm, vehs[vi].cost_per_km);
+            double score = cpm / std::max(1, info.total_emps); // expensive per employee = eliminate
+            candidates.push_back({score, pid});
+        }
+        std::sort(candidates.begin(), candidates.end(),
+                 [](const auto& a, const auto& b) { return a.first > b.first; });
+        
+        // Sometimes pick the most expensive, sometimes random for diversity
+        int pick = 0;
+        std::uniform_real_distribution<> d01(0, 1);
+        if (d01(rng) < 0.3 && candidates.size() > 1) {
+            std::uniform_int_distribution<> di(0, (int)candidates.size() - 1);
+            pick = di(rng);
+        }
+        int target_pid = candidates[pick].second;
+        
+        // Remove ALL employees from this physical vehicle
+        for (int vi : phys_info[target_pid].virt_indices) {
+            for (int e : routes[vi]) removed.push_back(e);
+            routes[vi].clear();
+        }
+        
+        return removed;
+    }
+    
     // ======================== REPAIR OPERATORS ========================
     // Every repair operator ends with force_insert_all() to guarantee
     // that ALL employees are assigned. No employee is ever dropped.
@@ -751,21 +919,24 @@ public:
                 int emp = unassigned[ue];
                 for (size_t v = 0; v < routes.size(); v++) {
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
+                    // CP-guided pruning (opt 6)
+                    if (!cp_quick_feasible(emp, routes[v], (int)v, vehs, emps)) continue;
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
                         int prev = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                         int curr = emps[emp].node_idx;
                         int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
                         double delta_dist = dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next];
-                        // Use weighted score: cost_weight * $ + time_weight * time
                         double delta_dollars = delta_dist * vehs[v].cost_per_km;
                         double delta_time = (delta_dist / vehs[v].speed_kmph) * 60.0;
                         double cost = meta.cost_weight * delta_dollars + meta.time_weight * delta_time;
                         
                         if (cost < best_cost) {
-                            std::vector<int> temp = routes[v];
-                            temp.insert(temp.begin() + pos, emp);
+                            // In-place insert, validate, then erase — avoids temp vector copy
+                            routes[v].insert(routes[v].begin() + pos, emp);
                             int h = 0, s = 0;
-                            if (validate_full_route(temp, vehs[v], emps, h, s, enforce_soft, meta)) {
+                            bool valid = validate_full_route(routes[v], vehs[v], emps, h, s, enforce_soft, meta);
+                            routes[v].erase(routes[v].begin() + pos);
+                            if (valid) {
                                 best_cost = cost;
                                 best_emp = (int)ue;
                                 best_veh = (int)v;
@@ -819,16 +990,20 @@ public:
                 
                 for (size_t v = 0; v < routes.size(); v++) {
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
+                    // CP-guided pruning (opt 6)
+                    if (!cp_quick_feasible(emp, routes[v], (int)v, vehs, emps)) continue;
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
                         int prev = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                         int curr = emps[emp].node_idx;
                         int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
                         double cost = (dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next]) * vehs[v].cost_per_km;
                         
-                        std::vector<int> temp = routes[v];
-                        temp.insert(temp.begin() + pos, emp);
+                        // In-place insert, validate, erase — avoids temp vector copy
+                        routes[v].insert(routes[v].begin() + pos, emp);
                         int h = 0, s = 0;
-                        if (validate_full_route(temp, vehs[v], emps, h, s, enforce_soft, meta)) {
+                        bool valid = validate_full_route(routes[v], vehs[v], emps, h, s, enforce_soft, meta);
+                        routes[v].erase(routes[v].begin() + pos);
+                        if (valid) {
                             costs.push_back(cost);
                             positions.push_back({(int)v, (int)pos});
                         }
@@ -896,15 +1071,19 @@ public:
                 
                 for (size_t v = 0; v < routes.size(); v++) {
                     if ((int)routes[v].size() >= vehs[v].capacity) continue;
+                    // CP-guided pruning (opt 6)
+                    if (!cp_quick_feasible(emp, routes[v], (int)v, vehs, emps)) continue;
                     for (size_t pos = 0; pos <= routes[v].size(); pos++) {
                         int prev_node = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                         double d = dist_matrix[prev_node][emp_node];
                         
                         if (d < best_dist) {
-                            std::vector<int> temp = routes[v];
-                            temp.insert(temp.begin() + pos, emp);
+                            // In-place insert, validate, erase — avoids temp vector copy
+                            routes[v].insert(routes[v].begin() + pos, emp);
                             int h = 0, s = 0;
-                            if (validate_full_route(temp, vehs[v], emps, h, s, enforce_soft, meta)) {
+                            bool valid = validate_full_route(routes[v], vehs[v], emps, h, s, enforce_soft, meta);
+                            routes[v].erase(routes[v].begin() + pos);
+                            if (valid) {
                                 best_dist = d;
                                 best_emp = (int)ue;
                                 best_veh = (int)v;
@@ -973,13 +1152,12 @@ public:
                 int best_pos = -1;
                 
                 for (size_t pos = 0; pos <= routes[v].size(); pos++) {
-                    std::vector<int> temp = routes[v];
-                    temp.insert(temp.begin() + pos, emp);
+                    routes[v].insert(routes[v].begin() + pos, emp);
                     int h = 0, s = 0;
-                    if (validate_full_route(temp, vehs[v], emps, h, s, enforce_soft, meta)) {
+                    if (validate_full_route(routes[v], vehs[v], emps, h, s, enforce_soft, meta)) {
                         int prev = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                         int curr = emps[emp].node_idx;
-                        int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
+                        int next = (pos + 1 >= routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos+1]].node_idx;
                         double delta = dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next];
                         double cost = meta.cost_weight * delta * vehs[v].cost_per_km +
                                       meta.time_weight * (delta / vehs[v].speed_kmph) * 60.0;
@@ -988,6 +1166,7 @@ public:
                             best_pos = (int)pos;
                         }
                     }
+                    routes[v].erase(routes[v].begin() + pos);
                 }
                 
                 if (best_pos >= 0) {
@@ -1008,6 +1187,265 @@ public:
         // MANDATORY: place ALL remaining employees
         if (!unassigned.empty()) {
             force_insert_all(routes, unassigned, vehs, emps, meta, enforce_soft);
+        }
+    }
+    
+    // ======================== INTRA-ROUTE LOCAL SEARCH ========================
+    // Applies relocate, exchange, and 2-opt within each route to improve ordering.
+    // Uses first-improvement strategy for speed.
+    void apply_local_search(std::vector<std::vector<int>>& routes,
+                            const std::vector<Vehicle>& vehs,
+                            const std::vector<Employee>& emps,
+                            const Metadata& /*meta*/) {
+        for (size_t v = 0; v < routes.size(); v++) {
+            if ((int)routes[v].size() < 2) continue;
+            
+            bool improved = true;
+            int passes = 0;
+            while (improved && passes < 3) {
+                improved = false;
+                passes++;
+                
+                // Relocate
+                for (int from = 0; from < (int)routes[v].size() && !improved; from++) {
+                    for (int to = 0; to <= (int)routes[v].size() && !improved; to++) {
+                        if (from == to || from + 1 == to) continue;
+                        MoveDelta md = LocalSearchOps::relocate_delta(
+                            routes[v], from, to, vehs[v].start_node, emps, vehs[v].speed_kmph);
+                        if (md.dist_cost < -1e-6) {
+                            LocalSearchOps::apply_relocate(routes[v], from, to);
+                            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                            ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                            if (vc.hard_time_violations == 0) {
+                                improved = true;
+                            } else {
+                                // Undo: reverse the relocate
+                                int actual_to = (from < to) ? (to - 1) : to;
+                                LocalSearchOps::apply_relocate(routes[v], actual_to, from);
+                            }
+                        }
+                    }
+                }
+                if (improved) continue;
+                
+                // Exchange
+                for (int a = 0; a < (int)routes[v].size() && !improved; a++) {
+                    for (int b = a + 1; b < (int)routes[v].size() && !improved; b++) {
+                        MoveDelta md = LocalSearchOps::exchange_delta(
+                            routes[v], a, b, vehs[v].start_node, emps, vehs[v].speed_kmph);
+                        if (md.dist_cost < -1e-6) {
+                            LocalSearchOps::apply_exchange(routes[v], a, b);
+                            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                            ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                            if (vc.hard_time_violations == 0) {
+                                improved = true;
+                            } else {
+                                LocalSearchOps::apply_exchange(routes[v], a, b); // undo swap
+                            }
+                        }
+                    }
+                }
+                if (improved) continue;
+                
+                // 2-opt
+                for (int i = 0; i < (int)routes[v].size() - 1 && !improved; i++) {
+                    for (int j = i + 1; j < (int)routes[v].size() && !improved; j++) {
+                        MoveDelta md = LocalSearchOps::twoopt_delta(
+                            routes[v], i, j, vehs[v].start_node, emps, vehs[v].speed_kmph);
+                        if (md.dist_cost < -1e-6) {
+                            LocalSearchOps::apply_2opt(routes[v], i, j);
+                            RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                            ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                            if (vc.hard_time_violations == 0) {
+                                improved = true;
+                            } else {
+                                LocalSearchOps::apply_2opt(routes[v], i, j); // undo reverse
+                            }
+                        }
+                    }
+                }
+                if (improved) continue;
+                
+                // Or-opt: move segments of 2 or 3 consecutive employees (opt 8)
+                for (int seg_len = 2; seg_len <= std::min(3, (int)routes[v].size()) && !improved; seg_len++) {
+                    for (int from = 0; from + seg_len - 1 < (int)routes[v].size() && !improved; from++) {
+                        for (int to = 0; to <= (int)routes[v].size() - seg_len && !improved; to++) {
+                            if (to >= from && to <= from + seg_len) continue; // skip overlap
+                            MoveDelta md = LocalSearchOps::oropt_delta(
+                                routes[v], from, seg_len, to, vehs[v].start_node, emps, vehs[v].speed_kmph);
+                            if (md.dist_cost < -1e-6) {
+                                // Save route for undo
+                                auto saved = routes[v];
+                                LocalSearchOps::apply_oropt(routes[v], from, seg_len, to);
+                                RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                                ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                                if (vc.hard_time_violations == 0) {
+                                    improved = true;
+                                } else {
+                                    routes[v] = saved; // undo
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // ======================== INTER-ROUTE MOVES ========================
+    // Tries moving an employee from one route to another, or swapping between routes.
+    // Cost-aware: accounts for different cost_per_km between vehicles.
+    // First-improvement strategy.
+    void apply_inter_route_moves(std::vector<std::vector<int>>& routes,
+                                  const std::vector<Vehicle>& vehs,
+                                  const std::vector<Employee>& emps,
+                                  const Metadata& /*meta*/) {
+        bool improved = true;
+        int passes = 0;
+        while (improved && passes < 3) {
+            improved = false;
+            passes++;
+            
+            // Inter-route relocate: move employee from route v1 to route v2
+            for (size_t v1 = 0; v1 < routes.size() && !improved; v1++) {
+                if (routes[v1].empty()) continue;
+                for (int i = 0; i < (int)routes[v1].size() && !improved; i++) {
+                    int emp = routes[v1][i];
+                    int emp_node = emps[emp].node_idx;
+                    
+                    // Count current violations on v1
+                    RouteSimResult sim_v1_before = simulate_route(routes[v1], vehs[v1], emps);
+                    ViolationCount vc_v1_before = count_route_violations(routes[v1], vehs[v1], emps, sim_v1_before.office_arrival);
+                    int before_violations = vc_v1_before.hard_time_violations + vc_v1_before.pref_violations;
+                    
+                    // Full cost of having this employee on v1 route
+                    int prev1 = (i == 0) ? vehs[v1].start_node : emps[routes[v1][i-1]].node_idx;
+                    int next1 = (i == (int)routes[v1].size()-1) ? OFFICE_NODE : emps[routes[v1][i+1]].node_idx;
+                    double remove_saving = (dist_matrix[prev1][emp_node] + dist_matrix[emp_node][next1]
+                                            - dist_matrix[prev1][next1]) * vehs[v1].cost_per_km;
+                    
+                    for (size_t v2 = 0; v2 < routes.size() && !improved; v2++) {
+                        if (v1 == v2) continue;
+                        if ((int)routes[v2].size() >= vehs[v2].capacity) continue;
+                        
+                        // Count current violations on v2
+                        int v2_before_v = 0;
+                        if (!routes[v2].empty()) {
+                            RouteSimResult sim_v2_b = simulate_route(routes[v2], vehs[v2], emps);
+                            ViolationCount vc_v2_b = count_route_violations(routes[v2], vehs[v2], emps, sim_v2_b.office_arrival);
+                            v2_before_v = vc_v2_b.hard_time_violations + vc_v2_b.pref_violations;
+                        }
+                        int total_before_v = before_violations + v2_before_v;
+                        
+                        for (size_t pos = 0; pos <= routes[v2].size() && !improved; pos++) {
+                            int prev2 = (pos == 0) ? vehs[v2].start_node : emps[routes[v2][pos-1]].node_idx;
+                            int next2 = (pos == routes[v2].size()) ? OFFICE_NODE : emps[routes[v2][pos]].node_idx;
+                            double insert_cost = (dist_matrix[prev2][emp_node] + dist_matrix[emp_node][next2]
+                                                  - dist_matrix[prev2][next2]) * vehs[v2].cost_per_km;
+                            
+                            double net = insert_cost - remove_saving;
+                            if (net < -1e-6 || total_before_v > 0) {
+                                // Try the move: remove from v1, insert into v2
+                                routes[v1].erase(routes[v1].begin() + i);
+                                routes[v2].insert(routes[v2].begin() + pos, emp);
+                                
+                                // Validate both routes — check ALL violations
+                                int v1_after_v = 0;
+                                if (!routes[v1].empty()) {
+                                    RouteSimResult sim1 = simulate_route(routes[v1], vehs[v1], emps);
+                                    ViolationCount vc1 = count_route_violations(routes[v1], vehs[v1], emps, sim1.office_arrival);
+                                    v1_after_v = vc1.hard_time_violations + vc1.pref_violations;
+                                }
+                                RouteSimResult sim2 = simulate_route(routes[v2], vehs[v2], emps);
+                                ViolationCount vc2 = count_route_violations(routes[v2], vehs[v2], emps, sim2.office_arrival);
+                                int v2_after_v = vc2.hard_time_violations + vc2.pref_violations;
+                                int total_after_v = v1_after_v + v2_after_v;
+                                
+                                // Accept if: reduces violations, OR same violations and saves cost
+                                bool accept_move = false;
+                                if (total_after_v < total_before_v) {
+                                    accept_move = true; // fewer violations — always good
+                                } else if (total_after_v == total_before_v && net < -1e-6) {
+                                    accept_move = true; // same violations, lower cost
+                                } else if (total_after_v == 0 && net < -1e-6) {
+                                    accept_move = true; // no violations, saves cost
+                                }
+                                
+                                if (accept_move) {
+                                    improved = true;
+                                } else {
+                                    // Undo
+                                    routes[v2].erase(routes[v2].begin() + pos);
+                                    routes[v1].insert(routes[v1].begin() + i, emp);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (improved) continue;
+            
+            // Inter-route swap: swap employee from v1 with employee from v2
+            // Fixed: properly compare before/after violations
+            for (size_t v1 = 0; v1 < routes.size() && !improved; v1++) {
+                if (routes[v1].empty()) continue;
+                // Compute v1 violations BEFORE swap
+                RouteSimResult sim1_b = simulate_route(routes[v1], vehs[v1], emps);
+                ViolationCount vc1_b = count_route_violations(routes[v1], vehs[v1], emps, sim1_b.office_arrival);
+                int v1_before = vc1_b.hard_time_violations + vc1_b.pref_violations;
+                
+                for (int i = 0; i < (int)routes[v1].size() && !improved; i++) {
+                    for (size_t v2 = v1 + 1; v2 < routes.size() && !improved; v2++) {
+                        if (routes[v2].empty()) continue;
+                        // Compute v2 violations BEFORE swap
+                        RouteSimResult sim2_b = simulate_route(routes[v2], vehs[v2], emps);
+                        ViolationCount vc2_b = count_route_violations(routes[v2], vehs[v2], emps, sim2_b.office_arrival);
+                        int v2_before = vc2_b.hard_time_violations + vc2_b.pref_violations;
+                        int before_v = v1_before + v2_before;
+                        
+                        for (int j = 0; j < (int)routes[v2].size() && !improved; j++) {
+                            int e1 = routes[v1][i], e2 = routes[v2][j];
+                            int n1 = emps[e1].node_idx, n2 = emps[e2].node_idx;
+                            
+                            int p1 = (i == 0) ? vehs[v1].start_node : emps[routes[v1][i-1]].node_idx;
+                            int x1 = (i == (int)routes[v1].size()-1) ? OFFICE_NODE : emps[routes[v1][i+1]].node_idx;
+                            double d1 = (-dist_matrix[p1][n1] - dist_matrix[n1][x1]
+                                         + dist_matrix[p1][n2] + dist_matrix[n2][x1]) * vehs[v1].cost_per_km;
+                            
+                            int p2 = (j == 0) ? vehs[v2].start_node : emps[routes[v2][j-1]].node_idx;
+                            int x2 = (j == (int)routes[v2].size()-1) ? OFFICE_NODE : emps[routes[v2][j+1]].node_idx;
+                            double d2 = (-dist_matrix[p2][n2] - dist_matrix[n2][x2]
+                                         + dist_matrix[p2][n1] + dist_matrix[n1][x2]) * vehs[v2].cost_per_km;
+                            
+                            double net = d1 + d2;
+                            // Try swap if cost improves OR violations exist
+                            if (net < -1e-6 || before_v > 0) {
+                                std::swap(routes[v1][i], routes[v2][j]);
+                                
+                                RouteSimResult sim1 = simulate_route(routes[v1], vehs[v1], emps);
+                                ViolationCount vc1 = count_route_violations(routes[v1], vehs[v1], emps, sim1.office_arrival);
+                                RouteSimResult sim2 = simulate_route(routes[v2], vehs[v2], emps);
+                                ViolationCount vc2 = count_route_violations(routes[v2], vehs[v2], emps, sim2.office_arrival);
+                                int after_v = vc1.hard_time_violations + vc1.pref_violations
+                                            + vc2.hard_time_violations + vc2.pref_violations;
+                                
+                                // Accept if: fewer violations, OR same violations + lower cost
+                                bool accept = false;
+                                if (after_v < before_v) accept = true;
+                                else if (after_v == before_v && net < -1e-6) accept = true;
+                                
+                                if (accept) {
+                                    improved = true;
+                                    // Update cached v1 violations for next iteration
+                                    v1_before = vc1.hard_time_violations + vc1.pref_violations;
+                                } else {
+                                    std::swap(routes[v1][i], routes[v2][j]); // undo
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -1061,16 +1499,27 @@ public:
         }
         
         best_routes = routes;
-        best_cost = calculate_cost(routes, vehs, emps, meta);
-        AllViolations init_av = count_all_violations(routes, vehs, emps);
-        int best_hard_v = init_av.total_hard();
+        CostResult init_cr = calculate_cost_and_violations(routes, vehs, emps, meta);
+        best_cost = init_cr.cost;
+        int best_hard_v = init_cr.hard_violations;
         double current_cost = best_cost;
+        int current_hard_v = best_hard_v;
         auto current_routes = routes;
+        
+        // Build initial route cache for delta evaluation (opt 7)
+        build_route_cache(current_routes, vehs, emps);
         
         double temperature = start_temp;
         int iteration = 0;
         int accept_count = 0, improve_count = 0;
         int segment_iter = 0;
+        
+        // Adaptive reheating state (opt 5)
+        int iters_since_best = 0;
+        int reheat_count = 0;
+        const int REHEAT_THRESHOLD = 500;   // reheat after this many iterations without improvement
+        const int MAX_REHEATS = 5;          // limit total reheats
+        const double REHEAT_FACTOR = 0.5;   // reheat to this fraction of start_temp
         
         std::cout << "Initial cost: $" << best_cost 
                   << " (" << count_assigned(routes) << "/" << total_employees << " assigned"
@@ -1111,6 +1560,11 @@ public:
             destroy_attempts[destroy_op]++;
             
             auto temp_routes = current_routes;
+            // Snapshot which routes are non-empty before destroy (for tracking modifications)
+            std::vector<int> pre_route_sizes(temp_routes.size());
+            for (size_t vi = 0; vi < temp_routes.size(); vi++)
+                pre_route_sizes[vi] = (int)temp_routes[vi].size();
+            
             int total_in_routes = count_assigned(temp_routes);
             
             std::uniform_real_distribution<> pct_dis(min_destroy_pct, max_destroy_pct);
@@ -1125,6 +1579,7 @@ public:
                 case VIOLATION_REMOVAL: removed = destroy_violation(temp_routes, num_remove, vehs, emps); break;
                 case CONSOLIDATION_REMOVAL: removed = destroy_consolidation(temp_routes, num_remove, vehs); break;
                 case CROSS_VEHICLE_REMOVAL: removed = destroy_cross_vehicle(temp_routes, num_remove, vehs, emps); break;
+                case VEHICLE_ELIMINATION: removed = destroy_vehicle_elimination(temp_routes, num_remove, vehs); break;
             }
             
             if (removed.empty()) continue;
@@ -1159,14 +1614,41 @@ public:
                     force_insert_all(temp_routes, missing, vehs, emps, meta, alns_enforce_soft);
             }
             
-            // ===== EVALUATE =====
-            double new_cost = calculate_cost(temp_routes, vehs, emps, meta);
+            // ===== LOCAL SEARCH on modified routes =====
+            apply_local_search(temp_routes, vehs, emps, meta);
+            
+            // ===== INTER-ROUTE MOVES =====
+            apply_inter_route_moves(temp_routes, vehs, emps, meta);
+            
+            // ===== DELTA EVALUATION (opt 7) =====
+            // Only re-simulate routes that changed (comparing sizes with pre-destroy snapshot)
+            std::vector<int> modified_vehicles;
+            for (size_t vi = 0; vi < temp_routes.size(); vi++) {
+                if ((int)temp_routes[vi].size() != pre_route_sizes[vi]) {
+                    modified_vehicles.push_back((int)vi);
+                } else {
+                    // Size same but contents might differ — check
+                    bool same = true;
+                    if (!temp_routes[vi].empty()) {
+                        for (size_t ei = 0; ei < temp_routes[vi].size(); ei++) {
+                            if (temp_routes[vi][ei] != current_routes[vi][ei]) {
+                                same = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (!same) modified_vehicles.push_back((int)vi);
+                }
+            }
+            
+            // Save current cache, update only modified routes
+            auto saved_cache = route_cache;
+            CostResult cr = delta_evaluate(temp_routes, vehs, emps, meta, modified_vehicles);
+            double new_cost = cr.cost;
             double delta = new_cost - current_cost;
             
             bool accept = false;
-            
-            AllViolations new_av = count_all_violations(temp_routes, vehs, emps);
-            int new_hard_v = new_av.total_hard();
+            int new_hard_v = cr.hard_violations;
             
             // Use shared comparison function
             bool is_new_best = is_solution_better(new_hard_v, 0, new_cost,
@@ -1178,14 +1660,25 @@ public:
                 best_hard_v = new_hard_v;
                 best_routes = temp_routes;
                 improve_count++;
+                iters_since_best = 0; // reset reheat counter (opt 5)
                 std::cout << "  ★ NEW BEST: $" << best_cost
                          << " (" << count_assigned(best_routes) << "/" << total_employees
                          << " assigned, hard_v=" << best_hard_v
                          << ", iter " << iteration << ")" << std::endl;
+            } else if (new_hard_v > current_hard_v) {
+                // NEVER accept a solution with MORE hard violations than current
+                // This is the #1 priority: minimize violations first
+                accept = false;
+            } else if (new_hard_v < current_hard_v) {
+                // ALWAYS accept a solution with FEWER hard violations
+                accept = true;
+                improve_count++;
             } else if (delta < 0) {
+                // Same violation count, lower cost — accept
                 accept = true;
                 improve_count++;
             } else {
+                // Same violation count, higher cost — SA probability
                 double prob = std::exp(-delta / temperature);
                 std::uniform_real_distribution<> accept_dis(0.0, 1.0);
                 if (accept_dis(rng) < prob) {
@@ -1196,12 +1689,34 @@ public:
             if (accept) {
                 current_routes = temp_routes;
                 current_cost = new_cost;
+                current_hard_v = new_hard_v;
+                // route_cache already updated by delta_evaluate
                 accept_count++;
                 destroy_successes[destroy_op]++;
                 repair_successes[repair_op]++;
+            } else {
+                // Restore cache to pre-evaluation state
+                route_cache = saved_cache;
             }
             
             temperature *= cooling_rate;
+            iters_since_best++;
+            
+            // ===== ADAPTIVE REHEATING (opt 5) =====
+            if (iters_since_best >= REHEAT_THRESHOLD && reheat_count < MAX_REHEATS) {
+                double new_temp = start_temp * REHEAT_FACTOR;
+                std::cout << "  🔥 REHEAT #" << (reheat_count + 1) 
+                         << ": temp " << temperature << " → " << new_temp
+                         << " (stagnated " << iters_since_best << " iters)" << std::endl;
+                temperature = new_temp;
+                iters_since_best = 0;
+                reheat_count++;
+                // Return to best known solution to diversify from there
+                current_routes = best_routes;
+                current_cost = best_cost;
+                current_hard_v = best_hard_v;
+                build_route_cache(current_routes, vehs, emps);
+            }
         }
         
         // FINAL SAFETY: Ensure best solution has ALL employees
@@ -1230,9 +1745,184 @@ public:
                  << (iteration > 0 ? (100.0 * accept_count / iteration) : 0) << "%)" << std::endl;
         std::cout << "Total improves: " << improve_count << " ("
                  << (iteration > 0 ? (100.0 * improve_count / iteration) : 0) << "%)" << std::endl;
+        std::cout << "Reheats: " << reheat_count << "/" << MAX_REHEATS << std::endl;
         std::cout << std::string(60, '=') << std::endl;
         
+        // ======================== POST-ALNS EXHAUSTIVE OPTIMIZATION ========================
+        // Best-improvement inter-route local search on final best solution.
+        // Tries ALL possible swaps and relocations, picks single best move per pass.
+        post_alns_optimize(best_routes, vehs, emps, meta);
+        best_cost = calculate_cost(best_routes, vehs, emps, meta);
+        
         routes = best_routes;
+    }
+    
+    // ======================== POST-ALNS EXHAUSTIVE OPTIMIZATION ========================
+    void post_alns_optimize(std::vector<std::vector<int>>& routes,
+                            const std::vector<Vehicle>& vehs,
+                            const std::vector<Employee>& emps,
+                            const Metadata& meta) {
+        
+        std::cout << "\n--- Post-ALNS Exhaustive Optimization ---\n";
+        
+        bool improved = true;
+        int pass = 0;
+        
+        while (improved && pass < 100) {
+            improved = false;
+            pass++;
+            
+            double best_improvement = 0; // positive = saving
+            int best_type = -1; // 0=relocate, 1=swap
+            size_t best_v1 = 0, best_v2 = 0;
+            int best_i = 0, best_j = 0;
+            int best_viol_delta = 0;
+            
+            // Pre-compute violations for all non-empty routes
+            std::vector<int> viols(routes.size(), 0);
+            for (size_t v = 0; v < routes.size(); v++) {
+                if (routes[v].empty()) continue;
+                RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                viols[v] = vc.hard_time_violations + vc.pref_violations;
+            }
+            
+            // === BEST-IMPROVEMENT RELOCATIONS ===
+            for (size_t v1 = 0; v1 < routes.size(); v1++) {
+                if (routes[v1].empty()) continue;
+                for (int i = 0; i < (int)routes[v1].size(); i++) {
+                    int emp = routes[v1][i];
+                    int emp_node = emps[emp].node_idx;
+                    
+                    int prev1 = (i == 0) ? vehs[v1].start_node : emps[routes[v1][i-1]].node_idx;
+                    int next1 = (i == (int)routes[v1].size()-1) ? OFFICE_NODE : emps[routes[v1][i+1]].node_idx;
+                    double remove_saving = (dist_matrix[prev1][emp_node] + dist_matrix[emp_node][next1]
+                                            - dist_matrix[prev1][next1]) * vehs[v1].cost_per_km;
+                    
+                    for (size_t v2 = 0; v2 < routes.size(); v2++) {
+                        if (v1 == v2) continue;
+                        if ((int)routes[v2].size() >= vehs[v2].capacity) continue;
+                        
+                        int total_before = viols[v1] + viols[v2];
+                        
+                        for (size_t pos = 0; pos <= routes[v2].size(); pos++) {
+                            int prev2 = (pos == 0) ? vehs[v2].start_node : emps[routes[v2][pos-1]].node_idx;
+                            int next2 = (pos == routes[v2].size()) ? OFFICE_NODE : emps[routes[v2][pos]].node_idx;
+                            double insert_cost = (dist_matrix[prev2][emp_node] + dist_matrix[emp_node][next2]
+                                                  - dist_matrix[prev2][next2]) * vehs[v2].cost_per_km;
+                            double net = insert_cost - remove_saving;
+                            
+                            // Try move
+                            routes[v1].erase(routes[v1].begin() + i);
+                            routes[v2].insert(routes[v2].begin() + pos, emp);
+                            
+                            int v1_after = 0, v2_after = 0;
+                            if (!routes[v1].empty()) {
+                                RouteSimResult s1 = simulate_route(routes[v1], vehs[v1], emps);
+                                ViolationCount vc1 = count_route_violations(routes[v1], vehs[v1], emps, s1.office_arrival);
+                                v1_after = vc1.hard_time_violations + vc1.pref_violations;
+                            }
+                            {
+                                RouteSimResult s2 = simulate_route(routes[v2], vehs[v2], emps);
+                                ViolationCount vc2 = count_route_violations(routes[v2], vehs[v2], emps, s2.office_arrival);
+                                v2_after = vc2.hard_time_violations + vc2.pref_violations;
+                            }
+                            int total_after = v1_after + v2_after;
+                            int viol_delta = total_after - total_before;
+                            
+                            double improvement = -net + (-viol_delta) * 100000.0;
+                            
+                            if (viol_delta < 0 || (viol_delta == 0 && net < -1e-6)) {
+                                if (improvement > best_improvement) {
+                                    best_improvement = improvement;
+                                    best_type = 0;
+                                    best_v1 = v1; best_i = i;
+                                    best_v2 = v2; best_j = (int)pos;
+                                    best_viol_delta = viol_delta;
+                                }
+                            }
+                            
+                            // Undo
+                            routes[v2].erase(routes[v2].begin() + pos);
+                            routes[v1].insert(routes[v1].begin() + i, emp);
+                        }
+                    }
+                }
+            }
+            
+            // === BEST-IMPROVEMENT SWAPS ===
+            for (size_t v1 = 0; v1 < routes.size(); v1++) {
+                if (routes[v1].empty()) continue;
+                for (int i = 0; i < (int)routes[v1].size(); i++) {
+                    for (size_t v2 = v1 + 1; v2 < routes.size(); v2++) {
+                        if (routes[v2].empty()) continue;
+                        
+                        int total_before = viols[v1] + viols[v2];
+                        
+                        for (int j = 0; j < (int)routes[v2].size(); j++) {
+                            int e1 = routes[v1][i], e2 = routes[v2][j];
+                            int n1 = emps[e1].node_idx, n2 = emps[e2].node_idx;
+                            
+                            int p1 = (i == 0) ? vehs[v1].start_node : emps[routes[v1][i-1]].node_idx;
+                            int x1 = (i == (int)routes[v1].size()-1) ? OFFICE_NODE : emps[routes[v1][i+1]].node_idx;
+                            double d1 = (-dist_matrix[p1][n1] - dist_matrix[n1][x1]
+                                         + dist_matrix[p1][n2] + dist_matrix[n2][x1]) * vehs[v1].cost_per_km;
+                            
+                            int p2 = (j == 0) ? vehs[v2].start_node : emps[routes[v2][j-1]].node_idx;
+                            int x2 = (j == (int)routes[v2].size()-1) ? OFFICE_NODE : emps[routes[v2][j+1]].node_idx;
+                            double d2 = (-dist_matrix[p2][n2] - dist_matrix[n2][x2]
+                                         + dist_matrix[p2][n1] + dist_matrix[n1][x2]) * vehs[v2].cost_per_km;
+                            
+                            double net = d1 + d2;
+                            
+                            // Try swap
+                            std::swap(routes[v1][i], routes[v2][j]);
+                            
+                            RouteSimResult s1 = simulate_route(routes[v1], vehs[v1], emps);
+                            ViolationCount vc1 = count_route_violations(routes[v1], vehs[v1], emps, s1.office_arrival);
+                            RouteSimResult s2 = simulate_route(routes[v2], vehs[v2], emps);
+                            ViolationCount vc2 = count_route_violations(routes[v2], vehs[v2], emps, s2.office_arrival);
+                            int total_after = vc1.hard_time_violations + vc1.pref_violations
+                                            + vc2.hard_time_violations + vc2.pref_violations;
+                            int viol_delta = total_after - total_before;
+                            
+                            double improvement = -net + (-viol_delta) * 100000.0;
+                            
+                            if (viol_delta < 0 || (viol_delta == 0 && net < -1e-6)) {
+                                if (improvement > best_improvement) {
+                                    best_improvement = improvement;
+                                    best_type = 1;
+                                    best_v1 = v1; best_i = i;
+                                    best_v2 = v2; best_j = j;
+                                    best_viol_delta = viol_delta;
+                                }
+                            }
+                            
+                            // Undo
+                            std::swap(routes[v1][i], routes[v2][j]);
+                        }
+                    }
+                }
+            }
+            
+            // Apply best move found
+            if (best_type == 0) {
+                int emp = routes[best_v1][best_i];
+                routes[best_v1].erase(routes[best_v1].begin() + best_i);
+                routes[best_v2].insert(routes[best_v2].begin() + best_j, emp);
+                improved = true;
+                std::cout << "  Relocate emp " << emp << ": route " << best_v1
+                         << " -> " << best_v2 << " (save=$" << best_improvement
+                         << ", viols:" << best_viol_delta << ")\n";
+            } else if (best_type == 1) {
+                std::cout << "  Swap route " << best_v1 << "[" << best_i << "] <-> route "
+                         << best_v2 << "[" << best_j << "] (save=$" << best_improvement
+                         << ", viols:" << best_viol_delta << ")\n";
+                std::swap(routes[best_v1][best_i], routes[best_v2][best_j]);
+                improved = true;
+            }
+        }
+        std::cout << "Post-optimization: " << pass << " passes\n";
     }
 };
 

@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+// Global trips-per-vehicle (set dynamically by parser based on employee count)
+inline int TRIPS_PER_VEHICLE = 4;
+
 // ============================================================================
 // CORE DATA STRUCTURES
 // ============================================================================

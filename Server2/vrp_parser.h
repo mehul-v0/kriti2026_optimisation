@@ -89,11 +89,14 @@ public:
             locs.push_back({veh.current_lat, veh.current_lng});
         }
         
-        // Expand virtual vehicles (4 trips per physical)
-        // Stagger by 20min per trip - allows tighter packing
+        // Expand virtual vehicles - dynamic trips per vehicle
+        // Each vehicle can do at most ceil(N_emps / N_vehs) + 2 trips
+        // This gives ample room without exploding the search space
+        int min_trips = ((int)emps.size() + (int)phys_vehs.size() - 1) / (int)phys_vehs.size();
+        TRIPS_PER_VEHICLE = std::max(4, min_trips + 2);
         // The actual start times will be adjusted in output based on when previous trip ends
         for (const auto& pv : phys_vehs) {
-            for (int trip = 0; trip < 4; trip++) {
+            for (int trip = 0; trip < TRIPS_PER_VEHICLE; trip++) {
                 Vehicle vv = pv;
                 vv.id = virt_vehs.size();
                 vv.start_node = (trip == 0) ? pv.start_node : office;

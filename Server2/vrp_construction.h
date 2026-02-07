@@ -162,7 +162,7 @@ public:
                         
                         // First: try Trip 1 vehicles only (v%3 == 0)
                         for (int v = 0; v < n_veh && !placed; v++) {
-                            if (v % 4 != 0) continue;  // Skip Trip 2/3/4
+                            if (v % TRIPS_PER_VEHICLE != 0) continue;  // Skip non-Trip-1
                             if ((int)routes[v].size() >= virt_vehs[v].capacity) continue;
                             
                             // Check compatibility - prefer compatible placements
@@ -182,7 +182,7 @@ public:
                         // Second: try any Trip 1 (even if incompatible)
                         if (!placed) {
                             for (int v = 0; v < n_veh && !placed; v++) {
-                                if (v % 4 != 0) continue;
+                                if (v % TRIPS_PER_VEHICLE != 0) continue;
                                 if ((int)routes[v].size() >= virt_vehs[v].capacity) continue;
                                 routes[v].push_back(e);
                                 routed[e] = true;

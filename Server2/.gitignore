@@ -6,6 +6,7 @@
 *.o
 *.obj
 
+output/*.json
 ##############
 # Python virtual env
 ##############

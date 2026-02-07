@@ -83,6 +83,68 @@ public:
     static void apply_2opt(std::vector<int>& route, int i, int j) {
         std::reverse(route.begin() + i, route.begin() + j + 1);
     }
+    
+    // ======================== OR-OPT MOVES ========================
+    // Move a segment of `seg_len` consecutive employees from position `from` to position `to`.
+    // Returns the distance delta (negative = improvement).
+    static MoveDelta oropt_delta(const std::vector<int>& route, int from, int seg_len, int to,
+                                  int start, const std::vector<Employee>& emps, double speed) {
+        if (route.empty() || from == to || (int)route.size() < seg_len + 1) return {0, 0};
+        int seg_end = from + seg_len - 1;
+        if (seg_end >= (int)route.size()) return {0, 0};
+        // `to` is the insertion position in the route *after* the segment is removed
+        // Skip if target overlaps with segment
+        if (to >= from && to <= seg_end + 1) return {0, 0};
+        
+        int seg_first = emps[route[from]].node_idx;
+        int seg_last = emps[route[seg_end]].node_idx;
+        
+        // Cost of removing the segment
+        int prev_seg = (from == 0) ? start : emps[route[from - 1]].node_idx;
+        int after_seg = (seg_end == (int)route.size() - 1) ? OFFICE_NODE : emps[route[seg_end + 1]].node_idx;
+        
+        double remove_cost = -dist_matrix[prev_seg][seg_first] - dist_matrix[seg_last][after_seg]
+                             + dist_matrix[prev_seg][after_seg];
+        
+        // Cost of inserting the segment at `to` (adjusted for removal)
+        // After removal, indices shift. We need the neighbor nodes at the insertion point.
+        // Build a conceptual route without the segment, find neighbors at position `to_adj`.
+        int to_adj = (to > seg_end) ? (to - seg_len) : to;
+        // The route without segment has size = route.size() - seg_len
+        int new_sz = (int)route.size() - seg_len;
+        
+        // Neighbor before insertion point in the stripped route
+        int prev_ins, after_ins;
+        if (to_adj == 0) {
+            prev_ins = start;
+        } else {
+            // Map to_adj-1 back to original index
+            int orig_idx = (to_adj - 1 < from) ? (to_adj - 1) : (to_adj - 1 + seg_len);
+            prev_ins = emps[route[orig_idx]].node_idx;
+        }
+        if (to_adj >= new_sz) {
+            after_ins = OFFICE_NODE;
+        } else {
+            int orig_idx = (to_adj < from) ? to_adj : (to_adj + seg_len);
+            after_ins = emps[route[orig_idx]].node_idx;
+        }
+        
+        double insert_cost = dist_matrix[prev_ins][seg_first] + dist_matrix[seg_last][after_ins]
+                             - dist_matrix[prev_ins][after_ins];
+        
+        double delta = remove_cost + insert_cost;
+        return {delta, (delta / speed) * 60.0};
+    }
+    
+    static void apply_oropt(std::vector<int>& route, int from, int seg_len, int to) {
+        // Extract segment
+        std::vector<int> segment(route.begin() + from, route.begin() + from + seg_len);
+        route.erase(route.begin() + from, route.begin() + from + seg_len);
+        // Adjust `to` for the removal
+        int to_adj = (to > from + seg_len) ? (to - seg_len) : to;
+        if (to_adj > from) to_adj = std::min(to_adj, (int)route.size());
+        route.insert(route.begin() + to_adj, segment.begin(), segment.end());
+    }
 };
 
 #endif

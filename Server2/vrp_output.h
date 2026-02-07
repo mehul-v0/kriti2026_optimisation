@@ -6,6 +6,9 @@
 #include "vrp_validators.h"
 #include "json.hpp"
 #include <sstream>
+#include <numeric>
+#include <climits>
+#include <algorithm>
 
 using json = nlohmann::json;
 
@@ -24,151 +27,185 @@ public:
         sol.total_cost = sol.total_time = sol.score = 0;
         sol.hard_violations = sol.soft_violations = 0;
         
-        std::vector<std::vector<Trip>> phys_trips(phys_vehs.size());
+        // Step 1: Collect employee lists per physical vehicle
+        // Each element is a "trip" (list of employee indices)
+        std::vector<std::vector<std::vector<int>>> phys_emp_lists(phys_vehs.size());
         
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
-            
-            const auto& vv = virt_vehs[v];
-            int phys_id = vv.physical_id;
-            int trip_num = (v % 4) + 1;
-            
-            Trip trip;
-            trip.trip_number = trip_num;
-            trip.employee_indices = routes[v];
-            trip.total_distance = trip.total_cost = 0;
-            trip.total_time = 0;
-            
-            int curr_time = vv.available_from;
-            int curr_node = vv.start_node;
-            
-            Stop start = {curr_node, -1, (trip_num==1)?"Vehicle Depot":"Office", curr_time, curr_time, 0, 0};
-            trip.stops.push_back(start);
-            
-            for (int e : routes[v]) {
-                const auto& emp = emps[e];
-                double dist = dist_matrix[curr_node][emp.node_idx];
-                int travel = (int)std::round((dist/vv.speed_kmph)*60.0);
-                int arrival = curr_time + travel;
-                int wait = std::max(0, emp.earliest_pickup - arrival);
-                int depart = std::max(arrival, emp.earliest_pickup);
-                
-                Stop s = {emp.node_idx, e, emp.employee_id+" Pickup", arrival, depart, wait, dist};
-                trip.stops.push_back(s);
-                trip.total_distance += dist;
-                
-                curr_time = depart;
-                curr_node = emp.node_idx;
-            }
-            
-            double dist_off = dist_matrix[curr_node][OFFICE_NODE];
-            int travel_off = (int)std::round((dist_off/vv.speed_kmph)*60.0);
-            int off_arr = curr_time + travel_off;
-            
-            Stop off = {OFFICE_NODE, -1, "Office (Drop-off)", off_arr, off_arr, 0, dist_off};
-            trip.stops.push_back(off);
-            trip.total_distance += dist_off;
-            
-            // Don't check violations here - will check after trip sequencing
-            
-            trip.total_cost = trip.total_distance * vv.cost_per_km;
-            trip.total_time = off_arr - vv.available_from;
-            
-            sol.total_cost += trip.total_cost;
-            sol.total_time += trip.total_time;
-            
-            phys_trips[phys_id].push_back(trip);
+            int phys_id = virt_vehs[v].physical_id;
+            phys_emp_lists[phys_id].push_back(routes[v]);
         }
         
+        // Step 2: For each physical vehicle, find optimal trip ordering and build output
         for (size_t p = 0; p < phys_vehs.size(); p++) {
-            if (phys_trips[p].empty()) continue;
+            auto& emp_lists = phys_emp_lists[p];
+            if (emp_lists.empty()) continue;
             
-            // Sort trips by trip number
-            std::sort(phys_trips[p].begin(), phys_trips[p].end(), 
-                     [](const Trip& a, const Trip& b) { return a.trip_number < b.trip_number; });
+            int K = (int)emp_lists.size();
+            const auto& pv = phys_vehs[p];
             
-            // Properly sequence trips - each trip starts when previous trip ends
-            int next_available_time = phys_vehs[p].available_from;
-            for (auto& trip : phys_trips[p]) {
-                // Calculate time offset needed to start this trip at correct time
-                int original_start = trip.stops[0].departure_time;
+            // Lambda: build complete trip sequence for a given permutation
+            // Returns {trips, time_violations, total_cost}
+            // CRITICAL: Trip 0 starts from vehicle depot, Trip 1+ start from office
+            auto build_trip_sequence = [&](const std::vector<int>& order) 
+                -> std::tuple<std::vector<Trip>, int, double> {
                 
-                // Trip can start when previous trip ends OR at its original planned time
-                // whichever is LATER (can't start earlier than planned - would violate time windows)
-                int actual_start = std::max(next_available_time, original_start);
-                int time_offset = actual_start - original_start;
+                std::vector<Trip> trips;
+                int time_violations = 0;
+                double total_cost = 0;
+                int next_avail = pv.available_from;
                 
-                if (time_offset != 0) {
-                    // Adjust all times in this trip
-                    for (auto& stop : trip.stops) {
-                        stop.arrival_time += time_offset;
-                        stop.departure_time += time_offset;
-                    }
-                }
-                
-                // Recalculate trip duration based on adjusted times
-                trip.total_time = trip.stops.back().arrival_time - trip.stops.front().departure_time;
-                
-                // Check for time window violations with adjusted times
-                int office_arrival = trip.stops.back().arrival_time;
-                for (int emp_idx : trip.employee_indices) {
-                    const auto& emp = emps[emp_idx];
+                for (int ti = 0; ti < K; ti++) {
+                    const auto& emp_list = emp_lists[order[ti]];
+                    Trip trip;
+                    trip.trip_number = ti + 1;
+                    trip.employee_indices = emp_list;
+                    trip.total_distance = 0;
+                    trip.total_cost = 0;
+                    trip.total_time = 0;
                     
-                    // Check if pickup time is too early
-                    for (size_t s = 1; s < trip.stops.size() - 1; s++) {
-                        if (trip.stops[s].employee_idx == emp_idx) {
-                            if (trip.stops[s].departure_time < emp.earliest_pickup) {
-                                std::cerr << "HARD VIOLATION: " << emp.employee_id << " pickup at " 
-                                         << trip.stops[s].departure_time << " < earliest " 
-                                         << emp.earliest_pickup << std::endl;
-                                sol.hard_violations++;
-                            }
-                            break;
+                    // First trip starts from vehicle depot, subsequent from office
+                    int start_node = (ti == 0) ? pv.start_node : OFFICE_NODE;
+                    int curr_time = next_avail;
+                    int curr_node = start_node;
+                    
+                    Stop start_stop = {curr_node, -1, 
+                        (ti == 0) ? "Vehicle Depot" : "Office",
+                        curr_time, curr_time, 0, 0.0};
+                    trip.stops.push_back(start_stop);
+                    
+                    for (int e : emp_list) {
+                        const auto& emp = emps[e];
+                        double dist = dist_matrix[curr_node][emp.node_idx];
+                        int travel = (int)std::round((dist / pv.speed_kmph) * 60.0);
+                        int arrival = curr_time + travel;
+                        int wait = std::max(0, emp.earliest_pickup - arrival);
+                        int depart = std::max(arrival, emp.earliest_pickup);
+                        
+                        Stop s = {emp.node_idx, e, emp.employee_id + " Pickup",
+                                  arrival, depart, wait, dist};
+                        trip.stops.push_back(s);
+                        trip.total_distance += dist;
+                        
+                        curr_time = depart;
+                        curr_node = emp.node_idx;
+                    }
+                    
+                    // Return to office
+                    double dist_off = dist_matrix[curr_node][OFFICE_NODE];
+                    int travel_off = (int)std::round((dist_off / pv.speed_kmph) * 60.0);
+                    int off_arr = curr_time + travel_off;
+                    
+                    Stop off_stop = {OFFICE_NODE, -1, "Office (Drop-off)",
+                                     off_arr, off_arr, 0, dist_off};
+                    trip.stops.push_back(off_stop);
+                    trip.total_distance += dist_off;
+                    
+                    // Check deadline violations
+                    for (int e : emp_list) {
+                        if (off_arr > emps[e].latest_arrival_deadline) {
+                            time_violations++;
                         }
                     }
                     
-                    // Check if office arrival exceeds deadline (with priority buffer)
-                    if (office_arrival > emp.latest_arrival_deadline) {
-                        std::cerr << "HARD VIOLATION: " << emp.employee_id << " office arrival " 
-                                 << office_arrival << " > deadline " 
-                                 << emp.latest_arrival_deadline << std::endl;
-                        sol.hard_violations++;
-                    }
+                    trip.total_cost = trip.total_distance * pv.cost_per_km;
+                    trip.total_time = off_arr - next_avail;
+                    total_cost += trip.total_cost;
+                    
+                    next_avail = off_arr;
+                    trips.push_back(trip);
                 }
                 
-                // Next trip can start when this trip ends (arrives at office)
-                next_available_time = trip.stops.back().arrival_time;
+                return {trips, time_violations, total_cost};
+            };
+            
+            // Find best permutation
+            std::vector<int> perm(K);
+            std::iota(perm.begin(), perm.end(), 0);
+            
+            int best_violations = INT_MAX;
+            double best_cost_local = 1e18;
+            std::vector<int> best_perm = perm;
+            
+            if (K <= 7) {
+                // Exact: try all K! permutations
+                do {
+                    auto [trips, viols, cost] = build_trip_sequence(perm);
+                    if (viols < best_violations || 
+                        (viols == best_violations && cost < best_cost_local)) {
+                        best_violations = viols;
+                        best_cost_local = cost;
+                        best_perm = perm;
+                    }
+                } while (std::next_permutation(perm.begin(), perm.end()));
+            } else {
+                // Heuristic: try short-trips-first and long-trips-first
+                auto perm1 = perm;
+                std::sort(perm1.begin(), perm1.end(), [&](int a, int b) {
+                    double da = 0, db = 0;
+                    for (int e : emp_lists[a]) da += dist_matrix[emps[e].node_idx][OFFICE_NODE];
+                    for (int e : emp_lists[b]) db += dist_matrix[emps[e].node_idx][OFFICE_NODE];
+                    return da < db;
+                });
+                auto [t1, v1, c1] = build_trip_sequence(perm1);
+                best_violations = v1; best_cost_local = c1; best_perm = perm1;
+                
+                auto perm2 = perm;
+                std::sort(perm2.begin(), perm2.end(), [&](int a, int b) {
+                    double da = 0, db = 0;
+                    for (int e : emp_lists[a]) da += dist_matrix[emps[e].node_idx][OFFICE_NODE];
+                    for (int e : emp_lists[b]) db += dist_matrix[emps[e].node_idx][OFFICE_NODE];
+                    return da > db;
+                });
+                auto [t2, v2, c2] = build_trip_sequence(perm2);
+                if (v2 < best_violations || (v2 == best_violations && c2 < best_cost_local)) {
+                    best_violations = v2; best_cost_local = c2; best_perm = perm2;
+                }
             }
             
-            VehicleSolution vs;
-            vs.vehicle_id = phys_vehs[p].vehicle_id;
-            vs.physical_id = p;
-            vs.trips = phys_trips[p];
-            vs.total_cost = vs.total_distance = vs.total_time = 0;
+            // Build final trips with best permutation
+            auto [final_trips, final_time_violations, final_cost] = build_trip_sequence(best_perm);
             
-            for (const auto& t : phys_trips[p]) {
+            // Log time violations
+            for (const auto& trip : final_trips) {
+                int off_arr = trip.stops.back().arrival_time;
+                for (int e : trip.employee_indices) {
+                    if (off_arr > emps[e].latest_arrival_deadline) {
+                        std::cerr << "HARD VIOLATION: " << emps[e].employee_id 
+                                 << " office arrival " << off_arr 
+                                 << " > deadline " << emps[e].latest_arrival_deadline << std::endl;
+                    }
+                }
+            }
+            sol.hard_violations += final_time_violations;
+            
+            // Count preference violations (doesn't depend on ordering)
+            for (int ti = 0; ti < K; ti++) {
+                const auto& emp_list = emp_lists[best_perm[ti]];
+                int sz = (int)emp_list.size();
+                for (int e : emp_list) {
+                    if (emps[e].sharing_pref < sz) sol.hard_violations++;
+                    if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.hard_violations++;
+                    if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.hard_violations++;
+                }
+            }
+            
+            // Build vehicle solution
+            VehicleSolution vs;
+            vs.vehicle_id = pv.vehicle_id;
+            vs.physical_id = p;
+            vs.trips = final_trips;
+            vs.total_cost = vs.total_distance = vs.total_time = 0;
+            for (const auto& t : final_trips) {
                 vs.total_cost += t.total_cost;
                 vs.total_distance += t.total_distance;
                 vs.total_time += t.total_time;
             }
             
+            sol.total_cost += vs.total_cost;
+            sol.total_time += vs.total_time;
             sol.vehicles.push_back(vs);
-        }
-        
-        // Count preference violations as HARD violations using shared utility
-        for (size_t v = 0; v < routes.size(); v++) {
-            if (routes[v].empty()) continue;
-            // Use the already-sequenced trip times for violation counting
-            // Preference violations (sharing + vehicle) don't depend on timing
-            const auto& vv = virt_vehs[v];
-            int phys_id = vv.physical_id;
-            const auto& pv = phys_vehs[phys_id];
-            int sz = (int)routes[v].size();
-            for (int e : routes[v]) {
-                if (emps[e].sharing_pref < sz) sol.hard_violations++;
-                if (emps[e].vehicle_pref == 1 && pv.category != 1) sol.hard_violations++;
-                if (emps[e].vehicle_pref == 2 && pv.category == 1) sol.hard_violations++;
-            }
         }
         
         sol.score = meta.cost_weight * sol.total_cost + meta.time_weight * sol.total_time;
@@ -178,9 +215,10 @@ public:
     static json to_json(const Solution& sol) {
         json out;
         out["solution_type"] = sol.solution_type;
-        out["score"] = sol.total_cost;
+        out["score"] = sol.score;
+        out["cost"] = sol.total_cost;
         out["total_time"] = sol.total_time;
-        out["stats"] = {{"cost", sol.score}, {"time", sol.total_time},
+        out["stats"] = {{"cost", sol.total_cost}, {"time", sol.total_time},
                         {"hard_violations", sol.hard_violations}, {"soft_violations", sol.soft_violations}};
         
         json vehs = json::array();
