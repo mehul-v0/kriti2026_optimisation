@@ -28,6 +28,118 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def time_to_minutes(t):
+    """Convert time string (HH:MM or HH:MM:SS) to minutes since midnight"""
+    parts = str(t).split(':')
+    h = int(parts[0])
+    m = int(parts[1]) if len(parts) > 1 else 0
+    return h * 60 + m
+
+
+def compute_violation_details(input_data, solution):
+    """Compute per-constraint violation details by cross-referencing input data with solution"""
+    employees = {e['employee_id']: e for e in input_data.get('employees', [])}
+    vehicles = {v['vehicle_id']: v for v in input_data.get('vehicles', [])}
+    vehicles_data = solution.get('vehicles', [])
+
+    capacity_violations = []
+    time_window_violations = []
+    assigned_employees = set()
+    vehicle_pref_violations = []
+    sharing_pref_violations = []
+
+    sharing_map = {'single': 1, 'double': 2, 'triple': 3}
+
+    for vehicle_sol in vehicles_data:
+        vid = vehicle_sol.get('vehicle_id', '')
+        vehicle_info = vehicles.get(vid, {})
+        capacity = vehicle_info.get('capacity', 4)
+        category = vehicle_info.get('category', 'normal').lower()
+
+        for trip in vehicle_sol.get('trips', []):
+            trip_number = trip.get('trip_number', 0)
+            stops = trip.get('stops', [])
+
+            # Find employees in this trip
+            trip_employees = []
+            for stop in stops:
+                loc = stop.get('location', '')
+                if 'Pickup' in loc and loc not in ['Office (Drop-off)', 'Vehicle Depot']:
+                    emp_id = loc.replace(' Pickup', '').replace('Pickup', '').strip()
+                    if emp_id:
+                        trip_employees.append(emp_id)
+                        assigned_employees.add(emp_id)
+
+            # Check capacity
+            if len(trip_employees) > capacity:
+                capacity_violations.append({
+                    'vehicle': vid,
+                    'trip': trip_number,
+                    'passengers': len(trip_employees),
+                    'capacity': capacity,
+                    'employees': ', '.join(trip_employees)
+                })
+
+            # Find office drop-off time for time window check
+            office_arrival = None
+            for stop in stops:
+                if stop.get('location', '') == 'Office (Drop-off)':
+                    office_arrival = stop.get('arrival_time', '')
+                    break
+
+            if office_arrival:
+                office_minutes = time_to_minutes(office_arrival)
+                for emp_id in trip_employees:
+                    emp = employees.get(emp_id, {})
+                    latest_drop = emp.get('latest_drop', '23:59:00')
+                    latest_minutes = time_to_minutes(latest_drop)
+                    if office_minutes > latest_minutes:
+                        time_window_violations.append({
+                            'employee': emp_id,
+                            'vehicle': vid,
+                            'trip': trip_number,
+                            'office_arrival': office_arrival,
+                            'deadline': latest_drop[:5] if len(latest_drop) > 5 else latest_drop,
+                            'delay_min': office_minutes - latest_minutes
+                        })
+
+            # Check vehicle preference
+            for emp_id in trip_employees:
+                emp = employees.get(emp_id, {})
+                pref = emp.get('vehicle_preference', 'normal').lower()
+                if pref == 'premium' and category != 'premium':
+                    vehicle_pref_violations.append({
+                        'employee': emp_id,
+                        'vehicle': vid,
+                        'preferred': 'Premium',
+                        'assigned': category.capitalize()
+                    })
+
+            # Check sharing preference
+            for emp_id in trip_employees:
+                emp = employees.get(emp_id, {})
+                pref = emp.get('sharing_preference', 'triple').lower()
+                max_riders = sharing_map.get(pref, 3)
+                if len(trip_employees) > max_riders:
+                    sharing_pref_violations.append({
+                        'employee': emp_id,
+                        'vehicle': vid,
+                        'trip': trip_number,
+                        'preferred': pref.capitalize(),
+                        'actual_riders': len(trip_employees)
+                    })
+
+    unassigned_list = [{'employee': eid} for eid in sorted(set(employees.keys()) - assigned_employees)]
+
+    return {
+        'capacity_violations': capacity_violations,
+        'time_window_violations': time_window_violations,
+        'unassigned_employees': unassigned_list,
+        'vehicle_pref_violations': vehicle_pref_violations,
+        'sharing_pref_violations': sharing_pref_violations
+    }
+
+
 def calculate_data_digest(data):
     """Calculate data digest from input JSON"""
     employees = data.get('employees', [])
@@ -163,6 +275,7 @@ def run_optimization():
         
         baseline_data = input_data.get('baseline', [])
         baseline_cost = sum(b.get('baseline_cost', 0) for b in baseline_data)
+        baseline_time = sum(b.get('baseline_time', 0) for b in baseline_data)
         
         # Parse solution and create result
         stats = solution.get('stats', {})
@@ -180,6 +293,7 @@ def run_optimization():
             'cost_savings_percent': ((baseline_cost - stats.get('cost', 0)) / baseline_cost * 100) if baseline_cost > 0 else 0,
             'total_distance': sum(v.get('total_distance', 0) for v in vehicles_data),
             'total_time': stats.get('time', 0),
+            'baseline_time': baseline_time,
             'vehicles_used': vehicles_used,
             'vehicles_available': vehicles_available,
             'hard_violations': stats.get('hard_violations', 0),
@@ -228,7 +342,10 @@ def run_optimization():
                                 'lng': emp_data.get('pickup_lng', 0),
                                 'type': 'pickup',
                                 'employee_id': emp_id,
-                                'trip_number': trip_number
+                                'trip_number': trip_number,
+                                'arrival_time': stop.get('arrival_time', ''),
+                                'departure_time': stop.get('departure_time', ''),
+                                'distance_from_prev': stop.get('distance_from_prev', 0)
                             })
                             
                             all_employees.append(emp_id)
@@ -259,7 +376,10 @@ def run_optimization():
                             'lng': office_lng,
                             'type': 'office',
                             'employee_id': None,
-                            'trip_number': trip_number
+                            'trip_number': trip_number,
+                            'arrival_time': stop.get('arrival_time', ''),
+                            'departure_time': stop.get('departure_time', ''),
+                            'distance_from_prev': stop.get('distance_from_prev', 0)
                         })
             
             if route_points:
@@ -287,11 +407,15 @@ def run_optimization():
                     'trips_count': len(trips)
                 })
         
+        # Compute detailed violation info
+        violation_details = compute_violation_details(input_data, solution)
+        
         return jsonify({
             'success': True,
             'result': result_data,
             'routes': transformed_routes,
-            'assignments': transformed_assignments
+            'assignments': transformed_assignments,
+            'violation_details': violation_details
         })
     
     except subprocess.TimeoutExpired:
