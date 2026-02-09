@@ -5,7 +5,7 @@
  */
 
 import type { Employee, Vehicle, Trip, RoutePoint, Assignment, OptimizationResult, ConstraintReport } from '../types';
-import type { BackendEmployee, BackendVehicle, BackendRoute, BackendAssignment } from '../services/api';
+import type { BackendEmployee, BackendVehicle, BackendRoute, BackendAssignment, ViolationDetails } from '../services/api';
 import { generateId } from './helpers';
 
 /** Priority number (1–5) → label */
@@ -96,14 +96,21 @@ export function mapRoutes(backendRoutes: BackendRoute[]): Trip[] {
         type: pt.type === 'office' ? 'dropoff' as const : pt.type as 'pickup',
         lat: pt.lat,
         lng: pt.lng,
-        address: pt.employee_id ? `Employee ${pt.employee_id}` : 'Office',
+        address: pt.employee_id ? pt.employee_id : 'Office',
         employeeId: pt.employee_id || undefined,
-        time: '',
+        time: pt.arrival_time || '',
+        arrivalTime: pt.arrival_time || '',
+        departureTime: pt.departure_time || '',
+        distanceFromPrev: pt.distance_from_prev || 0,
       }));
 
       const employeesInTrip = points
         .filter(p => p.employee_id)
         .map(p => p.employee_id!);
+
+      // Derive start/end time from first and last route points
+      const firstTime = routePoints.length > 0 ? routePoints[0].departureTime || routePoints[0].arrivalTime : '';
+      const lastTime = routePoints.length > 0 ? routePoints[routePoints.length - 1].arrivalTime : '';
 
       trips.push({
         tripNumber,
@@ -113,8 +120,8 @@ export function mapRoutes(backendRoutes: BackendRoute[]): Trip[] {
         distance: route.total_distance / (tripGroups.size || 1), // approximate per-trip
         duration: 0,
         cost: route.total_cost / (tripGroups.size || 1),
-        startTime: '',
-        endTime: '',
+        startTime: firstTime,
+        endTime: lastTime,
       });
     }
   }
@@ -151,27 +158,45 @@ export function mapAssignments(backendAssignments: BackendAssignment[]): Assignm
 }
 
 export function buildConstraintReport(
-  hardViolations: number,
+  _hardViolations: number,
   softViolations: number,
   assignments: Assignment[],
-  employees: Employee[]
+  employees: Employee[],
+  violationDetails?: ViolationDetails
 ): ConstraintReport {
   const totalEmployees = employees.length;
-  const assignedCount = assignments.length;
+  const assignedCount = new Set(assignments.map(a => a.employeeId)).size;
+  const vd = violationDetails;
 
-  // Hard constraints from the solver
+  // --- Hard constraints with real violation details ---
+  const capacityViolations = vd?.capacity_violations?.map((v) =>
+    `${v.vehicle} Trip ${v.trip}: ${v.passengers} passengers exceed capacity of ${v.capacity} (${v.employees})`
+  ) ?? [];
+
+  const timeWindowViolations = vd?.time_window_violations?.map((v) =>
+    `${v.employee} on ${v.vehicle} Trip ${v.trip}: arrived at office ${v.office_arrival}, deadline was ${v.deadline} (${v.delay_min} min late)`
+  ) ?? [];
+
+  const unassignedViolations = vd?.unassigned_employees?.map((v) =>
+    `Employee ${v.employee} was not assigned to any vehicle`
+  ) ?? [];
+
   const hardDetails = [
     {
       name: 'Vehicle Capacity Limits',
-      description: 'No vehicle exceeded its seating capacity',
-      status: (hardViolations === 0 ? 'satisfied' : 'violated') as 'satisfied' | 'violated',
-      violations: [],
+      description: capacityViolations.length > 0
+        ? `${capacityViolations.length} trip(s) exceeded vehicle seating capacity`
+        : 'No vehicle exceeded its seating capacity',
+      status: (capacityViolations.length === 0 ? 'satisfied' : 'violated') as 'satisfied' | 'violated',
+      violations: capacityViolations,
     },
     {
       name: 'Employee Time Windows',
-      description: 'All employees picked up within their specified time windows',
-      status: (hardViolations === 0 ? 'satisfied' : 'violated') as 'satisfied' | 'violated',
-      violations: [],
+      description: timeWindowViolations.length > 0
+        ? `${timeWindowViolations.length} employee(s) arrived past their deadline`
+        : 'All employees dropped off within their specified time windows',
+      status: (timeWindowViolations.length === 0 ? 'satisfied' : 'violated') as 'satisfied' | 'violated',
+      violations: timeWindowViolations,
     },
     {
       name: 'Vehicle Availability',
@@ -181,32 +206,50 @@ export function buildConstraintReport(
     },
     {
       name: 'All Employees Assigned',
-      description: `${assignedCount} of ${totalEmployees} employees have vehicle assignments`,
+      description: unassignedViolations.length > 0
+        ? `${assignedCount} of ${totalEmployees} employees have vehicle assignments`
+        : `All ${totalEmployees} employees have vehicle assignments`,
       status: (assignedCount >= totalEmployees ? 'satisfied' : 'violated') as 'satisfied' | 'violated',
-      violations: [],
+      violations: unassignedViolations,
     },
   ];
 
   const hardSatisfied = hardDetails.filter(d => d.status === 'satisfied').length;
 
-  // Soft constraints — compute from assignment data
-  const vehiclePrefMet = assignments.filter(a => a.vehiclePreferenceMet).length;
-  const sharingPrefMet = assignments.filter(a => a.sharingPreferenceMet).length;
-  const vehiclePrefRate = assignedCount > 0 ? Math.round((vehiclePrefMet / assignedCount) * 100) : 100;
-  const sharingPrefRate = assignedCount > 0 ? Math.round((sharingPrefMet / assignedCount) * 100) : 100;
+  // --- Soft constraints with real violation details ---
+  const vehiclePrefViolations = vd?.vehicle_pref_violations?.map((v) =>
+    `${v.employee} on ${v.vehicle}: wanted ${v.preferred}, got ${v.assigned}`
+  ) ?? [];
+
+  const sharingPrefViolations = vd?.sharing_pref_violations?.map((v) =>
+    `${v.employee} on ${v.vehicle} Trip ${v.trip}: wanted ${v.preferred} (max ${
+      v.preferred === 'Single' ? 1 : v.preferred === 'Double' ? 2 : 3
+    }), had ${v.actual_riders} riders`
+  ) ?? [];
+
+  const vehiclePrefRate = assignedCount > 0
+    ? Math.round(((assignedCount - vehiclePrefViolations.length) / assignedCount) * 100)
+    : 100;
+  const sharingPrefRate = assignedCount > 0
+    ? Math.round(((assignedCount - sharingPrefViolations.length) / assignedCount) * 100)
+    : 100;
 
   const softDetails = [
     {
       name: 'Vehicle Type Preference',
-      description: `${vehiclePrefRate}% of employees got their preferred vehicle type`,
-      status: (vehiclePrefRate >= 80 ? 'satisfied' : 'relaxed') as 'satisfied' | 'relaxed',
-      violations: [],
+      description: vehiclePrefViolations.length > 0
+        ? `${vehiclePrefRate}% of employees got their preferred vehicle type`
+        : '100% of employees got their preferred vehicle type',
+      status: (vehiclePrefViolations.length === 0 ? 'satisfied' : 'relaxed') as 'satisfied' | 'relaxed',
+      violations: vehiclePrefViolations,
     },
     {
       name: 'Sharing Preference',
-      description: `${sharingPrefRate}% of employees got their sharing preference`,
-      status: (sharingPrefRate >= 80 ? 'satisfied' : 'relaxed') as 'satisfied' | 'relaxed',
-      violations: [],
+      description: sharingPrefViolations.length > 0
+        ? `${sharingPrefRate}% of employees got their sharing preference`
+        : '100% of employees got their sharing preference',
+      status: (sharingPrefViolations.length === 0 ? 'satisfied' : 'relaxed') as 'satisfied' | 'relaxed',
+      violations: sharingPrefViolations,
     },
     {
       name: 'Priority-Based Delay Tolerance',
@@ -241,7 +284,7 @@ export function buildConstraintReport(
  */
 export function buildOptimizationResult(
   uploadData: { employees: BackendEmployee[]; vehicles: BackendVehicle[]; baseline_cost: number; filename: string },
-  optimizeData: { result: any; routes: BackendRoute[]; assignments: BackendAssignment[] },
+  optimizeData: { result: any; routes: BackendRoute[]; assignments: BackendAssignment[]; violation_details?: ViolationDetails },
   solverMode: string,
   solverDuration: number
 ): OptimizationResult {
@@ -256,7 +299,8 @@ export function buildOptimizationResult(
     res.hard_violations,
     res.soft_violations,
     assignments,
-    employees
+    employees,
+    optimizeData.violation_details
   );
 
   return {
@@ -271,6 +315,8 @@ export function buildOptimizationResult(
     optimizedCost: res.total_cost,
     savings: res.cost_savings,
     savingsPercentage: res.cost_savings_percent,
+    totalTime: res.total_time || 0,
+    baselineTime: res.baseline_time || 0,
     constraints,
     solverDuration,
     solverMode: solverMode as any,

@@ -1,7 +1,92 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
-import { Shield, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Shield, CheckCircle, AlertTriangle, ChevronDown } from 'lucide-react';
+import type { ConstraintDetail } from '../types';
+
+const cardClass = "bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40";
+
+function ConstraintRow({ constraint }: { constraint: ConstraintDetail }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasViolations = constraint.violations && constraint.violations.length > 0;
+  const isViolated = constraint.status !== 'satisfied';
+
+  return (
+    <div className={`${cardClass} overflow-hidden`}>
+      <button
+        onClick={() => (hasViolations || isViolated) && setExpanded(!expanded)}
+        className={`w-full p-4 flex items-center justify-between text-left ${(hasViolations || isViolated) ? 'cursor-pointer hover:bg-white/[0.02] transition-colors' : 'cursor-default'}`}
+      >
+        <div className="flex items-center gap-3">
+          {constraint.status === 'satisfied' ? (
+            <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+          )}
+          <div>
+            <h3 className="font-bold text-sm">{constraint.name}</h3>
+            <p className="text-xs text-gray/60 mt-0.5">{constraint.description}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <span className={`text-xs font-medium px-3 py-1 rounded-full ${
+            constraint.status === 'satisfied'
+              ? 'bg-primary/10 text-primary'
+              : constraint.status === 'violated'
+              ? 'bg-red-500/10 text-red-400'
+              : 'bg-yellow-500/10 text-yellow-400'
+          }`}>
+            {constraint.status === 'satisfied' ? '✓ Satisfied' : constraint.status === 'violated' ? '⚠ Violated' : '~ Relaxed'}
+          </span>
+          {(hasViolations || isViolated) && (
+            <ChevronDown className={`w-4 h-4 text-gray/40 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+          )}
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-1 border-t border-gray/10">
+              {hasViolations ? (
+                <div className="space-y-2 mt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray/40 mb-2">
+                    Violations ({constraint.violations.length})
+                  </p>
+                  {constraint.violations.map((v: any, i: number) => (
+                    <div key={i} className="bg-dark-700/50 rounded-lg px-3 py-2 text-sm text-gray/80">
+                      {typeof v === 'string' ? v : (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                          {Object.entries(v).map(([key, val]) => (
+                            <span key={key}>
+                              <span className="text-gray/40">{key}:</span>{' '}
+                              <span className="text-white/80">{String(val)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray/50 mt-3">
+                  This constraint was {constraint.status} but no specific violation details are available.
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function ConstraintValidation() {
   const { currentResult } = useApp();
@@ -27,134 +112,116 @@ export default function ConstraintValidation() {
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Constraint Compliance Report</h1>
           <div className="flex items-center gap-3">
-            <span className="badge badge-success text-base px-4 py-2">
+            <span className="text-sm text-gray/60">
               {totalSatisfied} of {totalConstraints} constraints fully satisfied
             </span>
           </div>
         </div>
 
         {/* Compliance Overview */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card mb-6">
-          <h2 className="text-2xl font-bold mb-6">Compliance Overview</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <Shield className="w-8 h-8 text-red-400" />
-                <h3 className="text-xl font-bold">Hard Constraints</h3>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+          <h2 className="text-2xl font-bold mb-4">Compliance Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Hard Constraints Card */}
+            <div className={`${cardClass} p-6`}>
+              <div className="flex items-center gap-3 mb-5">
+                <Shield className="w-7 h-7 text-primary" />
+                <h3 className="text-lg font-bold">Hard Constraints</h3>
               </div>
               <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray">Total:</span>
-                  <span className="font-bold">{hard.total}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Total</span>
+                  <span className="text-lg font-bold text-white">{hard.total}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray">Satisfied:</span>
-                  <span className="font-bold text-green-400">{hard.satisfied}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Satisfied</span>
+                  <span className="text-lg font-bold text-primary">{hard.satisfied}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray">Violated:</span>
-                  <span className="font-bold text-red-400">{hard.violated}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Violated</span>
+                  <span className="text-lg font-bold text-primary">{hard.violated}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray">Compliance Rate:</span>
-                  <span className="font-bold text-primary">{hard.complianceRate}%</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Compliance Rate</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-bold text-primary">{hard.complianceRate}%</span>
+                    <div className="flex gap-1">
+                      {Array.from({ length: 10 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={`w-1 h-4 rounded ${(i + 1) <= (hard.complianceRate / 10) ? 'bg-primary' : 'bg-dark-500'}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="mt-4 h-2 bg-dark-600 rounded-full overflow-hidden">
-                <div className="h-full bg-green-500" style={{ width: `${hard.complianceRate}%` }} />
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <Shield className="w-8 h-8 text-yellow-400" />
-                <h3 className="text-xl font-bold">Soft Constraints</h3>
+            {/* Soft Constraints Card */}
+            <div className={`${cardClass} p-6`}>
+              <div className="flex items-center gap-3 mb-5">
+                <Shield className="w-7 h-7 text-primary" />
+                <h3 className="text-lg font-bold">Soft Constraints</h3>
               </div>
               <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray">Total:</span>
-                  <span className="font-bold">{soft.total}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Total</span>
+                  <span className="text-lg font-bold text-white">{soft.total}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray">Satisfied:</span>
-                  <span className="font-bold text-green-400">{soft.satisfied}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Satisfied</span>
+                  <span className="text-lg font-bold text-primary">{soft.satisfied}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray">Relaxed/Violated:</span>
-                  <span className="font-bold text-yellow-400">{soft.violated}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Relaxed/Violated</span>
+                  <span className="text-lg font-bold text-primary">{soft.violated}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray">Compliance Rate:</span>
-                  <span className="font-bold text-primary">{soft.complianceRate}%</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-white/70">Compliance Rate</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-bold text-primary">{soft.complianceRate}%</span>
+                    <div className="flex gap-1">
+                      {Array.from({ length: 10 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={`w-1 h-4 rounded ${(i + 1) <= (soft.complianceRate / 10) ? 'bg-primary' : 'bg-dark-500'}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="mt-4 h-2 bg-dark-600 rounded-full overflow-hidden">
-                <div className="h-full bg-yellow-500" style={{ width: `${soft.complianceRate}%` }} />
               </div>
             </div>
           </div>
         </motion.div>
 
         {/* Hard Constraints Detail */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card mb-6">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold">Hard Constraints</h2>
-            <span className="text-sm text-gray">These must never be violated for a valid solution</span>
+            <span className="text-xs text-gray/40">Must never be violated for a valid solution</span>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {hard.details.length > 0 ? hard.details.map((constraint, index) => (
-              <div key={index} className="bg-dark-600 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {constraint.status === 'satisfied' ? (
-                      <CheckCircle className="w-6 h-6 text-green-400" />
-                    ) : (
-                      <AlertTriangle className="w-6 h-6 text-red-400" />
-                    )}
-                    <div>
-                      <h3 className="font-bold">{constraint.name}</h3>
-                      <p className="text-sm text-gray">{constraint.description}</p>
-                    </div>
-                  </div>
-                  <span className={`badge ${constraint.status === 'satisfied' ? 'badge-success' : 'badge-error'}`}>
-                    {constraint.status === 'satisfied' ? '✓ Satisfied' : '⚠ Violated'}
-                  </span>
-                </div>
-              </div>
+              <ConstraintRow key={index} constraint={constraint} />
             )) : (
-              <p className="text-gray text-sm">No hard constraint details available</p>
+              <p className="text-gray/50 text-sm">No hard constraint details available</p>
             )}
           </div>
         </motion.div>
 
         {/* Soft Constraints Detail */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="card">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold">Soft Constraints</h2>
-            <span className="text-sm text-gray">These are preferences that may be relaxed for better optimization</span>
+            <span className="text-xs text-gray/40">Preferences that may be relaxed for better optimization</span>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {soft.details.length > 0 ? soft.details.map((constraint, index) => (
-              <div key={index} className="bg-dark-600 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    {constraint.status === 'satisfied' ? (
-                      <CheckCircle className="w-6 h-6 text-green-400" />
-                    ) : (
-                      <AlertTriangle className="w-6 h-6 text-yellow-400" />
-                    )}
-                    <div>
-                      <h3 className="font-bold">{constraint.name}</h3>
-                      <p className="text-sm text-gray">{constraint.description}</p>
-                    </div>
-                  </div>
-                  <span className={`badge ${constraint.status === 'satisfied' ? 'badge-success' : 'badge-warning'}`}>
-                    {constraint.status === 'satisfied' ? '✓ Satisfied' : '~ Relaxed'}
-                  </span>
-                </div>
-              </div>
+              <ConstraintRow key={index} constraint={constraint} />
             )) : (
-              <p className="text-gray text-sm">No soft constraint details available</p>
+              <p className="text-gray/50 text-sm">No soft constraint details available</p>
             )}
           </div>
         </motion.div>

@@ -13,6 +13,7 @@
 #include <numeric>
 #include <vector>
 #include <unordered_set>
+#include <set>
 #include <map>
 
 extern std::vector<std::vector<double>> dist_matrix;
@@ -54,10 +55,10 @@ private:
     std::vector<int> destroy_successes;
     std::vector<int> repair_successes;
     
-    double start_temp = 10000.0;
-    double cooling_rate = 0.99975;
-    double min_destroy_pct = 0.15;
-    double max_destroy_pct = 0.40;
+    double start_temp = 50000.0;
+    double cooling_rate = 0.9999;
+    double min_destroy_pct = 0.10;
+    double max_destroy_pct = 0.50;
     
     double sigma1 = 33.0;
     double sigma2 = 9.0;
@@ -69,6 +70,12 @@ private:
     
     int total_employees = 0;
     bool user_enforce_soft = true;  // The user's setting (preserved for output)
+    
+    // GLS-like penalty mechanism (inspired by OR-Tools Guided Local Search)
+    // Penalizes frequently-used costly features to escape local optima
+    std::map<std::pair<int,int>, double> edge_penalties;  // (from_node, to_node) -> penalty
+    double gls_lambda = 0.1;  // GLS penalty weight (auto-calibrated)
+    int gls_update_interval = 200;  // How often to update penalties
     
     std::mt19937 rng;
     const ConstraintEngine* cp_ptr = nullptr;
@@ -139,10 +146,12 @@ public:
         double total_time = 0.0;
         int assigned = 0;
         AllViolations av = {0, 0, 0};
+        int vehicles_used = 0;
         
         for (size_t v = 0; v < routes.size(); v++) {
             if (routes[v].empty()) continue;
             assigned += (int)routes[v].size();
+            vehicles_used++;
             RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
             total_dist_cost += sim.total_distance * vehs[v].cost_per_km;
             total_time += (sim.office_arrival - vehs[v].available_from);
@@ -152,11 +161,18 @@ public:
             av.total_lateness += vc.total_lateness;
         }
         
+        // Primary objective: dollar cost (like OR-Tools direct cost optimization)
+        // Time is secondary, used mainly for tiebreaking
         double score = meta.cost_weight * total_dist_cost + meta.time_weight * total_time;
+        
+        // Penalties for violations (hierarchical: unassigned > hard > soft)
         int unassigned_count = total_employees - assigned;
         score += unassigned_count * UNASSIGNED_PENALTY;
         score += av.total_hard() * HARD_VIOLATION_PENALTY;
         score += av.total_lateness * LATENESS_PENALTY_PER_MIN;
+        
+        // Vehicle activation cost (encourages consolidation like OR-Tools)
+        score += vehicles_used * 5.0;
         
         return {score, av.total_hard()};
     }
@@ -188,18 +204,22 @@ public:
     CostResult cost_from_cache(const Metadata& meta, int assigned) const {
         double total_dist_cost = 0, total_time = 0;
         AllViolations av = {0, 0, 0};
+        int vehicles_used = 0;
         for (size_t v = 0; v < route_cache.size(); v++) {
             total_dist_cost += route_cache[v].dist_cost;
             total_time += route_cache[v].time;
             av.hard_time += route_cache[v].hard_time;
             av.pref += route_cache[v].pref;
             av.total_lateness += route_cache[v].total_lateness;
+            if (route_cache[v].dist_cost > 0) vehicles_used++;
         }
         double score = meta.cost_weight * total_dist_cost + meta.time_weight * total_time;
         int unassigned_count = total_employees - assigned;
         score += unassigned_count * UNASSIGNED_PENALTY;
         score += av.total_hard() * HARD_VIOLATION_PENALTY;
         score += av.total_lateness * LATENESS_PENALTY_PER_MIN;
+        // Vehicle activation cost (must match calculate_cost_and_violations)
+        score += vehicles_used * 5.0;
         return {score, av.total_hard()};
     }
     
@@ -254,6 +274,71 @@ public:
         if ((int)route.size() >= vehs[v].capacity) return false;
         
         return true;
+    }
+    
+    // GLS: Calculate augmented cost with edge penalties (escape local optima)
+    double calculate_gls_penalty(const std::vector<std::vector<int>>& routes,
+                                  const std::vector<Vehicle>& vehs,
+                                  const std::vector<Employee>& emps) const {
+        double penalty = 0;
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].empty()) continue;
+            int prev = vehs[v].start_node;
+            for (int e : routes[v]) {
+                int curr = emps[e].node_idx;
+                auto key = std::make_pair(prev, curr);
+                auto it = edge_penalties.find(key);
+                if (it != edge_penalties.end()) penalty += it->second;
+                prev = curr;
+            }
+            auto key = std::make_pair(prev, OFFICE_NODE);
+            auto it = edge_penalties.find(key);
+            if (it != edge_penalties.end()) penalty += it->second;
+        }
+        return penalty * gls_lambda;
+    }
+    
+    // GLS: Update penalties on edges in the current local optimum
+    void update_gls_penalties(const std::vector<std::vector<int>>& routes,
+                               const std::vector<Vehicle>& vehs,
+                               const std::vector<Employee>& emps) {
+        // Find the edge with maximum utility = cost / (1 + penalty)
+        double max_utility = -1;
+        std::pair<int,int> max_edge = {-1, -1};
+        
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].empty()) continue;
+            int prev = vehs[v].start_node;
+            for (int e : routes[v]) {
+                int curr = emps[e].node_idx;
+                double cost = dist_matrix[prev][curr] * vehs[v].cost_per_km;
+                auto key = std::make_pair(prev, curr);
+                double pen = 0;
+                auto it = edge_penalties.find(key);
+                if (it != edge_penalties.end()) pen = it->second;
+                double utility = cost / (1.0 + pen);
+                if (utility > max_utility) {
+                    max_utility = utility;
+                    max_edge = key;
+                }
+                prev = curr;
+            }
+            // Last edge to office
+            double cost = dist_matrix[prev][OFFICE_NODE] * vehs[v].cost_per_km;
+            auto key = std::make_pair(prev, OFFICE_NODE);
+            double pen = 0;
+            auto it = edge_penalties.find(key);
+            if (it != edge_penalties.end()) pen = it->second;
+            double utility = cost / (1.0 + pen);
+            if (utility > max_utility) {
+                max_utility = utility;
+                max_edge = key;
+            }
+        }
+        
+        if (max_edge.first >= 0) {
+            edge_penalties[max_edge] += 1.0;
+        }
     }
     
     // Backward-compatible wrapper
@@ -855,10 +940,9 @@ public:
             }
             phys_info[pid].virt_indices.push_back((int)v);
             phys_info[pid].total_emps += (int)routes[v].size();
-            // Estimate cost
-            for (size_t vi = 0; vi < route_cache.size() && vi == (size_t)v; ) {
+            // Estimate cost from cache
+            if (v < route_cache.size()) {
                 phys_info[pid].total_cost += route_cache[v].dist_cost;
-                break;
             }
         }
         
@@ -926,9 +1010,14 @@ public:
                         int curr = emps[emp].node_idx;
                         int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
                         double delta_dist = dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next];
+                        // Use DOLLAR cost directly (like OR-Tools arc cost evaluator)
                         double delta_dollars = delta_dist * vehs[v].cost_per_km;
-                        double delta_time = (delta_dist / vehs[v].speed_kmph) * 60.0;
-                        double cost = meta.cost_weight * delta_dollars + meta.time_weight * delta_time;
+                        // Small time penalty to break ties
+                        double delta_time = (delta_dist / vehs[v].speed_kmph) * 60.0 * 0.1;
+                        double cost = delta_dollars + delta_time;
+                        
+                        // Penalty for using a new vehicle trip (encourages consolidation)
+                        if (routes[v].empty()) cost += 2.0;
                         
                         if (cost < best_cost) {
                             // In-place insert, validate, then erase — avoids temp vector copy
@@ -996,7 +1085,10 @@ public:
                         int prev = (pos == 0) ? vehs[v].start_node : emps[routes[v][pos-1]].node_idx;
                         int curr = emps[emp].node_idx;
                         int next = (pos == routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos]].node_idx;
+                        // Use DOLLAR cost (like OR-Tools arc cost evaluator)
                         double cost = (dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next]) * vehs[v].cost_per_km;
+                        // Add small penalty for opening new trip (consolidation preference)
+                        if (routes[v].empty()) cost += 2.0;
                         
                         // In-place insert, validate, erase — avoids temp vector copy
                         routes[v].insert(routes[v].begin() + pos, emp);
@@ -1117,6 +1209,7 @@ public:
     // clusters of nearby employees into the same route to maximize batching.
     // This is the key operator for finding solutions where multiple employees
     // share a single trip instead of getting separate trips.
+    // Inspired by OR-Tools' preference for consolidation through cost optimization.
     void repair_batching(std::vector<std::vector<int>>& routes,
                         std::vector<int>& unassigned,
                         const std::vector<Vehicle>& vehs,
@@ -1132,9 +1225,15 @@ public:
         });
         
         // Find the cheapest vehicles (lowest cost_per_km) that have capacity
+        // This matches OR-Tools' natural preference for cheaper vehicles
         std::vector<size_t> veh_order(routes.size());
         std::iota(veh_order.begin(), veh_order.end(), 0);
         std::sort(veh_order.begin(), veh_order.end(), [&](size_t a, size_t b) {
+            // Prefer vehicles that already have employees (consolidation)
+            // then by cost_per_km (cheaper first)
+            bool a_has = !routes[a].empty();
+            bool b_has = !routes[b].empty();
+            if (a_has != b_has) return a_has > b_has;  // non-empty first
             return vehs[a].cost_per_km < vehs[b].cost_per_km;
         });
         
@@ -1159,8 +1258,8 @@ public:
                         int curr = emps[emp].node_idx;
                         int next = (pos + 1 >= routes[v].size()) ? OFFICE_NODE : emps[routes[v][pos+1]].node_idx;
                         double delta = dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next];
-                        double cost = meta.cost_weight * delta * vehs[v].cost_per_km +
-                                      meta.time_weight * (delta / vehs[v].speed_kmph) * 60.0;
+                        // Use direct dollar cost (like OR-Tools)
+                        double cost = delta * vehs[v].cost_per_km;
                         if (cost < best_cost) {
                             best_cost = cost;
                             best_pos = (int)pos;
@@ -1446,6 +1545,76 @@ public:
                     }
                 }
             }
+            if (improved) continue;
+            
+            // Or-opt 2: move a block of 2 consecutive employees from v1 to v2
+            for (size_t v1 = 0; v1 < routes.size() && !improved; v1++) {
+                if ((int)routes[v1].size() < 2) continue;
+                
+                RouteSimResult sim1_b = simulate_route(routes[v1], vehs[v1], emps);
+                ViolationCount vc1_b = count_route_violations(routes[v1], vehs[v1], emps, sim1_b.office_arrival);
+                int v1_before_v = vc1_b.hard_time_violations + vc1_b.pref_violations;
+                
+                for (int i = 0; i < (int)routes[v1].size() - 1 && !improved; i++) {
+                    int e_a = routes[v1][i], e_b = routes[v1][i+1];
+                    int n_a = emps[e_a].node_idx, n_b = emps[e_b].node_idx;
+                    int prev = (i == 0) ? vehs[v1].start_node : emps[routes[v1][i-1]].node_idx;
+                    int next = (i+2 < (int)routes[v1].size()) ? emps[routes[v1][i+2]].node_idx : OFFICE_NODE;
+                    double remove_saving = (dist_matrix[prev][n_a] + dist_matrix[n_a][n_b] + dist_matrix[n_b][next]
+                                            - dist_matrix[prev][next]) * vehs[v1].cost_per_km;
+                    
+                    for (size_t v2 = 0; v2 < routes.size() && !improved; v2++) {
+                        if (v1 == v2) continue;
+                        if ((int)routes[v2].size() + 2 > vehs[v2].capacity) continue;
+                        
+                        int v2_before_v = 0;
+                        if (!routes[v2].empty()) {
+                            RouteSimResult sim2_b = simulate_route(routes[v2], vehs[v2], emps);
+                            ViolationCount vc2_b = count_route_violations(routes[v2], vehs[v2], emps, sim2_b.office_arrival);
+                            v2_before_v = vc2_b.hard_time_violations + vc2_b.pref_violations;
+                        }
+                        int total_bv = v1_before_v + v2_before_v;
+                        
+                        for (size_t pos = 0; pos <= routes[v2].size() && !improved; pos++) {
+                            int prev2 = (pos == 0) ? vehs[v2].start_node : emps[routes[v2][pos-1]].node_idx;
+                            int next2 = (pos == routes[v2].size()) ? OFFICE_NODE : emps[routes[v2][pos]].node_idx;
+                            double insert_cost = (dist_matrix[prev2][n_a] + dist_matrix[n_a][n_b] + dist_matrix[n_b][next2]
+                                                  - dist_matrix[prev2][next2]) * vehs[v2].cost_per_km;
+                            
+                            double net = insert_cost - remove_saving;
+                            if (net < -1e-6 || total_bv > 0) {
+                                // Try the block move
+                                routes[v1].erase(routes[v1].begin() + i, routes[v1].begin() + i + 2);
+                                routes[v2].insert(routes[v2].begin() + pos, e_b);
+                                routes[v2].insert(routes[v2].begin() + pos, e_a);
+                                
+                                int v1_aft_v = 0;
+                                if (!routes[v1].empty()) {
+                                    RouteSimResult s1 = simulate_route(routes[v1], vehs[v1], emps);
+                                    ViolationCount vc1 = count_route_violations(routes[v1], vehs[v1], emps, s1.office_arrival);
+                                    v1_aft_v = vc1.hard_time_violations + vc1.pref_violations;
+                                }
+                                RouteSimResult s2 = simulate_route(routes[v2], vehs[v2], emps);
+                                ViolationCount vc2 = count_route_violations(routes[v2], vehs[v2], emps, s2.office_arrival);
+                                int v2_aft_v = vc2.hard_time_violations + vc2.pref_violations;
+                                int total_av = v1_aft_v + v2_aft_v;
+                                
+                                bool accept = false;
+                                if (total_av < total_bv) accept = true;
+                                else if (total_av == total_bv && net < -1e-6) accept = true;
+                                
+                                if (accept) {
+                                    improved = true;
+                                } else {
+                                    routes[v2].erase(routes[v2].begin() + pos, routes[v2].begin() + pos + 2);
+                                    routes[v1].insert(routes[v1].begin() + i, e_a);
+                                    routes[v1].insert(routes[v1].begin() + i + 1, e_b);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -1509,7 +1678,9 @@ public:
         // Build initial route cache for delta evaluation (opt 7)
         build_route_cache(current_routes, vehs, emps);
         
-        double temperature = start_temp;
+        // Adaptive temperature: scale based on initial cost for problem-proportional SA
+        double adaptive_start = std::max(start_temp, best_cost * 0.5);
+        double temperature = adaptive_start;
         int iteration = 0;
         int accept_count = 0, improve_count = 0;
         int segment_iter = 0;
@@ -1517,9 +1688,19 @@ public:
         // Adaptive reheating state (opt 5)
         int iters_since_best = 0;
         int reheat_count = 0;
-        const int REHEAT_THRESHOLD = 500;   // reheat after this many iterations without improvement
-        const int MAX_REHEATS = 5;          // limit total reheats
-        const double REHEAT_FACTOR = 0.5;   // reheat to this fraction of start_temp
+        const int REHEAT_THRESHOLD = 1000;   // reheat after this many iterations without improvement
+        const int MAX_REHEATS = 12;          // limit total reheats (every 3rd is a random restart)
+        const double REHEAT_FACTOR = 0.4;    // reheat to this fraction of start_temp
+        
+        // GLS calibration: lambda = 0.1 * average_route_cost / num_employees
+        {
+            CostResult init_check = calculate_cost_and_violations(routes, vehs, emps, meta);
+            double avg_cost = (init_check.cost > 0 && total_employees > 0) ?
+                              init_check.cost / total_employees : 100.0;
+            gls_lambda = 0.1 * avg_cost / std::max(1, total_employees);
+            edge_penalties.clear();
+        }
+        int gls_counter = 0;
         
         std::cout << "Initial cost: $" << best_cost 
                   << " (" << count_assigned(routes) << "/" << total_employees << " assigned"
@@ -1644,19 +1825,24 @@ public:
             // Save current cache, update only modified routes
             auto saved_cache = route_cache;
             CostResult cr = delta_evaluate(temp_routes, vehs, emps, meta, modified_vehicles);
-            double new_cost = cr.cost;
-            double delta = new_cost - current_cost;
+            // Add GLS penalty to augmented cost for acceptance decision
+            double gls_pen = calculate_gls_penalty(temp_routes, vehs, emps);
+            double new_cost = cr.cost + gls_pen;
+            double delta = new_cost - (current_cost + calculate_gls_penalty(current_routes, vehs, emps));
             
             bool accept = false;
             int new_hard_v = cr.hard_violations;
             
-            // Use shared comparison function
-            bool is_new_best = is_solution_better(new_hard_v, 0, new_cost,
+            // Use RAW cost (without GLS) for best-solution tracking
+            double raw_new_cost = cr.cost;
+            
+            // Use shared comparison function — compare against best using raw cost
+            bool is_new_best = is_solution_better(new_hard_v, 0, raw_new_cost,
                                                    best_hard_v, 0, best_cost);
             
             if (is_new_best) {
                 accept = true;
-                best_cost = new_cost;
+                best_cost = raw_new_cost;
                 best_hard_v = new_hard_v;
                 best_routes = temp_routes;
                 improve_count++;
@@ -1688,7 +1874,7 @@ public:
             
             if (accept) {
                 current_routes = temp_routes;
-                current_cost = new_cost;
+                current_cost = raw_new_cost;  // Track raw cost (without GLS)
                 current_hard_v = new_hard_v;
                 // route_cache already updated by delta_evaluate
                 accept_count++;
@@ -1702,20 +1888,76 @@ public:
             temperature *= cooling_rate;
             iters_since_best++;
             
-            // ===== ADAPTIVE REHEATING (opt 5) =====
+            // ===== GLS PENALTY UPDATE (inspired by OR-Tools Guided Local Search) =====
+            gls_counter++;
+            if (gls_counter >= gls_update_interval) {
+                gls_counter = 0;
+                update_gls_penalties(current_routes, vehs, emps);
+            }
+            
+            // ===== ADAPTIVE REHEATING / RANDOM RESTART (opt 5) =====
             if (iters_since_best >= REHEAT_THRESHOLD && reheat_count < MAX_REHEATS) {
-                double new_temp = start_temp * REHEAT_FACTOR;
-                std::cout << "  🔥 REHEAT #" << (reheat_count + 1) 
-                         << ": temp " << temperature << " → " << new_temp
-                         << " (stagnated " << iters_since_best << " iters)" << std::endl;
-                temperature = new_temp;
+                // Every 3rd reheat: do a RANDOM RESTART (reconstruct from scratch)
+                // This provides much stronger diversification than just temperature reheating
+                if (reheat_count > 0 && reheat_count % 3 == 0) {
+                    std::cout << "  🔄 RANDOM RESTART #" << (reheat_count + 1) 
+                             << " (rebuilding from scratch, iter " << iteration << ")" << std::endl;
+                    
+                    // Destroy everything and rebuild with random ordering
+                    std::vector<int> all_emps;
+                    for (int e = 0; e < total_employees; e++) all_emps.push_back(e);
+                    
+                    // Create a fresh random solution
+                    current_routes.clear();
+                    current_routes.resize(vehs.size());
+                    std::shuffle(all_emps.begin(), all_emps.end(), rng);
+                    
+                    // Use repair_greedy to build a complete solution from scratch
+                    repair_greedy(current_routes, all_emps, vehs, emps, meta, alns_enforce_soft);
+                    
+                    // Ensure all assigned
+                    if (!all_emps.empty()) {
+                        force_insert_all(current_routes, all_emps, vehs, emps, meta, alns_enforce_soft);
+                    }
+                    
+                    // Apply local search to clean up
+                    apply_local_search(current_routes, vehs, emps, meta);
+                    apply_inter_route_moves(current_routes, vehs, emps, meta);
+                    
+                    CostResult restart_cr = calculate_cost_and_violations(current_routes, vehs, emps, meta);
+                    current_cost = restart_cr.cost;
+                    current_hard_v = restart_cr.hard_violations;
+                    build_route_cache(current_routes, vehs, emps);
+                    
+                    // Check if restart found something better
+                    bool restart_better = is_solution_better(current_hard_v, 0, current_cost,
+                                                              best_hard_v, 0, best_cost);
+                    if (restart_better) {
+                        best_cost = current_cost;
+                        best_hard_v = current_hard_v;
+                        best_routes = current_routes;
+                        std::cout << "  ★ RESTART FOUND NEW BEST: $" << best_cost << std::endl;
+                    }
+                    
+                    temperature = adaptive_start * REHEAT_FACTOR;
+                } else {
+                    double new_temp = adaptive_start * REHEAT_FACTOR;
+                    std::cout << "  🔥 REHEAT #" << (reheat_count + 1) 
+                             << ": temp " << temperature << " → " << new_temp
+                             << " (stagnated " << iters_since_best << " iters)" << std::endl;
+                    temperature = new_temp;
+                    // Return to best known solution to diversify from there
+                    current_routes = best_routes;
+                    current_cost = best_cost;
+                    current_hard_v = best_hard_v;
+                    build_route_cache(current_routes, vehs, emps);
+                }
                 iters_since_best = 0;
                 reheat_count++;
-                // Return to best known solution to diversify from there
-                current_routes = best_routes;
-                current_cost = best_cost;
-                current_hard_v = best_hard_v;
-                build_route_cache(current_routes, vehs, emps);
+                // Partially reset GLS penalties to allow revisiting old arcs
+                for (auto& [key, pen] : edge_penalties) {
+                    pen *= 0.5;  // Decay penalties on reheat for diversification
+                }
             }
         }
         
@@ -1765,10 +2007,13 @@ public:
         
         std::cout << "\n--- Post-ALNS Exhaustive Optimization ---\n";
         
+        // Phase 1: Intra-route optimization (quick)
+        apply_local_search(routes, vehs, emps, meta);
+        
         bool improved = true;
         int pass = 0;
         
-        while (improved && pass < 100) {
+        while (improved && pass < 150) {
             improved = false;
             pass++;
             
@@ -1921,7 +2166,240 @@ public:
                 std::swap(routes[best_v1][best_i], routes[best_v2][best_j]);
                 improved = true;
             }
+            
+            // Re-run intra-route optimization after each inter-route move
+            if (improved) {
+                apply_local_search(routes, vehs, emps, meta);
+            }
         }
+        
+        // Phase 2: Try to consolidate routes by emptying expensive vehicles
+        // Inspired by OR-Tools' natural tendency to minimize vehicle usage
+        std::cout << "  Post-consolidation phase...\n";
+        {
+            // Find active vehicles sorted by cost-per-km (most expensive first)
+            std::vector<size_t> active;
+            for (size_t v = 0; v < routes.size(); v++)
+                if (!routes[v].empty()) active.push_back(v);
+            
+            std::sort(active.begin(), active.end(), [&](size_t a, size_t b) {
+                return vehs[a].cost_per_km > vehs[b].cost_per_km;
+            });
+            
+            for (size_t ai = 0; ai < active.size(); ai++) {
+                size_t v1 = active[ai];
+                if (routes[v1].empty()) continue;
+                if ((int)routes[v1].size() > 4) continue;  // Try emptying routes up to 4 employees
+                
+                // Try moving ALL employees from v1 to other routes
+                // Try multiple random orderings to find one that works
+                auto saved_routes = routes;
+                std::vector<int> to_move = routes[v1];
+                bool consolidated = false;
+                
+                int num_orderings = std::min(10, std::max(1, (int)to_move.size() * 2));
+                for (int ord = 0; ord < num_orderings && !consolidated; ord++) {
+                    routes = saved_routes;
+                    routes[v1].clear();
+                    
+                    // Shuffle for all but the first attempt (first = original order)
+                    if (ord > 0) {
+                        std::shuffle(to_move.begin(), to_move.end(), rng);
+                    }
+                
+                    bool all_placed = true;
+                    for (int emp : to_move) {
+                        double best_cost = 1e18;
+                        int best_v = -1, best_pos = -1;
+                        
+                        for (size_t v2 = 0; v2 < routes.size(); v2++) {
+                            if (v2 == v1) continue;
+                            if ((int)routes[v2].size() >= vehs[v2].capacity) continue;
+                            
+                            for (size_t pos = 0; pos <= routes[v2].size(); pos++) {
+                                routes[v2].insert(routes[v2].begin() + pos, emp);
+                                int h = 0, s = 0;
+                                bool valid = validate_full_route(routes[v2], vehs[v2], emps, h, s, false, meta);
+                                routes[v2].erase(routes[v2].begin() + pos);
+                                if (valid && h == 0) {
+                                    int prev = (pos == 0) ? vehs[v2].start_node : emps[routes[v2][pos-1]].node_idx;
+                                    int curr = emps[emp].node_idx;
+                                    int next = (pos == routes[v2].size()) ? OFFICE_NODE : emps[routes[v2][pos]].node_idx;
+                                    double cost = (dist_matrix[prev][curr] + dist_matrix[curr][next] - dist_matrix[prev][next]) * vehs[v2].cost_per_km;
+                                    if (cost < best_cost) {
+                                        best_cost = cost;
+                                        best_v = (int)v2;
+                                        best_pos = (int)pos;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (best_v >= 0) {
+                            routes[best_v].insert(routes[best_v].begin() + best_pos, emp);
+                        } else {
+                            all_placed = false;
+                            break;
+                        }
+                    }
+                    
+                    if (all_placed) {
+                        // Check if new solution is better cost-wise
+                        CostResult cr_new = calculate_cost_and_violations(routes, vehs, emps, meta);
+                        CostResult cr_old = calculate_cost_and_violations(saved_routes, vehs, emps, meta);
+                        if (cr_new.hard_violations <= cr_old.hard_violations && cr_new.cost < cr_old.cost) {
+                            std::cout << "  Consolidated route " << v1 << " (ordering " << ord 
+                                     << ", saved $" << (cr_old.cost - cr_new.cost) << ")\n";
+                            apply_local_search(routes, vehs, emps, meta);
+                            consolidated = true;  // Break out of orderings loop
+                        } else {
+                            routes = saved_routes;
+                        }
+                    } else {
+                        routes = saved_routes;
+                    }
+                }  // end orderings loop
+            }
+        }
+        
+        // Phase 3: Final re-optimization after consolidation may have opened new opportunities
+        std::cout << "  Final re-optimization after consolidation...\n";
+        apply_local_search(routes, vehs, emps, meta);
+        
+        // One more round of best-improvement inter-route moves
+        bool final_improved = true;
+        int final_pass = 0;
+        while (final_improved && final_pass < 50) {
+            final_improved = false;
+            final_pass++;
+            
+            // Pre-compute violations
+            std::vector<int> final_viols(routes.size(), 0);
+            for (size_t v = 0; v < routes.size(); v++) {
+                if (routes[v].empty()) continue;
+                RouteSimResult sim = simulate_route(routes[v], vehs[v], emps);
+                ViolationCount vc = count_route_violations(routes[v], vehs[v], emps, sim.office_arrival);
+                final_viols[v] = vc.hard_time_violations + vc.pref_violations;
+            }
+            
+            double best_save = 0;
+            int best_type = -1;
+            size_t bv1 = 0, bv2 = 0;
+            int bi = 0, bj = 0;
+            int bvd = 0;
+            
+            // Relocations
+            for (size_t v1 = 0; v1 < routes.size(); v1++) {
+                if (routes[v1].empty()) continue;
+                for (int i = 0; i < (int)routes[v1].size(); i++) {
+                    int emp = routes[v1][i];
+                    int emp_node = emps[emp].node_idx;
+                    int prev1 = (i == 0) ? vehs[v1].start_node : emps[routes[v1][i-1]].node_idx;
+                    int next1 = (i == (int)routes[v1].size()-1) ? OFFICE_NODE : emps[routes[v1][i+1]].node_idx;
+                    double rem_sav = (dist_matrix[prev1][emp_node] + dist_matrix[emp_node][next1]
+                                      - dist_matrix[prev1][next1]) * vehs[v1].cost_per_km;
+                    
+                    for (size_t v2 = 0; v2 < routes.size(); v2++) {
+                        if (v1 == v2) continue;
+                        if ((int)routes[v2].size() >= vehs[v2].capacity) continue;
+                        int tb = final_viols[v1] + final_viols[v2];
+                        
+                        for (size_t pos = 0; pos <= routes[v2].size(); pos++) {
+                            int p2 = (pos == 0) ? vehs[v2].start_node : emps[routes[v2][pos-1]].node_idx;
+                            int n2 = (pos == routes[v2].size()) ? OFFICE_NODE : emps[routes[v2][pos]].node_idx;
+                            double ins_cost = (dist_matrix[p2][emp_node] + dist_matrix[emp_node][n2]
+                                               - dist_matrix[p2][n2]) * vehs[v2].cost_per_km;
+                            double net = ins_cost - rem_sav;
+                            
+                            routes[v1].erase(routes[v1].begin() + i);
+                            routes[v2].insert(routes[v2].begin() + pos, emp);
+                            int va1 = 0, va2 = 0;
+                            if (!routes[v1].empty()) {
+                                RouteSimResult s1 = simulate_route(routes[v1], vehs[v1], emps);
+                                ViolationCount vc1 = count_route_violations(routes[v1], vehs[v1], emps, s1.office_arrival);
+                                va1 = vc1.hard_time_violations + vc1.pref_violations;
+                            }
+                            {
+                                RouteSimResult s2 = simulate_route(routes[v2], vehs[v2], emps);
+                                ViolationCount vc2 = count_route_violations(routes[v2], vehs[v2], emps, s2.office_arrival);
+                                va2 = vc2.hard_time_violations + vc2.pref_violations;
+                            }
+                            int ta = va1 + va2;
+                            int vd = ta - tb;
+                            double imp = -net + (-vd) * 100000.0;
+                            
+                            if (vd < 0 || (vd == 0 && net < -1e-6)) {
+                                if (imp > best_save) {
+                                    best_save = imp; best_type = 0;
+                                    bv1 = v1; bi = i; bv2 = v2; bj = (int)pos; bvd = vd;
+                                }
+                            }
+                            routes[v2].erase(routes[v2].begin() + pos);
+                            routes[v1].insert(routes[v1].begin() + i, emp);
+                        }
+                    }
+                }
+            }
+            
+            if (best_type == 0) {
+                int emp = routes[bv1][bi];
+                routes[bv1].erase(routes[bv1].begin() + bi);
+                routes[bv2].insert(routes[bv2].begin() + bj, emp);
+                final_improved = true;
+                apply_local_search(routes, vehs, emps, meta);
+            }
+        }
+        if (final_pass > 1) std::cout << "  Final re-opt: " << final_pass << " passes\n";
+        
+        // Phase 4: Score-aware intra-route optimization
+        // The standard local search optimizes distance only. This pass tries
+        // pairwise swaps within each route using SCORE (cost + time weighted)
+        // to reduce wait times and improve the time component.
+        int score_improvements = 0;
+        for (size_t v = 0; v < routes.size(); v++) {
+            if ((int)routes[v].size() < 2) continue;
+            
+            bool route_improved = true;
+            while (route_improved) {
+                route_improved = false;
+                
+                // Compute current route score
+                RouteSimResult sim_before = simulate_route(routes[v], vehs[v], emps);
+                ViolationCount vc_before = count_route_violations(routes[v], vehs[v], emps, sim_before.office_arrival);
+                int viols_before = vc_before.hard_time_violations + vc_before.pref_violations;
+                double cost_before = sim_before.total_distance * vehs[v].cost_per_km;
+                double time_before = sim_before.office_arrival - vehs[v].available_from;
+                double score_before = meta.cost_weight * cost_before + meta.time_weight * time_before;
+                
+                for (int a = 0; a < (int)routes[v].size() && !route_improved; a++) {
+                    for (int b = a + 1; b < (int)routes[v].size() && !route_improved; b++) {
+                        std::swap(routes[v][a], routes[v][b]);
+                        
+                        RouteSimResult sim_after = simulate_route(routes[v], vehs[v], emps);
+                        ViolationCount vc_after = count_route_violations(routes[v], vehs[v], emps, sim_after.office_arrival);
+                        int viols_after = vc_after.hard_time_violations + vc_after.pref_violations;
+                        double cost_after = sim_after.total_distance * vehs[v].cost_per_km;
+                        double time_after = sim_after.office_arrival - vehs[v].available_from;
+                        double score_after = meta.cost_weight * cost_after + meta.time_weight * time_after;
+                        
+                        bool accept = false;
+                        if (viols_after < viols_before) accept = true;
+                        else if (viols_after == viols_before && score_after < score_before - 0.01) accept = true;
+                        
+                        if (accept) {
+                            route_improved = true;
+                            score_improvements++;
+                        } else {
+                            std::swap(routes[v][a], routes[v][b]); // undo
+                        }
+                    }
+                }
+            }
+        }
+        if (score_improvements > 0) {
+            std::cout << "  Score-aware phase: " << score_improvements << " time-reducing swaps\n";
+        }
+        
         std::cout << "Post-optimization: " << pass << " passes\n";
     }
 };

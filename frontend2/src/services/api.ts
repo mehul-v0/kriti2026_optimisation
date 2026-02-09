@@ -21,6 +21,14 @@ interface UploadResponse {
   baseline_cost: number;
 }
 
+export interface ViolationDetails {
+  capacity_violations: { vehicle: string; trip: number; passengers: number; capacity: number; employees: string }[];
+  time_window_violations: { employee: string; vehicle: string; trip: number; office_arrival: string; deadline: string; delay_min: number }[];
+  unassigned_employees: { employee: string }[];
+  vehicle_pref_violations: { employee: string; vehicle: string; preferred: string; assigned: string }[];
+  sharing_pref_violations: { employee: string; vehicle: string; trip: number; preferred: string; actual_riders: number }[];
+}
+
 interface OptimizeResponse {
   success: boolean;
   result: {
@@ -37,6 +45,7 @@ interface OptimizeResponse {
   };
   routes: BackendRoute[];
   assignments: BackendAssignment[];
+  violation_details?: ViolationDetails;
 }
 
 export interface BackendEmployee {
@@ -71,6 +80,9 @@ export interface BackendRoute {
     type: 'pickup' | 'office';
     employee_id: string | null;
     trip_number: number;
+    arrival_time?: string;
+    departure_time?: string;
+    distance_from_prev?: number;
   }[];
   total_distance: number;
   total_cost: number;
@@ -126,8 +138,40 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
  * Run optimization on previously uploaded data
  */
 export async function runOptimization(): Promise<OptimizeResponse> {
+  // Get optimization config from storage
+  const configStr = sessionStorage.getItem('optimizationConfig');
+  const solverDuration = sessionStorage.getItem('solverDuration');
+  
+  const payload: any = {};
+  
+  if (configStr) {
+    try {
+      const config = JSON.parse(configStr);
+      payload.costWeight = config.costWeight;
+      payload.timeWeight = config.timeWeight;
+      payload.priorityDelays = config.priorityDelays;
+    } catch (e) {
+      console.warn('Failed to parse optimization config:', e);
+    }
+  }
+  
+  if (solverDuration) {
+    // Convert frontend duration to backend seconds, minus 7s for processing overhead
+    const durationMap: Record<string, number> = { 
+      Quick: Math.max(1, 15 - 7), 
+      Standard: Math.max(1, 30 - 7), 
+      Thorough: Math.max(1, 60 - 7), 
+      Maximum: Math.max(1, 120 - 7) 
+    };
+    payload.solverDurationSeconds = durationMap[solverDuration] || 23;
+  }
+
   const res = await fetch(`${API_BASE}/optimize`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {

@@ -31,10 +31,12 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
     cp.setup(enforce_soft, emps, active_virt, meta);
     
     // Try multiple construction strategies and keep the best
+    // Removed LATEST_DEADLINE (rarely helps) to give more time per strategy
     std::vector<OrderingStrategy> strategies = {
         EARLIEST_DEADLINE,
-        LATEST_DEADLINE,
         GEOGRAPHIC_CLUSTER,
+        DOLLAR_COST_AWARE,
+        PREFERENCE_PRIORITY,
         PRIORITY_BASED
     };
     
@@ -51,8 +53,8 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
         std::vector<std::vector<int>> routes;
         SingleTripConstruction::build(routes, emps, active_virt, cp, enforce_soft, meta);
         
-        // Give more time to this strategy
-        int strategy_time = time_limit / 2;  // Half the time budget
+        // Give 30% of time to single-trip strategy (6 total strategies)
+        int strategy_time = time_limit * 3 / 10;
         
         AdaptiveLargeNeighborhoodSearch alns;
         alns.set_constraint_engine(&cp);
@@ -71,8 +73,8 @@ Solution solve_stage(bool enforce_soft, const std::vector<Employee>& emps,
         best_sol = sol;
     }
     
-    // Try other strategies with remaining time
-    int remaining_time = time_limit / 2;
+    // Try other strategies with remaining 70% of time
+    int remaining_time = time_limit * 7 / 10;
     for (size_t strat_idx = 0; strat_idx < strategies.size(); strat_idx++) {
         OrderingStrategy strategy = strategies[strat_idx];
         std::cout << "\n--- Strategy " << (strat_idx + 2) << "/" << (strategies.size() + 1) << " ---\n";
@@ -143,30 +145,17 @@ int main(int argc, char* argv[]) {
     Solution best;
     best.hard_violations = best.soft_violations = 999999;
     
-    // Stage 1: ALL constraints
+    // Stage 1: ALL constraints (full time)
     try {
         Solution s1 = solve_stage(true, emps, phys, virt, meta, 1, time_limit);
+        best = s1;
         if (s1.hard_violations == 0 && s1.soft_violations == 0) {
-            std::cout << "\nSTAGE 1 SUCCESS: OPTIMAL solution\n";
+            std::cout << "\nSTAGE 1 SUCCESS: Found 0-violation solution\n";
             s1.solution_type = "OPTIMAL - No violations";
             best = s1;
-            
-            json out = OutputFormatter::to_json(best);
-            std::ofstream f(output_file);
-            if (!f.is_open()) {
-                std::cerr << "Error: Cannot write to " << output_file << std::endl;
-                return 1;
-            }
-            f << out.dump(2);
-            f.close();
-            if (f.fail()) {
-                std::cerr << "Error: Write failed for " << output_file << std::endl;
-                return 1;
-            }
-            std::cout << "\nSaved: " << output_file << "\n\n" << out.dump(2) << std::endl;
-            return 0;
+            // Output and return early — Stage 2 can't improve a 0-violation solution meaningfully
+            goto output_result;
         }
-        best = s1;
         // Set descriptive solution_type for Stage 1 results
         if (s1.hard_violations > 0) {
             s1.solution_type = "STAGE1 - " + std::to_string(s1.hard_violations) + " hard, " + std::to_string(s1.soft_violations) + " soft";
@@ -176,7 +165,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "⚠️ Stage 1 error: " << e.what() << std::endl;
     }
     
-    // Stage 2: HARD constraints only (allows soft violations)
+    // Stage 2: HARD constraints only (allows soft violations, for infeasible cases)
     try {
         Solution s2 = solve_stage(false, emps, phys, virt, meta, 2, time_limit);
         
@@ -202,6 +191,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Output best
+    output_result:
     if (best.hard_violations < 999999) {
         std::cout << "\n" << std::string(70, '=') << "\n";
         std::cout << "FINAL: " << best.solution_type << "\n";

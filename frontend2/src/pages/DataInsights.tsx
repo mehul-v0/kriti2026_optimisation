@@ -1,14 +1,55 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Clock, Users, Car, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Car, ChevronDown, ChevronUp, RotateCcw, ChevronLeft, ChevronRight, Search, Filter } from 'lucide-react';
 import type { Employee, Vehicle } from '../types';
+import { useApp } from '../context/AppContext';
 
 export default function DataInsights() {
   const navigate = useNavigate();
+  const { startOptimization, lastOptimizationKey, currentResult } = useApp();
   const [data, setData] = useState<{ employees: Employee[]; vehicles: Vehicle[] } | null>(null);
   const [solverDuration, setSolverDuration] = useState<'Quick' | 'Standard' | 'Thorough' | 'Maximum'>('Standard');
   const [showEmployees, setShowEmployees] = useState(false);
+  
+  // Table pagination and filter state
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState<'All' | 'High' | 'Medium' | 'Low'>('All');
+  const ROWS_PER_PAGE = 10;
+  
+  // Configuration state with default values
+  const defaultConfig = {
+    costWeight: 0.7,
+    timeWeight: 0.3,
+    priorityDelays: {
+      1: 5,
+      2: 5,
+      3: 10,
+      4: 15,
+      5: 15
+    } as Record<number, number>
+  };
+  
+  const [config, setConfig] = useState(defaultConfig);
+  
+  const resetConfig = () => {
+    setConfig(defaultConfig);
+  };
+  
+  const updateCostWeight = (value: number) => {
+    setConfig({ ...config, costWeight: value, timeWeight: 1 - value });
+  };
+  
+  const updatePriorityDelay = (priority: number, delay: number) => {
+    setConfig({
+      ...config,
+      priorityDelays: {
+        ...config.priorityDelays,
+        [priority]: delay
+      }
+    });
+  };
 
   useEffect(() => {
     const savedData = sessionStorage.getItem('uploadedData');
@@ -22,15 +63,55 @@ export default function DataInsights() {
 
   if (!data) return null;
 
-  const timeWindow = {
-    start: data.vehicles.reduce((min, v) => (v.availabilityTime < min ? v.availabilityTime : min), data.vehicles[0].availabilityTime),
-    end: data.employees.reduce((max, e) => (e.timeWindowEnd > max ? e.timeWindowEnd : max), data.employees[0].timeWindowEnd),
+  // Filter and paginate employees
+  const filteredEmployees = data.employees.filter(emp => {
+    const matchesSearch = emp.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         emp.pickupLocation.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         emp.priority.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         emp.timeWindowStart.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         emp.timeWindowEnd.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         emp.sharingPreference.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (emp.baselineCost || 150).toString().includes(searchQuery.toLowerCase());
+    const matchesPriority = priorityFilter === 'All' || emp.priority === priorityFilter;
+    return matchesSearch && matchesPriority;
+  });
+  
+  const totalPages = Math.ceil(filteredEmployees.length / ROWS_PER_PAGE);
+  const paginatedEmployees = filteredEmployees.slice(
+    currentPage * ROWS_PER_PAGE,
+    (currentPage + 1) * ROWS_PER_PAGE
+  );
+  
+  const nextPage = () => {
+    if (currentPage < totalPages - 1) setCurrentPage(currentPage + 1);
   };
+  
+  const prevPage = () => {
+    if (currentPage > 0) setCurrentPage(currentPage - 1);
+  };
+
+  // Calculate fleet capacity metrics
+  const totalCapacity = data.vehicles.reduce((sum, vehicle) => sum + vehicle.capacity, 0);
+  const averageCapacity = data.vehicles.length > 0 ? totalCapacity / data.vehicles.length : 0;
+  const earliestAvailability = data.vehicles.reduce((earliest, v) => 
+    v.availabilityTime < earliest ? v.availabilityTime : earliest, 
+    data.vehicles[0]?.availabilityTime || '00:00'
+  );
+  const latestAvailability = data.vehicles.reduce((latest, v) => 
+    v.availabilityTime > latest ? v.availabilityTime : latest, 
+    data.vehicles[0]?.availabilityTime || '00:00'
+  );
 
   const priorityDist = {
     High: data.employees.filter((e) => e.priority === 'High').length,
     Medium: data.employees.filter((e) => e.priority === 'Medium').length,
     Low: data.employees.filter((e) => e.priority === 'Low').length,
+  };
+  
+  const sharingDist = {
+    Single: data.employees.filter((e) => e.sharingPreference === 'Single').length,
+    Double: data.employees.filter((e) => e.sharingPreference === 'Double').length,
+    Triple: data.employees.filter((e) => e.sharingPreference === 'Triple').length,
   };
 
   const fuelDist = {
@@ -47,62 +128,37 @@ export default function DataInsights() {
 
   const handleRunOptimization = () => {
     sessionStorage.setItem('solverDuration', solverDuration);
+    sessionStorage.setItem('optimizationConfig', JSON.stringify(config));
+
+    // Build fingerprint of current data + config
+    const dataStr = sessionStorage.getItem('uploadedData') || '';
+    const configStr = JSON.stringify(config);
+    const currentKey = `${dataStr.length}|${configStr}|${solverDuration}`;
+
+    // If nothing changed since last successful run and we already have results, skip
+    if (currentKey === lastOptimizationKey && currentResult) {
+      sessionStorage.setItem('optimizationComplete', 'true');
+      navigate('/results');
+      return;
+    }
+
+    sessionStorage.removeItem('optimizationComplete');
+    // Start the optimization in AppContext (runs in background)
+    startOptimization();
     navigate('/processing');
   };
 
   return (
-    <div className="min-h-screen bg-dark p-8">
+    <div className="min-h-screen p-3">
       <div className="max-w-7xl mx-auto">
-        {/* Progress Indicator */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            {['Upload Data', 'Review Insights', 'Configure', 'Optimize'].map((step, index) => (
-              <div key={step} className="flex items-center">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                    index <= 1 ? 'bg-primary text-dark' : 'bg-dark-700 text-gray'
-                  }`}
-                >
-                  {index + 1}
-                </div>
-                <span className={`ml-2 ${index <= 1 ? 'text-white font-medium' : 'text-gray'}`}>
-                  {step}
-                </span>
-                {index < 3 && <div className="w-12 h-px bg-gray/30 mx-4" />}
-              </div>
-            ))}
-          </div>
-        </div>
-
         <h1 className="text-4xl font-bold mb-2">Data Insights Preview</h1>
         <p className="text-gray mb-8">Review your uploaded data before optimization</p>
 
-        {/* Time Window Overview */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card mb-6">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <Clock className="w-6 h-6 text-primary" />
-            Planning Window
-          </h2>
-          <div className="flex items-center justify-between">
-            <div className="text-center">
-              <p className="text-sm text-gray mb-1">Start Time</p>
-              <p className="text-2xl font-bold text-primary">{timeWindow.start}</p>
-            </div>
-            <div className="flex-1 mx-8">
-              <div className="h-2 bg-gradient-to-r from-primary via-primary-dark to-primary rounded-full" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-gray mb-1">End Time</p>
-              <p className="text-2xl font-bold text-primary">{timeWindow.end}</p>
-            </div>
-          </div>
-        </motion.div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
           {/* Employee Requests */}
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="card">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40 p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Users className="w-6 h-6 text-blue-400" />
+              <Users className="w-6 h-6 text-primary" />
               Employee Requests Overview
             </h2>
             <div className="space-y-4">
@@ -111,16 +167,96 @@ export default function DataInsights() {
                 <p className="text-3xl font-bold">{data.employees.length}</p>
               </div>
               <div>
-                <p className="text-sm text-gray mb-2">Priority Distribution</p>
-                <div className="flex gap-2 mb-2">
-                  <div className="flex-1 bg-red-500 h-8 rounded flex items-center justify-center text-sm font-medium" style={{ width: `${(priorityDist.High / data.employees.length) * 100}%` }}>
-                    {priorityDist.High > 0 && `High: ${priorityDist.High}`}
+                <p className="text-lg font-semibold text-white mb-4">Priority Distribution</p>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="bg-dark-600/80 p-4 rounded-lg">
+                    <div className="text-sm text-gray mb-1">High</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold">{priorityDist.High}</div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1 h-4 rounded ${(i + 1) <= (priorityDist.High / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 bg-yellow-500 h-8 rounded flex items-center justify-center text-sm font-medium" style={{ width: `${(priorityDist.Medium / data.employees.length) * 100}%` }}>
-                    {priorityDist.Medium > 0 && `Med: ${priorityDist.Medium}`}
+                  <div className="bg-dark-600/80 p-4 rounded-lg">
+                    <div className="text-sm text-gray mb-1">Medium</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold">{priorityDist.Medium}</div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1 h-4 rounded ${(i + 1) <= (priorityDist.Medium / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 bg-green-500 h-8 rounded flex items-center justify-center text-sm font-medium" style={{ width: `${(priorityDist.Low / data.employees.length) * 100}%` }}>
-                    {priorityDist.Low > 0 && `Low: ${priorityDist.Low}`}
+                  <div className="bg-dark-600/80 p-4 rounded-lg">
+                    <div className="text-sm text-gray mb-1">Low</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold">{priorityDist.Low}</div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1 h-4 rounded ${(i + 1) <= (priorityDist.Low / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-white mb-4">Sharing Preferences</p>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-dark-600/80 p-4 rounded-lg">
+                    <div className="text-sm text-gray mb-1">Single</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold">{sharingDist.Single}</div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1 h-4 rounded ${(i + 1) <= (sharingDist.Single / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-dark-600/80 p-4 rounded-lg">
+                    <div className="text-sm text-gray mb-1">Double</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold">{sharingDist.Double}</div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1 h-4 rounded ${(i + 1) <= (sharingDist.Double / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-dark-600/80 p-4 rounded-lg">
+                    <div className="text-sm text-gray mb-1">Triple</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold">{sharingDist.Triple}</div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1 h-4 rounded ${(i + 1) <= (sharingDist.Triple / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -128,81 +264,298 @@ export default function DataInsights() {
           </motion.div>
 
           {/* Vehicle Fleet */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="card">
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40 p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Car className="w-6 h-6 text-purple-400" />
-              Available Fleet
+              <Car className="w-6 h-6 text-primary" />
+              Fleet Capacity Overview
             </h2>
             <div className="space-y-4">
-              <div>
-                <p className="text-sm text-gray mb-2">Total Vehicles</p>
-                <p className="text-3xl font-bold">{data.vehicles.length}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray mb-2">By Fuel Type</p>
-                <div className="flex gap-4 text-sm">
-                  <div><span className="text-green-400">⚡ Electric:</span> {fuelDist.Electric}</div>
-                  <div><span className="text-blue-400">⛽ Petrol:</span> {fuelDist.Petrol}</div>
-                  <div><span className="text-orange-400">🛢️ Diesel:</span> {fuelDist.Diesel}</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray mb-2">Total Vehicles</p>
+                  <p className="text-3xl font-bold">{data.vehicles.length}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray mb-2">Fleet Capacity</p>
+                  <p className="text-3xl font-bold">{totalCapacity}</p>
+                  <p className="text-xs text-gray">Avg: {averageCapacity.toFixed(1)} per vehicle</p>
                 </div>
               </div>
+              
               <div>
-                <p className="text-sm text-gray mb-2">By Vehicle Mode</p>
-                <div className="flex gap-4 text-sm">
-                  <div>🏍️ 2-Wheeler: {modeDist['2-Wheeler']}</div>
-                  <div>🚗 4-Wheeler: {modeDist['4-Wheeler']}</div>
-                  <div>🚐 Van: {modeDist.Van}</div>
+                <p className="text-sm text-gray mb-2">Availability Window</p>
+                <div className="bg-dark-600/80 p-3 rounded-lg">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray">Available from:</span>
+                    <span className="text-white font-medium">{earliestAvailability}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm mt-1">
+                    <span className="text-gray">Latest start:</span>
+                    <span className="text-white font-medium">{latestAvailability}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-lg font-semibold text-white mb-4">Vehicle Distribution</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray font-medium">By Fuel Type</p>
+                    {Object.entries(fuelDist).map(([type, count]) => (
+                      <div key={type} className="bg-dark-600/80 p-3 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{type}</span>
+                          <span className="text-lg font-bold text-primary">{count}</span>
+                        </div>
+                        <div className="mt-2 bg-dark-500 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary rounded-full transition-all duration-500"
+                            style={{ width: `${(count / data.vehicles.length) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray font-medium">By Vehicle Mode</p>
+                    {Object.entries(modeDist).map(([mode, count]) => (
+                      <div key={mode} className="bg-dark-600/80 p-3 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{mode}</span>
+                          <span className="text-lg font-bold text-primary">{count}</span>
+                        </div>
+                        <div className="mt-2 bg-dark-500 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary rounded-full transition-all duration-500"
+                            style={{ width: `${(count / data.vehicles.length) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6">
+                <div className="bg-dark-700/50 p-4 rounded-lg border border-primary/20">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                    <p className="text-sm font-medium text-primary">Ready for Trip Assignment</p>
+                  </div>
+                  <p className="text-xs text-gray">
+                    After optimization: Average capacity utilization and trip routes with distances will be displayed here
+                  </p>
                 </div>
               </div>
             </div>
           </motion.div>
         </div>
 
-        {/* Data Tables Preview */}
-        <div className="card mb-6">
+        {/* Employee Data Table */}
+        <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40 p-6 mb-3">
           <button
             onClick={() => setShowEmployees(!showEmployees)}
-            className="w-full flex items-center justify-between py-3"
+            className="w-full flex items-center justify-between py-3 hover:bg-dark-700/30 rounded-lg transition-colors"
           >
-            <span className="font-bold">Preview Employee Requests (First 10)</span>
-            {showEmployees ? <ChevronUp /> : <ChevronDown />}
+            <h3 className="text-xl font-bold text-white">Employee Requests Preview</h3>
+            {showEmployees ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
           </button>
+          
           {showEmployees && (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-dark-600">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Employee ID</th>
-                    <th className="px-4 py-2 text-left">Priority</th>
-                    <th className="px-4 py-2 text-left">Pickup Location</th>
-                    <th className="px-4 py-2 text-left">Time Window</th>
-                    <th className="px-4 py-2 text-right">Baseline Cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.employees.slice(0, 10).map((emp, index) => (
-                    <tr key={emp.id} className={index % 2 === 0 ? 'bg-dark-700/50' : ''}>
-                      <td className="px-4 py-2">{emp.id}</td>
-                      <td className="px-4 py-2">
-                        <span className={`badge ${emp.priority === 'High' ? 'badge-error' : emp.priority === 'Medium' ? 'badge-warning' : 'badge-success'}`}>
-                          {emp.priority}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2">{emp.pickupLocation}</td>
-                      <td className="px-4 py-2">{emp.timeWindowStart} - {emp.timeWindowEnd}</td>
-                      <td className="px-4 py-2 text-right">₹{emp.baselineCost}</td>
+            <div className="mt-4">
+              {/* Search and Filter Controls */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray/60" />
+                  <input
+                    type="text"
+                    placeholder="Search across all columns..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    className="w-full pl-10 pr-4 py-2 bg-dark-700 border border-gray/30 rounded-lg text-white placeholder-gray/60 focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Filter className="w-4 h-4 text-gray/60" />
+                  <div className="relative">
+                    <select
+                      value={priorityFilter}
+                      onChange={(e) => {
+                        setPriorityFilter(e.target.value as 'All' | 'High' | 'Medium' | 'Low');
+                        setCurrentPage(0);
+                      }}
+                      className="pl-3 pr-8 py-2 bg-dark-700 border border-gray/30 rounded-lg text-white focus:border-primary focus:outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="All">All Priorities</option>
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray/60 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Table */}
+              <div className="overflow-x-auto rounded-lg border border-gray/20">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-dark-600">
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Employee ID</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Priority</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Pickup Location</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Time Window</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Sharing</th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray/80">Baseline Cost</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-dark-700/30">
+                    {paginatedEmployees.map((emp, index) => (
+                      <tr key={emp.id} className="border-b border-gray/10 hover:bg-dark-600/30 transition-colors">
+                        <td className="px-4 py-3 text-sm font-medium text-white">{emp.id}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            emp.priority === 'High' 
+                              ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
+                              : emp.priority === 'Medium' 
+                              ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' 
+                              : 'bg-green-500/20 text-green-300 border border-green-500/30'
+                          }`}>
+                            {emp.priority}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray/90">{emp.pickupLocation}</td>
+                        <td className="px-4 py-3 text-sm text-gray/90">{emp.timeWindowStart} - {emp.timeWindowEnd}</td>
+                        <td className="px-4 py-3 text-sm text-gray/90">{emp.sharingPreference}</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium text-primary">₹{emp.baselineCost || 150}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Pagination Controls */}
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-gray/70">
+                  Showing {currentPage * ROWS_PER_PAGE + 1}-{Math.min((currentPage + 1) * ROWS_PER_PAGE, filteredEmployees.length)} of {filteredEmployees.length} employees
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={prevPage}
+                    disabled={currentPage === 0}
+                    className="p-2 rounded-lg bg-dark-700 hover:bg-dark-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="px-3 py-1 text-sm bg-dark-700 rounded-lg">
+                    {currentPage + 1} of {totalPages || 1}
+                  </span>
+                  <button
+                    onClick={nextPage}
+                    disabled={currentPage >= totalPages - 1}
+                    className="p-2 rounded-lg bg-dark-700 hover:bg-dark-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
         {/* Solver Configuration */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card mb-6">
-          <h2 className="text-xl font-bold mb-4">Optimization Settings</h2>
-          <div className="space-y-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40 p-6 mb-3">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Optimization Settings</h2>
+            <button 
+              onClick={resetConfig}
+              className="flex items-center gap-2 px-3 py-1 text-sm bg-dark-700 hover:bg-dark-600 rounded-lg transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
+            </button>
+          </div>
+          <div className="space-y-6">
+            {/* Combined Cost/Time Weight Slider */}
+            <div>
+              <p className="text-sm text-gray mb-3">Cost vs Time Priority</p>
+              <div className="relative">
+                {/* Weight Labels */}
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-primary rounded-full"></div>
+                    <span className="text-sm text-gray">Cost: {config.costWeight.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray">Time: {config.timeWeight.toFixed(2)}</span>
+                    <div className="w-3 h-3 bg-white rounded-full"></div>
+                  </div>
+                </div>
+                
+                {/* Custom Slider */}
+                <div className="relative h-6 rounded-full overflow-hidden">
+                  {/* Two-tone background */}
+                  <div className="absolute inset-0 flex">
+                    <div className="bg-primary/40" style={{ width: `${config.costWeight * 100}%` }}></div>
+                    <div className="bg-white/20" style={{ width: `${config.timeWeight * 100}%` }}></div>
+                  </div>
+                  
+                  {/* Slider track */}
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="1" 
+                    step="0.01" 
+                    value={config.costWeight}
+                    onChange={(e) => updateCostWeight(parseFloat(e.target.value))}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  
+                  {/* Slider thumb indicator */}
+                  <div 
+                    className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-primary transition-all duration-200 pointer-events-none"
+                    style={{ left: `calc(${config.costWeight * 100}% - 8px)` }}
+                  ></div>
+                </div>
+                
+                <div className="flex justify-between text-xs text-gray mt-1">
+                  <span>Cost Focus</span>
+                  <span>Balanced</span>
+                  <span>Time Focus</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Priority Delay Configuration */}
+            <div>
+              <p className="text-sm text-gray mb-3">Priority Delay Limits</p>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                {[1, 2, 3, 4, 5].map((p) => (
+                  <div key={p} className="bg-dark-700/50 p-4 rounded-lg">
+                    <label className="block text-sm text-gray mb-2">Priority {p}</label>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={config.priorityDelays[p]}
+                        onChange={(e) => updatePriorityDelay(p, parseInt(e.target.value) || 0)}
+                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg focus:border-primary focus:outline-none"
+                      />
+                      <span className="text-xs text-gray whitespace-nowrap">min</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray mt-2">
+                Maximum delay allowed for each priority level before the employee is considered late.
+              </p>
+            </div>
+            
+            {/* Solver Duration */}
             <div>
               <p className="text-sm text-gray mb-3">Solver Duration</p>
               <div className="grid grid-cols-4 gap-4">
@@ -218,10 +571,10 @@ export default function DataInsights() {
                   >
                     <div className="font-bold mb-1">{mode}</div>
                     <div className="text-xs">
-                      {mode === 'Quick' && '30 seconds'}
-                      {mode === 'Standard' && '2 minutes'}
-                      {mode === 'Thorough' && '5 minutes'}
-                      {mode === 'Maximum' && '10 minutes'}
+                      {mode === 'Quick' && '15 seconds'}
+                      {mode === 'Standard' && '30 seconds'}
+                      {mode === 'Thorough' && '1 minute'}
+                      {mode === 'Maximum' && '2 minutes'}
                     </div>
                   </button>
                 ))}
@@ -239,7 +592,7 @@ export default function DataInsights() {
             ← Back to Upload
           </button>
           <button onClick={handleRunOptimization} className="btn-primary">
-            Run Optimization ({solverDuration === 'Quick' ? '30s' : solverDuration === 'Standard' ? '2m' : solverDuration === 'Thorough' ? '5m' : '10m'}) →
+            Run Optimization ({solverDuration === 'Quick' ? '15s' : solverDuration === 'Standard' ? '30s' : solverDuration === 'Thorough' ? '1m' : '2m'}) →
           </button>
         </div>
       </div>

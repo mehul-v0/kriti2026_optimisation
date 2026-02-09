@@ -4,16 +4,37 @@ import { useApp } from '../context/AppContext';
 import { TrendingDown, Car, Route, Users, Clock, MapPin, ArrowRight, FileCheck, Map, DollarSign } from 'lucide-react';
 import { formatCurrency, formatNumber, formatDate, formatPercentage } from '../utils/helpers';
 
+function formatDuration(seconds: number): string {
+  if (seconds <= 0) return '0s';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s}s`;
+  if (s === 0) return `${m}m`;
+  return `${m}m ${s}s`;
+}
+
+function formatTripTime(minutes: number): string {
+  if (minutes <= 0) return '0 min';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 export default function ResultsOverview() {
   const { currentResult } = useApp();
 
-  if (!currentResult) {
+  // Block access if processing hasn't completed
+  const processingDone = sessionStorage.getItem('optimizationComplete') === 'true';
+
+  if (!processingDone || !currentResult) {
     return (
       <div className="min-h-screen bg-dark flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray mb-4">No optimization results available</p>
-          <Link to="/upload" className="btn-primary">
-            Start New Optimization
+          <p className="text-gray mb-4">No optimization results available. Run optimization first.</p>
+          <Link to="/insights" className="btn-primary">
+            Go to Data Insights
           </Link>
         </div>
       </div>
@@ -24,7 +45,15 @@ export default function ResultsOverview() {
   const totalTrips = currentResult.trips.length;
   const totalDistance = currentResult.trips.reduce((sum, trip) => sum + trip.distance, 0);
   const totalPassengers = currentResult.assignments.length;
-  const avgOccupancy = totalPassengers / totalTrips;
+  const avgOccupancy = totalTrips > 0 ? totalPassengers / totalTrips : 0;
+
+  // Time metrics — from backend
+  const optimizedTime = currentResult.totalTime;
+  const baselineTime = currentResult.baselineTime;
+  const timeSavings = baselineTime - optimizedTime;
+  const timeSavingsPercent = baselineTime > 0 ? ((timeSavings / baselineTime) * 100) : 0;
+
+  const cardClass = "bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40";
 
   return (
     <div className="min-h-screen bg-dark p-8">
@@ -35,67 +64,99 @@ export default function ResultsOverview() {
             <h1 className="text-4xl font-bold mb-2">Optimization Results</h1>
             <p className="text-gray">{formatDate(currentResult.timestamp)}</p>
           </div>
-          <div className="flex gap-3">
-            <Link to="/upload" className="btn-secondary">
-              New Optimization
-            </Link>
-          </div>
         </div>
 
-        {/* Primary Savings Summary */}
+        {/* Fixed New Optimization Button */}
+        <Link to="/upload" className="fixed bottom-6 right-6 z-50 btn-primary flex items-center gap-2 px-5 py-3 rounded-xl">
+          New Optimization
+        </Link>
+
+        {/* Primary Summary — Three Column Layout */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="card mb-8"
+          className="mb-8"
         >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <p className="text-sm text-gray mb-2">Baseline Cost (Individual Rides)</p>
-              <p className="text-4xl font-bold mb-2">{formatCurrency(currentResult.baselineCost)}</p>
-              <p className="text-xs text-gray">Sum of baseline costs from input data</p>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_1.5fr] gap-6 lg:gap-6">
 
-            <div className="text-center">
-              <p className="text-sm text-gray mb-2">Optimized Fleet Cost</p>
-              <p className="text-4xl font-bold text-blue-400 mb-2">{formatCurrency(currentResult.optimizedCost)}</p>
-              <p className="text-xs text-gray">Total operational cost with optimization</p>
-            </div>
+            {/* Cost Metrics — Own Card */}
+            <div className={`${cardClass} p-6 flex flex-col gap-5`}>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-gray/40 mb-1">Cost Breakdown</h3>
 
-            <div className="text-center">
-              <div className="inline-flex items-center gap-2 mb-2">
-                <TrendingDown className="w-8 h-8 text-primary" />
+              <div>
+                <p className="text-sm text-gray mb-1">Baseline Cost</p>
+                <p className="text-3xl font-bold">{formatCurrency(currentResult.baselineCost)}</p>
+                <p className="text-xs text-gray/50 mt-1">Individual rides total</p>
               </div>
-              <p className="text-sm text-gray mb-2">Total Savings</p>
-              <p className="text-4xl font-bold text-primary mb-2">{formatCurrency(currentResult.savings)}</p>
-              <span className="badge badge-primary text-base px-4 py-2">
-                {formatPercentage(currentResult.savingsPercentage)} reduction
-              </span>
-              <p className="text-xs text-gray mt-2">Your cost advantage</p>
-            </div>
-          </div>
-        </motion.div>
 
-        {/* Key Performance Metrics */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8"
-        >
-          {[
-            { label: 'Vehicles Utilized', value: `${vehiclesUsed} of ${currentResult.vehicles.length}`, icon: Car, color: 'text-blue-400' },
-            { label: 'Total Trips', value: totalTrips.toString(), icon: Route, color: 'text-purple-400' },
-            { label: 'Total Distance', value: `${formatNumber(Math.round(totalDistance))} km`, icon: MapPin, color: 'text-green-400' },
-            { label: 'Avg Occupancy', value: avgOccupancy.toFixed(1), icon: Users, color: 'text-yellow-400' },
-            { label: 'Employees Served', value: `${currentResult.employees.length}/${currentResult.employees.length}`, icon: Users, color: 'text-pink-400' },
-            { label: 'Solver Duration', value: `${Math.floor(currentResult.solverDuration / 60)}m`, icon: Clock, color: 'text-orange-400' },
-          ].map((metric) => (
-            <div key={metric.label} className="card">
-              <metric.icon className={`w-6 h-6 ${metric.color} mb-2`} />
-              <p className="text-sm text-gray mb-1">{metric.label}</p>
-              <p className="text-2xl font-bold">{metric.value}</p>
+              <div>
+                <p className="text-sm text-gray mb-1">Optimized Fleet Cost</p>
+                <p className="text-3xl font-bold text-blue-400">{formatCurrency(currentResult.optimizedCost)}</p>
+                <p className="text-xs text-gray/50 mt-1">Shared fleet total</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray mb-1">Total Savings</p>
+                <div className="flex items-center gap-3">
+                  <p className="text-3xl font-bold text-primary">{formatCurrency(currentResult.savings)}</p>
+                  <span className="badge badge-primary text-sm px-3 py-1">
+                    <TrendingDown className="w-3.5 h-3.5 mr-1 inline" />
+                    {formatPercentage(currentResult.savingsPercentage)}
+                  </span>
+                </div>
+              </div>
             </div>
-          ))}
+
+            {/* Time Metrics — Own Card */}
+            <div className={`${cardClass} p-6 flex flex-col gap-5`}>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-gray/40 mb-1">Time Breakdown</h3>
+
+              <div>
+                <p className="text-sm text-gray mb-1">Baseline Time</p>
+                <p className="text-3xl font-bold">{formatTripTime(baselineTime)}</p>
+                <p className="text-xs text-gray/50 mt-1">Estimated individual rides</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray mb-1">Optimized Time</p>
+                <p className="text-3xl font-bold text-blue-400">{formatTripTime(optimizedTime)}</p>
+                <p className="text-xs text-gray/50 mt-1">Shared fleet total</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray mb-1">Total Reduction</p>
+                <div className="flex items-center gap-3">
+                  <p className="text-3xl font-bold text-primary">{formatTripTime(timeSavings)}</p>
+                  <span className="badge badge-primary text-sm px-3 py-1">
+                    <TrendingDown className="w-3.5 h-3.5 mr-1 inline" />
+                    {timeSavingsPercent.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Key Stats — Own Card with 2×3 Grid */}
+            <div className={`${cardClass} p-6`}>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-gray/40 mb-4">Key Metrics</h3>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { label: 'Vehicles Utilized', value: `${vehiclesUsed} / ${currentResult.vehicles.length}`, icon: Car, color: 'text-primary' },
+                  { label: 'Total Trips', value: totalTrips.toString(), icon: Route, color: 'text-primary' },
+                  { label: 'Total Distance', value: `${formatNumber(Math.round(totalDistance))} km`, icon: MapPin, color: 'text-primary' },
+                  { label: 'Avg Occupancy', value: avgOccupancy.toFixed(1), icon: Users, color: 'text-primary' },
+                  { label: 'Employees Served', value: `${currentResult.employees.length}`, icon: Users, color: 'text-primary' },
+                  { label: 'Solver Duration', value: formatDuration(currentResult.solverDuration), icon: Clock, color: 'text-primary' },
+                ].map((metric) => (
+                  <div key={metric.label} className={`${cardClass} p-4`}>
+                    <metric.icon className={`w-5 h-5 ${metric.color} mb-1.5`} />
+                    <p className="text-xs text-gray mb-0.5">{metric.label}</p>
+                    <p className="text-xl font-bold">{metric.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
         </motion.div>
 
         {/* Quick Navigation Cards */}
@@ -112,21 +173,21 @@ export default function ResultsOverview() {
                 description: 'Interactive visualization of all vehicle routes',
                 icon: Map,
                 to: '/routes',
-                color: 'text-blue-400',
+                color: 'text-primary',
               },
               {
                 title: 'View Constraint Compliance',
                 description: 'See which constraints were honored and any violations',
                 icon: FileCheck,
                 to: '/constraints',
-                color: 'text-green-400',
+                color: 'text-primary',
               },
               {
                 title: 'Analyze Cost Breakdown',
                 description: 'Detailed cost analysis and per-vehicle economics',
                 icon: DollarSign,
                 to: '/costs',
-                color: 'text-purple-400',
+                color: 'text-primary',
               },
             ].map((card, index) => (
               <Link key={card.title} to={card.to}>
@@ -135,7 +196,7 @@ export default function ResultsOverview() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 + index * 0.1 }}
                   whileHover={{ scale: 1.02 }}
-                  className="card-hover h-full group"
+                  className={`${cardClass} p-6 hover:border-gray/20 hover:scale-[1.02] cursor-pointer h-full group transition-all duration-300`}
                 >
                   <card.icon className={`w-12 h-12 ${card.color} mb-4`} />
                   <h3 className="text-xl font-bold mb-2 flex items-center justify-between">
@@ -154,7 +215,7 @@ export default function ResultsOverview() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="card"
+          className={`${cardClass} p-6`}
         >
           <h3 className="text-xl font-bold mb-4">Session Summary</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
@@ -164,7 +225,7 @@ export default function ResultsOverview() {
             </div>
             <div>
               <p className="text-gray mb-1">Duration</p>
-              <p className="font-medium">{Math.floor(currentResult.solverDuration / 60)} minutes</p>
+              <p className="font-medium">{formatDuration(currentResult.solverDuration)}</p>
             </div>
             <div>
               <p className="text-gray mb-1">Input File</p>

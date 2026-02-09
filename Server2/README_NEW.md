@@ -4,7 +4,6 @@ A high-performance C++ solver for employee transportation optimization using **A
 
 ## 🚀 Quick Start
 
-### C++ Solver (Standalone)
 ```bash
 # Windows
 build.bat
@@ -13,17 +12,6 @@ vrp_solver_custom.exe input.json output.json
 # Linux/Mac  
 make
 ./vrp_solver_custom input.json output.json
-```
-
-### Backend Server (Web API)
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start server
-python app.py
-
-# Server runs on http://localhost:5000
 ```
 
 ## 📊 Performance Results
@@ -59,55 +47,6 @@ The solver attempts **6 different construction strategies**:
 - **PREFERENCE_PRIORITY**: Vehicle preference compatibility
 - **RANDOM_ORDER**: Diversification strategy
 
-## 🌐 Backend API
-
-The Flask server provides a RESTful API for web integration:
-
-### Endpoints
-
-**POST /upload** - Upload Excel file
-```bash
-curl -X POST -F "file=@TestCase.xlsx" http://localhost:5000/upload
-```
-
-**POST /solve** - Solve VRP (with uploaded file)
-```bash
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"filename": "uploaded_file.xlsx"}' \
-  http://localhost:5000/solve
-```
-
-**POST /solve** - Solve VRP (with direct JSON)
-```bash
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"input_data": {...}}' \
-  http://localhost:5000/solve
-```
-
-**GET /results/filename.json** - Download result file
-**GET /list-results** - List all result files  
-**GET /solver-info** - Get solver status and test cases
-**GET /health** - Health check
-
-### Response Format
-```json
-{
-  "status": "success",
-  "solution": {
-    "cost": 883.54,
-    "score": 703.32,
-    "solution_type": "OPTIMAL - No violations",
-    "stats": {...},
-    "vehicles": [...]
-  },
-  "solver_output": "Optimization complete...",
-  "files": {
-    "input": "output/input_1234567890.json",
-    "output": "output/output_1234567890.json"
-  }
-}
-```
-
 ## 📁 Core Components
 
 ```
@@ -122,7 +61,6 @@ Server2/
 ├── vrp_validators.h           # Solution validation  
 ├── vrp_output.h               # JSON output formatting
 ├── vrp_parser.h               # Input parsing
-├── app.py                     # Flask backend server
 ├── convert_excel_to_json.py   # Excel to JSON converter
 ├── build.bat / Makefile       # Build scripts
 └── output/

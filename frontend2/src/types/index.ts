@@ -45,6 +45,9 @@ export interface RoutePoint {
   address: string;
   employeeId?: string;
   time: string;
+  arrivalTime: string;
+  departureTime: string;
+  distanceFromPrev: number;
 }
 
 export interface Assignment {
@@ -71,6 +74,8 @@ export interface OptimizationResult {
   optimizedCost: number;
   savings: number;
   savingsPercentage: number;
+  totalTime: number;
+  baselineTime: number;
   constraints: ConstraintReport;
   solverDuration: number;
   solverMode: 'Quick' | 'Standard' | 'Thorough' | 'Maximum';

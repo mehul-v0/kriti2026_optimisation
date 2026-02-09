@@ -8,6 +8,17 @@
     --primary-dark: #C5DC7E;
     --primary-light: #E5F4B1;
   }
+
+  /* Disable Windows accessibility outline/glow effects */
+  * {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+  
+  *:focus {
+    outline: none !important;
+    box-shadow: none !important;
+  }
   
   body {
     @apply bg-dark text-white antialiased;
@@ -21,7 +32,7 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary text-dark px-6 py-3 rounded-lg font-semibold hover:bg-primary-dark transition-all duration-300 shadow-lg hover:shadow-primary/30 hover:scale-105;
+    @apply bg-primary text-dark px-6 py-3 rounded-lg font-semibold hover:bg-primary-dark transition-all duration-300;
   }
   
   .btn-secondary {

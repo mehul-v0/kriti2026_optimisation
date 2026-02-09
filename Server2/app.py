@@ -1,447 +1,525 @@
-"""Flask Backend for VRP Solver"""
-
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
-import json
 import subprocess
-import time
-from datetime import datetime
+import json
+import math
+import re
 from werkzeug.utils import secure_filename
-from convert_excel_to_json import convert
+import time
 
-app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+app = Flask(__name__)
+CORS(app)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'output'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-
-# Create directories if they don't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+# Server state: track current upload for the optimize call
+_state = {
+    'input_json': None,       # path to input JSON after conversion
+    'output_json': None,      # path to solver output JSON
+    'excel_filename': None,   # original uploaded filename
+    'input_data': None,       # parsed input data (employees, vehicles, baseline, metadata)
+}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def time_to_minutes(t):
-    """Convert time string (HH:MM or HH:MM:SS) to minutes since midnight"""
-    parts = str(t).split(':')
+
+# ---------------------------------------------------------------------------
+#  Helpers
+# ---------------------------------------------------------------------------
+
+def _time_str_to_minutes(t):
+    """Convert '08:15' or '08:15:00' to minutes since midnight."""
+    parts = str(t).strip().split(':')
     h = int(parts[0])
     m = int(parts[1]) if len(parts) > 1 else 0
     return h * 60 + m
 
 
-def compute_violation_details(input_data, solution):
-    """Compute per-constraint violation details by cross-referencing input data with solution"""
-    employees = {e['employee_id']: e for e in input_data.get('employees', [])}
-    vehicles = {v['vehicle_id']: v for v in input_data.get('vehicles', [])}
-    vehicles_data = solution.get('vehicles', [])
+def _compute_digest(employees, vehicles):
+    """Build a summary digest from employee/vehicle lists."""
+    emp_count = len(employees)
+    veh_count = len(vehicles)
 
+    # Time window span
+    if emp_count > 0:
+        earliest = min(_time_str_to_minutes(e['earliest_pickup']) for e in employees)
+        latest = max(_time_str_to_minutes(e['latest_drop']) for e in employees)
+        eh, em = divmod(earliest, 60)
+        lh, lm = divmod(latest, 60)
+        time_window_span = f"{eh:02d}:{em:02d} - {lh:02d}:{lm:02d}"
+    else:
+        time_window_span = "N/A"
+
+    # High priority %
+    high_priority = sum(1 for e in employees if int(e.get('priority', 3)) <= 2)
+    high_priority_percent = round(high_priority / emp_count * 100) if emp_count > 0 else 0
+
+    # Fleet composition by category
+    fleet = {'electric': 0, 'petrol': 0, 'diesel': 0}
+    modes = {'2-wheeler': 0, '4-wheeler': 0, 'van': 0}
+    for v in vehicles:
+        cat = str(v.get('category', 'normal')).lower()
+        if cat == 'electric':
+            fleet['electric'] += 1
+        elif cat == 'premium':
+            fleet['diesel'] += 1
+        else:
+            fleet['petrol'] += 1
+        cap = int(v.get('capacity', 4))
+        if cap <= 2:
+            modes['2-wheeler'] += 1
+        elif cap <= 4:
+            modes['4-wheeler'] += 1
+        else:
+            modes['van'] += 1
+
+    return {
+        'employees_count': emp_count,
+        'vehicles_count': veh_count,
+        'time_window_span': time_window_span,
+        'high_priority_percent': high_priority_percent,
+        'fleet_composition': fleet,
+        'vehicle_modes': modes,
+    }
+
+
+def _compute_baseline_cost(baseline_list):
+    """Sum baseline costs for all employees."""
+    return sum(float(b.get('baseline_cost', 0)) for b in baseline_list)
+
+
+def _haversine(lat1, lng1, lat2, lng2):
+    """Haversine distance in km."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def _extract_employee_id(location_str):
+    """Extract employee ID from location string like 'E01 Pickup' or 'E11 Pickup'."""
+    m = re.match(r'^(E\d+)\s', location_str)
+    return m.group(1) if m else None
+
+
+def _transform_solver_output(solver_output, input_data):
+    """
+    Transform the C++ solver output into the shape the frontend expects:
+      - routes:  BackendRoute[]
+      - assignments:  BackendAssignment[]
+      - result:  summary object
+      - violation_details:  constraint violation details
+    """
+    employees = input_data.get('employees', [])
+    vehicles_input = input_data.get('vehicles', [])
+    baseline_list = input_data.get('baseline', [])
+    metadata = input_data.get('metadata', {})
+
+    baseline_cost = _compute_baseline_cost(baseline_list)
+    total_cost = float(solver_output.get('cost', 0))
+    cost_savings = baseline_cost - total_cost
+    cost_savings_percent = round(cost_savings / baseline_cost * 100, 2) if baseline_cost > 0 else 0
+
+    solver_vehicles = solver_output.get('vehicles', [])
+
+    # Build employee lookup (for lat/lng of pickups)
+    emp_lookup = {e['employee_id']: e for e in employees}
+    veh_lookup = {v['vehicle_id']: v for v in vehicles_input}
+
+    # Office location: use drop_lat/drop_lng from first employee (all employees share the same office)
+    office_lat = employees[0]['drop_lat'] if employees else 0
+    office_lng = employees[0]['drop_lng'] if employees else 0
+
+    routes = []
+    assignments = []
+    assigned_employee_ids = set()
+    total_distance = 0
+    total_time = 0
+    seq_counter = 0
+
+    # For violation checking
     capacity_violations = []
     time_window_violations = []
-    assigned_employees = set()
     vehicle_pref_violations = []
     sharing_pref_violations = []
 
-    sharing_map = {'single': 1, 'double': 2, 'triple': 3}
+    for sv in solver_vehicles:
+        vid = sv['vehicle_id']
+        veh_info = veh_lookup.get(vid, {})
+        veh_capacity = int(veh_info.get('capacity', 4))
+        veh_category = str(veh_info.get('category', 'normal')).lower()
 
-    for vehicle_sol in vehicles_data:
-        vid = vehicle_sol.get('vehicle_id', '')
-        vehicle_info = vehicles.get(vid, {})
-        capacity = vehicle_info.get('capacity', 4)
-        category = vehicle_info.get('category', 'normal').lower()
+        route_points = []
+        trips_count = len(sv.get('trips', []))
+        veh_total_distance = float(sv.get('total_distance', 0))
+        veh_total_cost = float(sv.get('total_cost', 0))
+        passengers_in_vehicle = set()
 
-        for trip in vehicle_sol.get('trips', []):
-            trip_number = trip.get('trip_number', 0)
+        for trip in sv.get('trips', []):
+            trip_num = trip['trip_number']
             stops = trip.get('stops', [])
+            passengers_in_trip = []
 
-            # Find employees in this trip
-            trip_employees = []
             for stop in stops:
                 loc = stop.get('location', '')
-                if 'Pickup' in loc and loc not in ['Office (Drop-off)', 'Vehicle Depot']:
-                    emp_id = loc.replace(' Pickup', '').replace('Pickup', '').strip()
-                    if emp_id:
-                        trip_employees.append(emp_id)
-                        assigned_employees.add(emp_id)
+                emp_id = _extract_employee_id(loc)
 
-            # Check capacity
-            if len(trip_employees) > capacity:
-                capacity_violations.append({
-                    'vehicle': vid,
-                    'trip': trip_number,
-                    'passengers': len(trip_employees),
-                    'capacity': capacity,
-                    'employees': ', '.join(trip_employees)
-                })
+                if 'Pickup' in loc and emp_id:
+                    emp = emp_lookup.get(emp_id, {})
+                    route_points.append({
+                        'lat': emp.get('pickup_lat', 0),
+                        'lng': emp.get('pickup_lng', 0),
+                        'type': 'pickup',
+                        'employee_id': emp_id,
+                        'trip_number': trip_num,
+                        'arrival_time': stop.get('arrival_time', ''),
+                        'departure_time': stop.get('departure_time', ''),
+                        'distance_from_prev': float(stop.get('distance_from_prev', 0)),
+                    })
+                    passengers_in_trip.append(emp_id)
+                    passengers_in_vehicle.add(emp_id)
+                    assigned_employee_ids.add(emp_id)
 
-            # Find office drop-off time for time window check
-            office_arrival = None
-            for stop in stops:
-                if stop.get('location', '') == 'Office (Drop-off)':
-                    office_arrival = stop.get('arrival_time', '')
-                    break
+                    seq_counter += 1
+                    assignments.append({
+                        'vehicle_id': vid,
+                        'employee_id': emp_id,
+                        'pickup_time': stop.get('departure_time', stop.get('arrival_time', '')),
+                        'dropoff_time': '',
+                        'sequence_order': seq_counter,
+                        'is_pickup': True,
+                        'trip_number': trip_num,
+                    })
 
-            if office_arrival:
-                office_minutes = time_to_minutes(office_arrival)
-                for emp_id in trip_employees:
-                    emp = employees.get(emp_id, {})
-                    latest_drop = emp.get('latest_drop', '23:59:00')
-                    latest_minutes = time_to_minutes(latest_drop)
-                    if office_minutes > latest_minutes:
-                        time_window_violations.append({
-                            'employee': emp_id,
-                            'vehicle': vid,
-                            'trip': trip_number,
-                            'office_arrival': office_arrival,
-                            'deadline': latest_drop[:5] if len(latest_drop) > 5 else latest_drop,
-                            'delay_min': office_minutes - latest_minutes
+                elif 'Drop' in loc or 'Office' in loc:
+                    route_points.append({
+                        'lat': office_lat,
+                        'lng': office_lng,
+                        'type': 'office',
+                        'employee_id': None,
+                        'trip_number': trip_num,
+                        'arrival_time': stop.get('arrival_time', ''),
+                        'departure_time': stop.get('departure_time', ''),
+                        'distance_from_prev': float(stop.get('distance_from_prev', 0)),
+                    })
+
+                    # Create dropoff assignments for all passengers in this trip
+                    for pid in passengers_in_trip:
+                        # Find the matching pickup assignment and fill dropoff_time
+                        for a in reversed(assignments):
+                            if a['employee_id'] == pid and a['vehicle_id'] == vid and a['trip_number'] == trip_num and a['is_pickup']:
+                                a['dropoff_time'] = stop.get('arrival_time', '')
+                                break
+                        # Also add a dropoff assignment entry
+                        seq_counter += 1
+                        assignments.append({
+                            'vehicle_id': vid,
+                            'employee_id': pid,
+                            'pickup_time': '',
+                            'dropoff_time': stop.get('arrival_time', ''),
+                            'sequence_order': seq_counter,
+                            'is_pickup': False,
+                            'trip_number': trip_num,
                         })
 
-            # Check vehicle preference
-            for emp_id in trip_employees:
-                emp = employees.get(emp_id, {})
-                pref = emp.get('vehicle_preference', 'normal').lower()
-                if pref == 'premium' and category != 'premium':
-                    vehicle_pref_violations.append({
-                        'employee': emp_id,
-                        'vehicle': vid,
-                        'preferred': 'Premium',
-                        'assigned': category.capitalize()
-                    })
+            # --- Constraint checking per trip ---
+            # Capacity check
+            if len(passengers_in_trip) > veh_capacity:
+                capacity_violations.append({
+                    'vehicle': vid,
+                    'trip': trip_num,
+                    'passengers': len(passengers_in_trip),
+                    'capacity': veh_capacity,
+                    'employees': ', '.join(passengers_in_trip),
+                })
 
-            # Check sharing preference
-            for emp_id in trip_employees:
-                emp = employees.get(emp_id, {})
-                pref = emp.get('sharing_preference', 'triple').lower()
-                max_riders = sharing_map.get(pref, 3)
-                if len(trip_employees) > max_riders:
+            # Time window check (office arrival vs employee latest_drop)
+            office_arrival = None
+            for stop in reversed(stops):
+                if 'Drop' in stop.get('location', '') or 'Office' in stop.get('location', ''):
+                    office_arrival = stop.get('arrival_time', '')
+                    break
+            if office_arrival:
+                for pid in passengers_in_trip:
+                    emp = emp_lookup.get(pid, {})
+                    deadline = emp.get('latest_drop', '23:59')
+                    oa_min = _time_str_to_minutes(office_arrival)
+                    dl_min = _time_str_to_minutes(deadline)
+                    if oa_min > dl_min:
+                        time_window_violations.append({
+                            'employee': pid,
+                            'vehicle': vid,
+                            'trip': trip_num,
+                            'office_arrival': office_arrival,
+                            'deadline': deadline,
+                            'delay_min': oa_min - dl_min,
+                        })
+
+            # Sharing preference check
+            sharing_map = {'single': 1, 'double': 2, 'triple': 3}
+            for pid in passengers_in_trip:
+                emp = emp_lookup.get(pid, {})
+                spref = str(emp.get('sharing_preference', 'triple')).lower()
+                max_riders = sharing_map.get(spref, 3)
+                if len(passengers_in_trip) > max_riders:
                     sharing_pref_violations.append({
-                        'employee': emp_id,
+                        'employee': pid,
                         'vehicle': vid,
-                        'trip': trip_number,
-                        'preferred': pref.capitalize(),
-                        'actual_riders': len(trip_employees)
+                        'trip': trip_num,
+                        'preferred': spref.capitalize(),
+                        'actual_riders': len(passengers_in_trip),
                     })
 
-    unassigned_list = [{'employee': eid} for eid in sorted(set(employees.keys()) - assigned_employees)]
+            # Vehicle preference check
+            for pid in passengers_in_trip:
+                emp = emp_lookup.get(pid, {})
+                vpref = str(emp.get('vehicle_preference', 'any')).lower()
+                if vpref != 'any':
+                    if vpref != veh_category:
+                        assigned_label = 'Diesel' if veh_category == 'premium' else ('Electric' if veh_category == 'electric' else 'Petrol')
+                        preferred_label = 'Diesel' if vpref == 'premium' else ('Electric' if vpref == 'electric' else 'Petrol')
+                        vehicle_pref_violations.append({
+                            'employee': pid,
+                            'vehicle': vid,
+                            'preferred': preferred_label,
+                            'assigned': assigned_label,
+                        })
 
-    return {
+        total_distance += veh_total_distance
+        total_time += float(sv.get('total_time', 0))
+
+        cap_util = round(len(passengers_in_vehicle) / veh_capacity * 100, 1) if veh_capacity > 0 else 0
+
+        routes.append({
+            'vehicle_id': vid,
+            'route_points': route_points,
+            'total_distance': veh_total_distance,
+            'total_cost': veh_total_cost,
+            'passengers_count': len(passengers_in_vehicle),
+            'capacity_utilization': cap_util,
+            'trips_count': trips_count,
+        })
+
+    # Unassigned employees
+    unassigned = []
+    for emp in employees:
+        if emp['employee_id'] not in assigned_employee_ids:
+            unassigned.append({'employee': emp['employee_id']})
+
+    hard_violations = len(capacity_violations) + len(time_window_violations) + len(unassigned)
+    soft_violations = len(vehicle_pref_violations) + len(sharing_pref_violations)
+
+    violation_details = {
         'capacity_violations': capacity_violations,
         'time_window_violations': time_window_violations,
-        'unassigned_employees': unassigned_list,
+        'unassigned_employees': unassigned,
         'vehicle_pref_violations': vehicle_pref_violations,
-        'sharing_pref_violations': sharing_pref_violations
+        'sharing_pref_violations': sharing_pref_violations,
     }
 
-
-def calculate_data_digest(data):
-    """Calculate data digest from input JSON"""
-    employees = data.get('employees', [])
-    vehicles = data.get('vehicles', [])
-    
-    # Count high priority employees
-    high_priority = sum(1 for e in employees if e.get('priority', 3) == 1)
-    high_priority_percent = (high_priority / len(employees) * 100) if employees else 0
-    
-    # Fleet composition
-    fleet_composition = {
-        'electric': sum(1 for v in vehicles if v.get('category', '').lower() == 'electric'),
-        'petrol': sum(1 for v in vehicles if v.get('category', '').lower() == 'normal'),
-        'diesel': sum(1 for v in vehicles if v.get('category', '').lower() == 'premium')
+    result_summary = {
+        'total_cost': total_cost,
+        'baseline_cost': baseline_cost,
+        'cost_savings': round(cost_savings, 2),
+        'cost_savings_percent': cost_savings_percent,
+        'total_distance': round(total_distance, 2),
+        'total_time': round(total_time, 2),
+        'vehicles_used': len(solver_vehicles),
+        'vehicles_available': len(vehicles_input),
+        'hard_violations': hard_violations,
+        'soft_violations': soft_violations,
     }
-    
-    # Time window span
-    if employees:
-        earliest = min(e.get('earliest_pickup', '08:00') for e in employees)
-        latest = max(e.get('latest_drop', '18:00') for e in employees)
-        time_window_span = f"{earliest} - {latest}"
-    else:
-        time_window_span = "N/A"
-    
+
     return {
-        'employees_count': len(employees),
-        'vehicles_count': len(vehicles),
-        'time_window_span': time_window_span,
-        'high_priority_percent': high_priority_percent,
-        'fleet_composition': fleet_composition,
-        'vehicle_modes': {
-            '2-wheeler': 0,
-            '4-wheeler': sum(1 for v in vehicles if v.get('capacity', 4) <= 4),
-            'van': sum(1 for v in vehicles if v.get('capacity', 4) > 4)
-        }
+        'success': True,
+        'result': result_summary,
+        'routes': routes,
+        'assignments': assignments,
+        'violation_details': violation_details,
     }
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'ok', 'message': 'Backend is running'})
+
+# ---------------------------------------------------------------------------
+#  Routes
+# ---------------------------------------------------------------------------
+
+@app.route('/')
+def index():
+    return jsonify({'message': 'VRP Solver Backend Server', 'version': '2.0'})
+
+
+@app.route('/api/health')
+def health():
+    return jsonify({'status': 'ok'})
+
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Please upload an Excel file (.xlsx or .xls)'}), 400
-    
     try:
-        # Save uploaded file
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        # Convert to JSON
-        input_json = os.path.join(OUTPUT_FOLDER, 'input.json')
-        success = convert(filepath, input_json)
-        
-        if not success:
-            return jsonify({'error': 'Failed to convert Excel file to JSON'}), 500
-        
-        # Load and return the converted data for preview
-        with open(input_json, 'r') as f:
-            data = json.load(f)
-        
-        # Calculate digest
-        digest = calculate_data_digest(data)
-        
-        # Calculate baseline cost
-        baseline_data = data.get('baseline', [])
-        baseline_cost = sum(b.get('baseline_cost', 0) for b in baseline_data)
-        
-        return jsonify({
-            'success': True,
-            'message': 'File uploaded and converted successfully',
-            'filename': filename,
-            'digest': digest,
-            'employees': data.get('employees', []),
-            'vehicles': data.get('vehicles', []),
-            'baseline_cost': baseline_cost
-        })
-    
-    except Exception as e:
-        return jsonify({'error': f'Error processing file: {str(e)}'}), 500
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
 
-@app.route('/api/optimize', methods=['POST'])
-def run_optimization():
-    try:
-        input_json = os.path.join(OUTPUT_FOLDER, 'input.json')
-        output_json = os.path.join(OUTPUT_FOLDER, 'solution.json')
-        
-        if not os.path.exists(input_json):
-            return jsonify({'error': 'No input data found. Please upload a file first.'}), 400
-        
-        # Run the solver
-        solver_exe = 'vrp_solver_custom.exe' if os.name == 'nt' else './vrp_solver_custom'
-        
-        if not os.path.exists(solver_exe):
-            return jsonify({'error': 'Solver executable not found. Please build the solver first.'}), 500
-        
-        # Execute solver with proper timeout handling
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        if not file or not allowed_file(file.filename):
+            return jsonify({'success': False, 'error': 'Invalid file type. Only .xlsx/.xls allowed'}), 400
+
+        filename = secure_filename(file.filename)
+        timestamp = str(int(time.time()))
+        saved_name = f"{timestamp}_{filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, saved_name)
+        file.save(filepath)
+
+        # Convert Excel → JSON
+        input_json = os.path.join(OUTPUT_FOLDER, f'input_{timestamp}.json')
         try:
             result = subprocess.run(
-                [solver_exe, input_json, output_json],
-                capture_output=True,
-                text=True,
-                timeout=60
+                ['python', 'convert_excel_to_json.py', filepath, input_json],
+                capture_output=True, text=True, timeout=30,
             )
-        except subprocess.TimeoutExpired as e:
-            # On Windows, subprocess.run with timeout may leave orphan processes
-            # The TimeoutExpired exception includes the process ref for cleanup
-            return jsonify({'error': 'Solver timed out after 60 seconds'}), 500
-        
-        if result.returncode != 0:
-            return jsonify({'error': f'Solver failed: {result.stderr}'}), 500
-        
-        # Load solution
-        if not os.path.exists(output_json):
-            return jsonify({'error': 'Solver did not produce output file'}), 500
-        
-        with open(output_json, 'r') as f:
-            solution = json.load(f)
-        
-        # Load input data for baseline
+            if result.returncode != 0:
+                return jsonify({'success': False, 'error': f'Excel conversion failed: {result.stderr}'}), 500
+        except subprocess.TimeoutExpired:
+            return jsonify({'success': False, 'error': 'Excel conversion timed out'}), 500
+
+        # Parse the converted JSON
         with open(input_json, 'r') as f:
             input_data = json.load(f)
-        
-        baseline_data = input_data.get('baseline', [])
-        baseline_cost = sum(b.get('baseline_cost', 0) for b in baseline_data)
-        baseline_time = sum(b.get('baseline_time', 0) for b in baseline_data)
-        
-        # Parse solution and create result
-        stats = solution.get('stats', {})
-        vehicles_data = solution.get('vehicles', [])
-        
-        # Calculate vehicles used
-        vehicles_used = len([v for v in vehicles_data if v.get('trips', [])])
-        vehicles_available = len(input_data.get('vehicles', []))
-        
-        # Create optimization result
-        result_data = {
-            'total_cost': stats.get('cost', 0),
-            'baseline_cost': baseline_cost,
-            'cost_savings': baseline_cost - stats.get('cost', 0),
-            'cost_savings_percent': ((baseline_cost - stats.get('cost', 0)) / baseline_cost * 100) if baseline_cost > 0 else 0,
-            'total_distance': sum(v.get('total_distance', 0) for v in vehicles_data),
-            'total_time': stats.get('time', 0),
-            'baseline_time': baseline_time,
-            'vehicles_used': vehicles_used,
-            'vehicles_available': vehicles_available,
-            'hard_violations': stats.get('hard_violations', 0),
-            'soft_violations': stats.get('soft_violations', 0)
-        }
-        
-        # Transform solution to frontend format
-        transformed_routes = []
-        transformed_assignments = []
-        
-        for vehicle in vehicles_data:
-            vehicle_id = vehicle.get('vehicle_id', '')
-            trips = vehicle.get('trips', [])
-            
-            if not trips:
-                continue
-            
-            # Collect all route points and assignments from all trips
-            route_points = []
-            all_employees = []
-            trip_counter = {}
-            
-            for trip_idx, trip in enumerate(trips):
-                trip_number = trip.get('trip_number', trip_idx + 1)
-                stops = trip.get('stops', [])
-                
-                for stop in stops:
-                    location = stop.get('location', '')
-                    
-                    # Extract employee ID and type from location
-                    if 'Pickup' in location and location not in ['Office (Drop-off)', 'Vehicle Depot']:
-                        # Extract employee ID: "E01 Pickup" -> "E01"
-                        # Handle both "E01 Pickup" and "E01Pickup" formats
-                        emp_id = location.replace(' Pickup', '').replace('Pickup', '').strip()
-                        if not emp_id:
-                            # Fallback: split on whitespace
-                            parts = location.split()
-                            emp_id = parts[0] if parts else ''
-                        
-                        # Find employee data
-                        emp_data = next((e for e in input_data.get('employees', []) if e.get('employee_id') == emp_id), None)
-                        
-                        if emp_data:
-                            route_points.append({
-                                'lat': emp_data.get('pickup_lat', 0),
-                                'lng': emp_data.get('pickup_lng', 0),
-                                'type': 'pickup',
-                                'employee_id': emp_id,
-                                'trip_number': trip_number,
-                                'arrival_time': stop.get('arrival_time', ''),
-                                'departure_time': stop.get('departure_time', ''),
-                                'distance_from_prev': stop.get('distance_from_prev', 0)
-                            })
-                            
-                            all_employees.append(emp_id)
-                            
-                            # Create assignment record
-                            transformed_assignments.append({
-                                'vehicle_id': vehicle_id,
-                                'employee_id': emp_id,
-                                'pickup_time': stop.get('arrival_time', ''),
-                                'dropoff_time': '',  # Will be filled when we find the dropoff
-                                'sequence_order': len(all_employees) - 1,
-                                'is_pickup': True,
-                                'trip_number': trip_number
-                            })
-                    
-                    elif location == 'Office (Drop-off)':
-                        # This is the office dropoff - use first employee's dropoff coordinates
-                        # All employees go to the same office
-                        if input_data.get('employees') and len(input_data.get('employees')) > 0:
-                            office_lat = input_data['employees'][0].get('drop_lat', 12.9716)
-                            office_lng = input_data['employees'][0].get('drop_lng', 77.5946)
-                        else:
-                            office_lat = 12.9716
-                            office_lng = 77.5946
-                        
-                        route_points.append({
-                            'lat': office_lat,
-                            'lng': office_lng,
-                            'type': 'office',
-                            'employee_id': None,
-                            'trip_number': trip_number,
-                            'arrival_time': stop.get('arrival_time', ''),
-                            'departure_time': stop.get('departure_time', ''),
-                            'distance_from_prev': stop.get('distance_from_prev', 0)
-                        })
-            
-            if route_points:
-                # Get vehicle capacity from input
-                vehicle_info = next((v for v in input_data.get('vehicles', []) if v.get('vehicle_id') == vehicle_id), None)
-                capacity = vehicle_info.get('capacity', 4) if vehicle_info else 4
-                
-                # Calculate per-trip max utilization (not total across all trips)
-                max_trip_passengers = 0
-                for trip in trips:
-                    trip_passengers = sum(
-                        1 for stop in trip.get('stops', [])
-                        if 'Pickup' in stop.get('location', '') 
-                        and stop.get('location', '') not in ['Office (Drop-off)', 'Vehicle Depot']
-                    )
-                    max_trip_passengers = max(max_trip_passengers, trip_passengers)
-                
-                transformed_routes.append({
-                    'vehicle_id': vehicle_id,
-                    'route_points': route_points,
-                    'total_distance': vehicle.get('total_distance', 0),
-                    'total_cost': vehicle.get('total_cost', 0),
-                    'passengers_count': len(all_employees),
-                    'capacity_utilization': (max_trip_passengers / capacity * 100) if capacity > 0 else 0,
-                    'trips_count': len(trips)
-                })
-        
-        # Compute detailed violation info
-        violation_details = compute_violation_details(input_data, solution)
-        
+
+        employees = input_data.get('employees', [])
+        vehicles = input_data.get('vehicles', [])
+        baseline_list = input_data.get('baseline', [])
+        baseline_cost = _compute_baseline_cost(baseline_list)
+        digest = _compute_digest(employees, vehicles)
+
+        # Store state for optimize call
+        _state['input_json'] = input_json
+        _state['excel_filename'] = saved_name
+        _state['input_data'] = input_data
+
         return jsonify({
             'success': True,
-            'result': result_data,
-            'routes': transformed_routes,
-            'assignments': transformed_assignments,
-            'violation_details': violation_details
+            'message': f'Parsed {len(employees)} employees and {len(vehicles)} vehicles',
+            'filename': saved_name,
+            'digest': digest,
+            'employees': employees,
+            'vehicles': vehicles,
+            'baseline_cost': baseline_cost,
         })
-    
-    except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Solver timed out'}), 500
-    except Exception as e:
-        return jsonify({'error': f'Error running optimization: {str(e)}'}), 500
 
-@app.route('/api/download-solution', methods=['GET'])
-def download_solution():
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
+
+
+@app.route('/api/optimize', methods=['POST'])
+def optimize():
     try:
-        output_json = os.path.join(OUTPUT_FOLDER, 'solution.json')
-        if not os.path.exists(output_json):
-            return jsonify({'error': 'No solution found'}), 404
-        
-        return send_file(output_json, as_attachment=True, download_name='solution.json')
-    except Exception as e:
-        return jsonify({'error': f'Error downloading solution: {str(e)}'}), 500
+        if not _state.get('input_json') or not os.path.exists(_state['input_json']):
+            return jsonify({'success': False, 'error': 'No data uploaded yet. Please upload an Excel file first.'}), 400
 
-# Serve React App
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_react_app(path):
-    if path and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    else:
-        return send_from_directory(app.static_folder, 'index.html')
+        input_json = _state['input_json']
+        input_data = _state['input_data']
+
+        # Read optional solver parameters from request
+        body = request.get_json(silent=True) or {}
+        solver_duration = int(body.get('solverDurationSeconds', 23))
+
+        timestamp = str(int(time.time()))
+        output_json = os.path.join(OUTPUT_FOLDER, f'output_{timestamp}.json')
+
+        # Ensure solver executable exists
+        solver_executable = 'vrp_solver_custom.exe' if os.name == 'nt' else './vrp_solver_custom'
+        if not os.path.exists(solver_executable):
+            if os.name == 'nt':
+                build_result = subprocess.run(['build.bat'], capture_output=True, text=True, timeout=120, shell=True)
+            else:
+                build_result = subprocess.run(['make'], capture_output=True, text=True, timeout=120)
+            if build_result.returncode != 0:
+                return jsonify({'success': False, 'error': f'Solver build failed: {build_result.stderr}'}), 500
+
+        # Run solver
+        timeout_sec = max(solver_duration + 30, 60)  # add buffer
+        try:
+            solver_result = subprocess.run(
+                [solver_executable, input_json, output_json, str(solver_duration)],
+                capture_output=True, text=True, timeout=timeout_sec,
+            )
+            if solver_result.returncode != 0:
+                return jsonify({
+                    'success': False,
+                    'error': f'Solver failed: {solver_result.stderr}',
+                }), 500
+        except subprocess.TimeoutExpired:
+            return jsonify({'success': False, 'error': f'Solver timed out after {timeout_sec}s'}), 500
+
+        # Read solver output
+        if not os.path.exists(output_json):
+            return jsonify({'success': False, 'error': 'Solver did not produce output'}), 500
+
+        with open(output_json, 'r') as f:
+            solver_output = json.load(f)
+
+        # Store for download
+        _state['output_json'] = output_json
+
+        # Transform to frontend shape
+        response = _transform_solver_output(solver_output, input_data)
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Optimization failed: {str(e)}'}), 500
+
+
+@app.route('/api/download-solution')
+def download_solution():
+    output = _state.get('output_json')
+    if output and os.path.exists(output):
+        return send_file(output, as_attachment=True, download_name='solution.json')
+    return jsonify({'error': 'No solution available'}), 404
+
+
+@app.route('/api/results/<filename>')
+def get_results(filename):
+    filepath = os.path.join(OUTPUT_FOLDER, filename)
+    if os.path.exists(filepath):
+        return send_file(filepath)
+    return jsonify({'error': 'File not found'}), 404
+
+
+@app.route('/api/list-results')
+def list_results():
+    try:
+        files = []
+        for filename in os.listdir(OUTPUT_FOLDER):
+            if filename.endswith('.json'):
+                filepath = os.path.join(OUTPUT_FOLDER, filename)
+                stat = os.stat(filepath)
+                files.append({
+                    'filename': filename,
+                    'size': stat.st_size,
+                    'created': stat.st_ctime,
+                    'modified': stat.st_mtime,
+                })
+        files.sort(key=lambda x: x['created'], reverse=True)
+        return jsonify({'files': files})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    print(f"\n  VRP Solver Backend — http://localhost:{port}")
+    print(f"  Upload folder : {UPLOAD_FOLDER}")
+    print(f"  Output folder : {OUTPUT_FOLDER}\n")
+    app.run(host='0.0.0.0', port=port, debug=True)

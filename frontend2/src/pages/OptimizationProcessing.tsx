@@ -1,173 +1,85 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Check, Loader2 } from 'lucide-react';
-import { useApp } from '../context/AppContext';
-import type { OptimizationResult } from '../types';
-import { generateId } from '../utils/helpers';
-import { runOptimization } from '../services/api';
-import { buildOptimizationResult } from '../utils/mappers';
-
-const stages = [
-  'Data Parsing Complete',
-  'Constraint Analysis Complete',
-  'Route Optimization In Progress',
-  'Cost Calculation',
-  'Results Compilation',
-];
+import { useApp, OPTIMIZATION_STAGES } from '../context/AppContext';
 
 export default function OptimizationProcessing() {
   const navigate = useNavigate();
-  const { setCurrentResult, addSession, updateLifetimeMetrics } = useApp();
-  const [currentStage, setCurrentStage] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const [solverDuration, setSolverDuration] = useState(120); // in seconds
+  const {
+    optimizationStatus,
+    optimizationProgress,
+    optimizationStage,
+    cancelOptimization,
+    solverDuration,
+  } = useApp();
 
+  // Track whether we were running when we mounted / last rendered
+  const wasRunningRef = useRef(optimizationStatus === 'running');
+
+  // If idle and no data, redirect to insights
   useEffect(() => {
-    const duration = sessionStorage.getItem('solverDuration');
-    const durationMap = {
-      Quick: 30,
-      Standard: 120,
-      Thorough: 300,
-      Maximum: 600,
-    };
-    setSolverDuration(durationMap[duration as keyof typeof durationMap] || 120);
-  }, []);
-
-  useEffect(() => {
-    // Simulate stage progression
-    const stageInterval = solverDuration / stages.length;
-    const stageTimer = setInterval(() => {
-      setCurrentStage((prev) => {
-        if (prev < stages.length - 1) return prev + 1;
-        return prev;
-      });
-    }, stageInterval * 1000);
-
-    // Progress bar
-    const progressInterval = 100; // update every 100ms
-    const progressTimer = setInterval(() => {
-      setProgress((prev) => {
-        const increment = (100 / (solverDuration * 1000)) * progressInterval;
-        if (prev + increment >= 100) {
-          clearInterval(progressTimer);
-          return 100;
-        }
-        return prev + increment;
-      });
-    }, progressInterval);
-
-    return () => {
-      clearInterval(stageTimer);
-      clearInterval(progressTimer);
-    };
-  }, [solverDuration]);
-
-  useEffect(() => {
-    if (progress >= 100 && currentStage >= stages.length - 1) {
-      // Call backend optimization API
-      setTimeout(async () => {
-        try {
-          const optimizeData = await runOptimization();
-          
-          // Get upload data from session storage
-          const storedData = JSON.parse(sessionStorage.getItem('uploadedData') || '{}');
-          const solverMode = sessionStorage.getItem('solverDuration') || 'Standard';
-
-          const result = buildOptimizationResult(
-            {
-              employees: storedData.backendEmployees || [],
-              vehicles: storedData.backendVehicles || [],
-              baseline_cost: storedData.baselineCost || 0,
-              filename: storedData.filename || 'UploadedData.xlsx',
-            },
-            optimizeData,
-            solverMode,
-            solverDuration
-          );
-
-          setCurrentResult(result);
-          addSession({
-            id: result.sessionId,
-            timestamp: result.timestamp,
-            employeeCount: result.employees.length,
-            vehiclesUsed: result.trips.length,
-            savings: result.savings,
-            status: 'completed',
-            result,
-          });
-          updateLifetimeMetrics(result);
-          navigate('/results');
-        } catch (error: any) {
-          console.error('Optimization failed:', error);
-          // Fallback to mock result on error
-          const data = JSON.parse(sessionStorage.getItem('uploadedData') || '{}');
-          const result = createMockResult(data);
-          setCurrentResult(result);
-          addSession({
-            id: result.sessionId,
-            timestamp: result.timestamp,
-            employeeCount: result.employees.length,
-            vehiclesUsed: result.trips.length,
-            savings: result.savings,
-            status: 'completed',
-            result,
-          });
-          updateLifetimeMetrics(result);
-          navigate('/results');
-        }
-      }, 1000);
+    if (optimizationStatus === 'idle' || optimizationStatus === 'error') {
+      const hasData = !!sessionStorage.getItem('uploadedData');
+      if (!hasData) {
+        navigate('/insights');
+      }
     }
-  }, [progress, currentStage]);
+  }, [optimizationStatus, navigate]);
 
-  const createMockResult = (data: any): OptimizationResult => {
-    const baselineCost = data.employees.reduce((sum: number, e: any) => sum + e.baselineCost, 0);
-    const optimizedCost = baselineCost * 0.65; // 35% savings
-    
-    return {
-      sessionId: generateId(),
-      timestamp: new Date().toISOString(),
-      inputFile: 'UploadedData.xlsx',
-      employees: data.employees,
-      vehicles: data.vehicles,
-      trips: [],
-      assignments: [],
-      baselineCost,
-      optimizedCost,
-      savings: baselineCost - optimizedCost,
-      savingsPercentage: 35,
-      constraints: {
-        hard: { total: 4, satisfied: 4, violated: 0, complianceRate: 100, details: [] },
-        soft: { total: 3, satisfied: 3, violated: 0, complianceRate: 100, details: [] },
-      },
-      solverDuration,
-      solverMode: sessionStorage.getItem('solverDuration') as any || 'Standard',
-    };
-  };
+  // Only auto-navigate to results when transitioning from running → completed
+  useEffect(() => {
+    if (wasRunningRef.current && optimizationStatus === 'completed') {
+      navigate('/results');
+    }
+    wasRunningRef.current = optimizationStatus === 'running';
+  }, [optimizationStatus, navigate]);
 
+  const progress = optimizationProgress;
+  const currentStage = optimizationStage;
   const elapsed = Math.floor((progress / 100) * solverDuration);
   const remaining = solverDuration - elapsed;
+
+  if (optimizationStatus !== 'running') {
+    // Show a static page when not currently running
+    const complete = sessionStorage.getItem('optimizationComplete') === 'true';
+    return (
+      <div className="min-h-screen bg-dark flex items-center justify-center p-8 network-bg">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg w-full">
+          <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40 p-6 text-center py-16">
+            {complete ? (
+              <>
+                <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
+                  <Check className="w-8 h-8 text-green-400" />
+                </div>
+                <h2 className="text-2xl font-bold mb-3">Optimization Complete</h2>
+                <p className="text-gray mb-6">Your last optimization run finished successfully.</p>
+                <div className="flex gap-4 justify-center">
+                  <button onClick={() => navigate('/results')} className="btn-primary">View Results →</button>
+                  <button onClick={() => navigate('/insights')} className="btn-secondary">Re-configure</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-dark-600 flex items-center justify-center mx-auto mb-6">
+                  <Loader2 className="w-8 h-8 text-gray/50" />
+                </div>
+                <h2 className="text-2xl font-bold mb-3">No Optimization Running</h2>
+                <p className="text-gray mb-6">Configure your settings and start an optimization run.</p>
+                <button onClick={() => navigate('/insights')} className="btn-primary">Go to Settings →</button>
+              </>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-dark flex items-center justify-center p-8 network-bg">
       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-2xl w-full">
-        {/* Progress Indicator */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            {['Upload Data', 'Review Insights', 'Configure', 'Optimize'].map((step, index) => (
-              <div key={step} className="flex items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${index <= 3 ? 'bg-primary text-dark' : 'bg-dark-700 text-gray'}`}>
-                  {index + 1}
-                </div>
-                <span className={`ml-2 ${index <= 3 ? 'text-white font-medium' : 'text-gray'}`}>{step}</span>
-                {index < 3 && <div className="w-12 h-px bg-gray/30 mx-4" />}
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Central Progress Circle */}
-        <div className="card text-center py-16">
+        <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-2xl shadow-black/40 p-6 text-center py-16">
           <div className="relative w-48 h-48 mx-auto mb-8">
             <svg className="w-full h-full transform -rotate-90">
               <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="8" fill="none" className="text-dark-600" />
@@ -194,7 +106,7 @@ export default function OptimizationProcessing() {
 
           {/* Stage Indicators */}
           <div className="space-y-3 max-w-md mx-auto">
-            {stages.map((stage, index) => (
+            {OPTIMIZATION_STAGES.map((stage, index) => (
               <motion.div
                 key={stage}
                 initial={{ opacity: 0, x: -20 }}
@@ -221,7 +133,13 @@ export default function OptimizationProcessing() {
             </p>
           </div>
 
-          <button onClick={() => navigate('/insights')} className="mt-8 text-sm text-gray hover:text-white transition-colors">
+          <button
+            onClick={() => {
+              cancelOptimization();
+              navigate('/insights');
+            }}
+            className="mt-8 text-sm text-gray hover:text-white transition-colors"
+          >
             Cancel optimization
           </button>
         </div>
