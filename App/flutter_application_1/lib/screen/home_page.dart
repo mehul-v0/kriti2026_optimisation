@@ -46,13 +46,13 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --- Dialog Logic ---
+  // --- Dialog Logic (No Changes) ---
   void _showAddTestCaseDialog() {
     showDialog(
       context: context,
       builder: (ctx) => _AddTestCaseDialog(
         onSuccess: () {
-          _loadData(); // Refresh list after upload
+          _loadData();
           Navigator.pop(ctx);
         },
       ),
@@ -75,7 +75,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      // Floating Action Button with Primary Theme
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddTestCaseDialog,
         backgroundColor: Theme.of(context).primaryColor,
@@ -143,6 +142,8 @@ class _HomePageState extends State<HomePage> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => ShowInputPage(
+                    // UPDATED: Passing ID here
+                    testCaseId: testCase['id'],
                     testCaseName: testCase['case_name'],
                     data: testCase['input_data'],
                   ),
@@ -191,7 +192,7 @@ class _HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.delete_outline, color: Colors.grey),
                     onPressed: () async {
                       await _dataService.deleteTestCase(testCase['id']);
-                      _loadData(); // Refresh
+                      _loadData();
                     },
                   ),
                 ],
@@ -204,8 +205,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// --- Local Widget: The Dialog ---
-
 class _AddTestCaseDialog extends StatefulWidget {
   final VoidCallback onSuccess;
   const _AddTestCaseDialog({required this.onSuccess});
@@ -217,7 +216,6 @@ class _AddTestCaseDialog extends StatefulWidget {
 class _AddTestCaseDialogState extends State<_AddTestCaseDialog> {
   final _nameController = TextEditingController();
   final DataService _dataService = DataService();
-
   bool _isUploading = false;
   String? _selectedFileName;
   Uint8List? _selectedFileBytes;
@@ -226,9 +224,8 @@ class _AddTestCaseDialogState extends State<_AddTestCaseDialog> {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'xls'],
-      withData: true, // Important for web/bytes access
+      withData: true,
     );
-
     if (result != null) {
       setState(() {
         _selectedFileName = result.files.single.name;
@@ -246,24 +243,17 @@ class _AddTestCaseDialogState extends State<_AddTestCaseDialog> {
       );
       return;
     }
-
     setState(() => _isUploading = true);
-
     try {
-      // 1. Parse Bytes to JSON
       final jsonData = ExcelParser.parseExcelBytes(_selectedFileBytes!);
-
-      // 2. Upload to Supabase
       await _dataService.uploadTestCase(_nameController.text.trim(), jsonData);
-
       if (mounted) {
         AppSnackbar.show(context, message: "Test Case Uploaded!");
         widget.onSuccess();
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted)
         AppSnackbar.show(context, message: "Upload failed: $e", isError: true);
-      }
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -271,9 +261,7 @@ class _AddTestCaseDialogState extends State<_AddTestCaseDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Basic media query for dialog width
     final width = MediaQuery.of(context).size.width;
-
     return AlertDialog(
       title: const Text("Add New Test Case"),
       content: SizedBox(
@@ -286,8 +274,6 @@ class _AddTestCaseDialogState extends State<_AddTestCaseDialog> {
               decoration: const InputDecoration(labelText: "Test Case Name"),
             ),
             const SizedBox(height: 20),
-
-            // File Picker Area
             InkWell(
               onTap: _pickFile,
               child: Container(

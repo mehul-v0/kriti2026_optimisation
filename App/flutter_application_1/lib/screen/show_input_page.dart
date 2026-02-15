@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/elements/spinner.dart';
+import 'package:flutter_application_1/elements/snackbar.dart';
+import 'package:flutter_application_1/screen/output_page.dart';
 import 'package:flutter_application_1/widgets/info_list_widget.dart';
 import 'package:flutter_application_1/widgets/map_view.dart';
 import 'package:flutter_application_1/theme/theme.dart';
+import 'package:flutter_application_1/services/optimization_service.dart';
+import 'package:flutter_application_1/services/data_service.dart';
 
 class ShowInputPage extends StatefulWidget {
+  final String testCaseId;
   final String testCaseName;
   final Map<String, dynamic> data;
 
   const ShowInputPage({
     super.key,
+    required this.testCaseId,
     required this.testCaseName,
     required this.data,
   });
@@ -20,11 +26,17 @@ class ShowInputPage extends StatefulWidget {
 
 class _ShowInputPageState extends State<ShowInputPage> {
   final ScrollController _scrollController = ScrollController();
+  final OptimizationService _optimizationService = OptimizationService();
+  final DataService _dataService = DataService();
+
   bool _showBackToTop = false;
+  bool _isLoading = false;
+  bool _hasExistingSolution = false;
 
   @override
   void initState() {
     super.initState();
+    _checkExistingSolution();
     _scrollController.addListener(() {
       if (_scrollController.offset > 300 && !_showBackToTop) {
         setState(() => _showBackToTop = true);
@@ -48,9 +60,62 @@ class _ShowInputPageState extends State<ShowInputPage> {
     );
   }
 
+  Future<void> _checkExistingSolution() async {
+    final sol = await _dataService.fetchSolution(widget.testCaseId);
+    if (sol != null && mounted) {
+      setState(() => _hasExistingSolution = true);
+    }
+  }
+
+  Future<void> _handleOptimizationAction({bool forceRun = false}) async {
+    setState(() => _isLoading = true);
+
+    try {
+      Map<String, dynamic>? resultData;
+
+      if (!forceRun && _hasExistingSolution) {
+        resultData = await _dataService.fetchSolution(widget.testCaseId);
+        if (mounted && resultData != null) {
+          AppSnackbar.show(context, message: "Loaded existing solution");
+        }
+      }
+
+      if (resultData == null || forceRun) {
+        resultData = await _optimizationService.runOptimization(
+          widget.testCaseId,
+        );
+
+        await _dataService.saveSolution(widget.testCaseId, resultData);
+
+        if (mounted) {
+          AppSnackbar.show(context, message: "Optimization Completed & Saved!");
+          setState(() => _hasExistingSolution = true);
+        }
+      }
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => OutputPage(
+            testCaseId: widget.testCaseId,
+            testCaseName: widget.testCaseName, // <--- PASSING NAME HERE
+            resultData: resultData!,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted)
+        AppSnackbar.show(context, message: e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 1. Filter lists here too so Map doesn't show ghost markers
+    // Filter lists logic
     final rawEmployees = widget.data['employees'] as List? ?? [];
     final employees = rawEmployees.where((e) {
       final id = e['employee_id']?.toString() ?? '';
@@ -77,7 +142,6 @@ class _ShowInputPageState extends State<ShowInputPage> {
             )
           : null,
 
-      // FIXED: Added SafeArea to prevent button from being hidden by Android System Nav
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
@@ -92,29 +156,56 @@ class _ShowInputPageState extends State<ShowInputPage> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton(
-              onPressed: () {
-                // Future optimization logic
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
-                minimumSize: const Size(double.infinity, 50),
-              ),
-              child: const Text(
-                "RUN OPTIMIZATION",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: (_isLoading || !_hasExistingSolution)
+                        ? null
+                        : () => _handleOptimizationAction(forceRun: false),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    child: const Text("LOAD OUTPUT"),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () => _handleOptimizationAction(forceRun: true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            "RUN OPTIMIZATION",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
 
       body: LoadingOverlay(
-        isLoading: false,
+        isLoading: _isLoading,
         child: isDesktop
             ? _buildDesktopLayout(context, employees, vehicles)
             : _buildMobileLayout(context, size, employees, vehicles),
@@ -132,21 +223,16 @@ class _ShowInputPageState extends State<ShowInputPage> {
       controller: _scrollController,
       child: Column(
         children: [
-          // Map Container
           SizedBox(
             height: size.height * 0.45,
             width: double.infinity,
             child: MapViewWidget(employees: emps, vehicles: vehs),
           ),
-
-          // Info Section
           Padding(
             padding: EdgeInsets.all(size.width * 0.04),
             child: InfoListWidget(data: widget.data),
           ),
-
-          // Extra space for FAB and Bottom Bar
-          const SizedBox(height: 80),
+          const SizedBox(height: 100),
         ],
       ),
     );
@@ -172,7 +258,7 @@ class _ShowInputPageState extends State<ShowInputPage> {
               child: Column(
                 children: [
                   InfoListWidget(data: widget.data),
-                  const SizedBox(height: 80),
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
