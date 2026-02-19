@@ -47,22 +47,36 @@ class UniversalSpinner extends StatelessWidget {
     // Responsive Size: 30% of screen width, but capped at 150px max
     final double spinnerSize = (screenWidth * 0.3).clamp(50.0, 150.0);
 
-    return SizedBox(
+    return Container(
       width: spinnerSize,
       height: spinnerSize,
-      child: Lottie.asset(
-        lottiePath ?? GlobalLoader._animationPath,
-        fit: BoxFit.contain,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Lottie.asset(
+          lottiePath ?? GlobalLoader._animationPath,
+          fit: BoxFit.contain,
 
-        // Safety: If file not found or corrupt, use default Flutter spinner
-        errorBuilder: (context, error, stackTrace) {
-          return CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Theme.of(context).primaryColor,
-            ),
-            strokeWidth: 3,
-          );
-        },
+          // Safety: If file not found or corrupt, use default Flutter spinner
+          errorBuilder: (context, error, stackTrace) {
+            return CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Theme.of(context).primaryColor,
+              ),
+              strokeWidth: 3,
+            );
+          },
+        ),
       ),
     );
   }

@@ -1,32 +1,115 @@
-import 'dart:typed_data';
-import 'package:file_picker/file_picker.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/screen/show_input_page.dart';
 import 'package:flutter_application_1/services/auth_service.dart';
 import 'package:flutter_application_1/services/data_service.dart';
-import 'package:flutter_application_1/utils/excel_parser.dart';
 import 'package:flutter_application_1/elements/snackbar.dart';
-import 'package:flutter_application_1/elements/spinner.dart';
+import 'package:flutter_application_1/elements/sliver_loading.dart';
 import 'package:flutter_application_1/theme/theme.dart';
+import 'package:flutter_application_1/widgets/add_test_case_dialog.dart';
+import 'package:flutter_application_1/widgets/test_case_card.dart';
+import 'package:flutter_application_1/widgets/home_drawer.dart';
+import 'package:flutter_application_1/widgets/filter_bottom_sheet.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  // Pass a notifier if you want to control theme from main.dart,
+  // otherwise this manages local state for the switch UI.
+  final ValueNotifier<ThemeMode>? themeNotifier;
+
+  const HomePage({super.key, this.themeNotifier});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
+  // Services
   final AuthService _authService = AuthService();
   final DataService _dataService = DataService();
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
 
+  // State
   bool _isLoading = true;
-  List<Map<String, dynamic>> _testCases = [];
+  List<Map<String, dynamic>> _allTestCases = [];
+  List<Map<String, dynamic>> _cachedProcessedTestCases = [];
+  bool _needsReprocessing = true;
+
+  // Interaction State
+  bool _isSelectionMode = false;
+  bool _isSearching = false; // State for search bar visibility
+  String _searchQuery = "";
+
+  final Set<String> _selectedIds = {};
+  final Set<String> _pinnedIds = {};
+  SortOption _currentSort = SortOption.dateNewest;
+  bool _showScrollToTop = false;
+
+  // Performance optimizations
+  Timer? _searchDebounceTimer;
+  Timer? _scrollDebounceTimer;
+  static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
+  static const Duration _scrollDebounceDelay = Duration(milliseconds: 100);
+
+  // Cached grid delegates to avoid recreation on every build
+  static const _wideGridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 2,
+    mainAxisSpacing: 12,
+    crossAxisSpacing: 12,
+    mainAxisExtent: 80,
+  );
+  static const _narrowGridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 1,
+    mainAxisSpacing: 12,
+    crossAxisSpacing: 12,
+    mainAxisExtent: 80,
+  );
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _scrollController.addListener(_debouncedScrollListener);
+
+    // Debounced listener for search input
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchDebounceTimer?.cancel();
+    _scrollDebounceTimer?.cancel();
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(_searchDebounceDelay, () {
+      if (mounted) {
+        setState(() {
+          _searchQuery = _searchController.text.toLowerCase();
+          _needsReprocessing = true;
+        });
+      }
+    });
+  }
+
+  void _debouncedScrollListener() {
+    _scrollDebounceTimer?.cancel();
+    _scrollDebounceTimer = Timer(_scrollDebounceDelay, () {
+      if (mounted) {
+        _scrollListener();
+      }
+    });
+  }
+
+  void _scrollListener() {
+    final shouldShowScrollToTop = _scrollController.offset > 200;
+    if (shouldShowScrollToTop != _showScrollToTop) {
+      setState(() => _showScrollToTop = shouldShowScrollToTop);
+    }
   }
 
   Future<void> _loadData() async {
@@ -34,7 +117,8 @@ class _HomePageState extends State<HomePage> {
       final data = await _dataService.fetchTestCases();
       if (mounted) {
         setState(() {
-          _testCases = data;
+          _allTestCases = data;
+          _needsReprocessing = true;
           _isLoading = false;
         });
       }
@@ -46,56 +130,480 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --- Dialog Logic (No Changes) ---
-  void _showAddTestCaseDialog() {
-    showDialog(
+  // --- Logic: Sorting & Filtering ---
+  List<Map<String, dynamic>> get _processedTestCases {
+    if (!_needsReprocessing && _cachedProcessedTestCases.isNotEmpty) {
+      return _cachedProcessedTestCases;
+    }
+
+    List<Map<String, dynamic>> list;
+
+    // Filter only if there's a search query
+    if (_searchQuery.isNotEmpty) {
+      list = _allTestCases.where((item) {
+        final name = (item['case_name'] ?? '').toLowerCase();
+        return name.contains(_searchQuery);
+      }).toList();
+    } else {
+      list = List.from(_allTestCases);
+    }
+
+    // 1. Sort based on option
+    list.sort((a, b) {
+      // First check pinned status
+      final aPinned = _pinnedIds.contains(a['id'].toString());
+      final bPinned = _pinnedIds.contains(b['id'].toString());
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+
+      // Then sort by selected option
+      switch (_currentSort) {
+        case SortOption.nameAsc:
+          return (a['case_name'] ?? '').compareTo(b['case_name'] ?? '');
+        case SortOption.nameDesc:
+          return (b['case_name'] ?? '').compareTo(a['case_name'] ?? '');
+        case SortOption.dateOldest:
+          return (a['created_at'] ?? '').compareTo(b['created_at'] ?? '');
+        case SortOption.dateNewest:
+          return (b['created_at'] ?? '').compareTo(a['created_at'] ?? '');
+      }
+    });
+
+    _cachedProcessedTestCases = list;
+    _needsReprocessing = false;
+    return list;
+  }
+
+  // --- Logic: Selection ---
+  void _toggleSelection(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_selectedIds.isEmpty) _isSelectionMode = false;
+      } else {
+        _selectedIds.add(id);
+        _isSelectionMode = true;
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      if (_selectedIds.length == _allTestCases.length) {
+        _selectedIds.clear();
+        _isSelectionMode = false;
+      } else {
+        _selectedIds.addAll(_allTestCases.map((e) => e['id'].toString()));
+        _isSelectionMode = true;
+      }
+    });
+  }
+
+  void _togglePin(String id) {
+    setState(() {
+      if (_pinnedIds.contains(id)) {
+        _pinnedIds.remove(id);
+      } else {
+        _pinnedIds.add(id);
+      }
+      _needsReprocessing = true;
+    });
+  }
+
+  // --- Logic: Deletion ---
+  Future<void> _deleteItems(List<String> ids) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => _AddTestCaseDialog(
-        onSuccess: () {
-          _loadData();
-          Navigator.pop(ctx);
-        },
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Delete"),
+        content: Text("Are you sure you want to delete ${ids.length} item(s)?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              "Delete",
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
       ),
     );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      // Batch delete in parallel instead of sequentially
+      await Future.wait(ids.map((id) => _dataService.deleteTestCase(id)));
+      _selectedIds.clear();
+      _isSelectionMode = false;
+      await _loadData();
+    }
+  }
+
+  void _showSortMenu() {
+    FilterBottomSheet.show(
+      context,
+      currentSort: _currentSort,
+      onSortChanged: (newSort) {
+        setState(() {
+          _currentSort = newSort;
+          _needsReprocessing = true;
+        });
+      },
+    );
+  }
+
+  void _cancelSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  // --- Logic: Rename ---
+  Future<void> _renameItem(String id, String currentName) async {
+    final renameController = TextEditingController(text: currentName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Rename Test Case"),
+          content: TextField(
+            controller: renameController,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: "Case Name",
+              hintText: "Enter new name",
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                  color: AppColors.primaryBrand,
+                  width: 2,
+                ),
+              ),
+            ),
+            onSubmitted: (val) => Navigator.pop(ctx, val.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, renameController.text.trim()),
+              child: const Text(
+                "Rename",
+                style: TextStyle(color: AppColors.primaryBrand),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != currentName) {
+      try {
+        await _dataService.renameTestCase(id, newName);
+        if (mounted) {
+          AppSnackbar.show(context, message: "Renamed to \"$newName\"");
+          await _loadData();
+        }
+      } catch (e) {
+        if (mounted) {
+          AppSnackbar.show(
+            context,
+            message: "Rename failed: $e",
+            isError: true,
+          );
+        }
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isWide = size.width > 600;
+    // Use efficient MediaQuery lookups that only subscribe to specific changes
+    final size = MediaQuery.sizeOf(context);
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    final isWide = size.width > 700;
+    final displayList = _processedTestCases;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Optimization Dashboard"),
-        actions: [
-          IconButton(
-            onPressed: () async => await _authService.signOut(),
-            icon: const Icon(Icons.logout),
-            tooltip: "Logout",
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (!didPop && _isSelectionMode) {
+          _cancelSelectionMode();
+        }
+      },
+      child: Scaffold(
+        drawer: _buildDrawer(),
+        body: SafeArea(
+          child: Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            thickness: 6,
+            radius: const Radius.circular(3),
+            child: CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                _buildSliverAppBar(),
+
+                if (_isLoading)
+                  const SliverLoading()
+                else if (displayList.isEmpty)
+                  SliverFillRemaining(
+                    child: _searchQuery.isNotEmpty
+                        ? _buildNoSearchResults()
+                        : _buildEmptyState(),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      isWide ? size.width * 0.1 : 16,
+                      16,
+                      isWide ? size.width * 0.1 : 16,
+                      100 + bottomPadding,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: isWide
+                          ? _wideGridDelegate
+                          : _narrowGridDelegate,
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item = displayList[index];
+                          final idStr = item['id'].toString();
+                          return RepaintBoundary(
+                            child: TestCaseCard(
+                              key: ValueKey(idStr),
+                              data: item,
+                              isSelected: _selectedIds.contains(idStr),
+                              isSelectionMode: _isSelectionMode,
+                              isPinned: _pinnedIds.contains(idStr),
+                              onTap: () {
+                                if (_isSelectionMode) {
+                                  _toggleSelection(idStr);
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ShowInputPage(
+                                        testCaseId: item['id'],
+                                        testCaseName: item['case_name'],
+                                        data: item['input_data'],
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              onLongPress: () => _toggleSelection(idStr),
+                              onPinToggle: () => _togglePin(idStr),
+                              onDelete: () => _deleteItems([idStr]),
+                              onRename: () =>
+                                  _renameItem(idStr, item['case_name'] ?? ''),
+                            ),
+                          );
+                        },
+                        childCount: displayList.length,
+                        addAutomaticKeepAlives: false,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddTestCaseDialog,
-        backgroundColor: Theme.of(context).primaryColor,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          "New Test Case",
-          style: TextStyle(color: Colors.white),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: Padding(
+          padding: EdgeInsets.only(bottom: bottomPadding + 8),
+          child: _buildFABs(),
         ),
       ),
-      body: LoadingOverlay(
-        isLoading: _isLoading,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: size.width * 0.05,
-            vertical: 20,
+    );
+  }
+
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      expandedHeight: _isSearching ? 56.0 : 140.0,
+      floating: false,
+      pinned: true,
+      backgroundColor: _isSelectionMode
+          ? AppColors.darkBrand
+          : AppColors.primaryBrand,
+      iconTheme: const IconThemeData(color: Colors.white),
+      actions: _isSelectionMode
+          ? _buildSelectionActions()
+          : _buildStandardActions(),
+      title: _isSearching ? _buildSearchBar() : null,
+      flexibleSpace: _isSearching
+          ? null
+          : FlexibleSpaceBar(
+              titlePadding: const EdgeInsetsDirectional.only(
+                start: 16.0,
+                bottom: 16.0,
+                top: 56.0,
+              ),
+              expandedTitleScale: 1.0,
+              title: Text(
+                _isSelectionMode
+                    ? "${_selectedIds.length} Selected"
+                    : "Optimization Dashboard",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      _isSelectionMode
+                          ? AppColors.darkBrand
+                          : AppColors.primaryBrand,
+                      _isSelectionMode ? Colors.black87 : AppColors.darkBrand,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
+  // --- Search Bar Widget ---
+  Widget _buildSearchBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final hintColor = isDark ? const Color(0x99FFFFFF) : Colors.black54;
+    final iconColor = isDark ? const Color(0xB3FFFFFF) : Colors.black54;
+    final bgColor = isDark ? const Color(0x26FFFFFF) : const Color(0x14000000);
+
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: TextField(
+        controller: _searchController,
+        autofocus: true,
+        style: TextStyle(color: textColor, fontSize: 16),
+        cursorColor: textColor,
+        decoration: InputDecoration(
+          hintText: "Search test cases...",
+          hintStyle: TextStyle(color: hintColor, fontSize: 15),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 10,
           ),
-          child: _testCases.isEmpty
-              ? _buildEmptyState()
-              : _buildGridOrList(isWide),
+          isDense: true,
+          prefixIcon: Icon(Icons.search, color: iconColor, size: 20),
+          prefixIconConstraints: const BoxConstraints(minWidth: 40),
         ),
       ),
+    );
+  }
+
+  List<Widget> _buildStandardActions() {
+    if (_isSearching) {
+      return [
+        IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () {
+            _searchDebounceTimer?.cancel();
+            setState(() {
+              _isSearching = false;
+              _searchQuery = "";
+              _searchController.clear();
+              _needsReprocessing = true;
+            });
+          },
+        ),
+      ];
+    }
+
+    return [
+      IconButton(
+        icon: const Icon(Icons.search),
+        onPressed: () {
+          setState(() {
+            _isSearching = true;
+          });
+        },
+      ),
+      IconButton(icon: const Icon(Icons.filter_list), onPressed: _showSortMenu),
+      const SizedBox(width: 8),
+    ];
+  }
+
+  List<Widget> _buildSelectionActions() {
+    return [
+      TextButton.icon(
+        onPressed: _selectAll,
+        icon: const Icon(Icons.select_all, color: Colors.white),
+        label: const Text("All", style: TextStyle(color: Colors.white)),
+      ),
+      IconButton(
+        icon: const Icon(Icons.delete),
+        onPressed: () => _deleteItems(_selectedIds.toList()),
+      ),
+    ];
+  }
+
+  Widget _buildFABs() {
+    if (_isSelectionMode) return const SizedBox.shrink();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (_showScrollToTop)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: FloatingActionButton.small(
+              heroTag: "scroll_top",
+              onPressed: () {
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeOut,
+                );
+              },
+              backgroundColor: Theme.of(context).cardColor,
+              child: const Icon(
+                Icons.keyboard_arrow_up,
+                color: AppColors.primaryBrand,
+              ),
+            ),
+          ),
+        FloatingActionButton(
+          heroTag: "add_case",
+          onPressed: () {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AddTestCaseDialog(
+                onSuccess: () {
+                  Navigator.pop(ctx);
+                  _loadData();
+                },
+              ),
+            );
+          },
+          backgroundColor: AppColors.primaryBrand,
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
+      ],
     );
   }
 
@@ -104,224 +612,48 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.folder_open, size: 60, color: Colors.grey[400]),
+          Icon(Icons.folder_off_outlined, size: 80, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
-            "No test cases found",
+            "No test cases yet",
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(color: Colors.grey),
           ),
           const SizedBox(height: 8),
-          const Text("Upload an Excel file to get started."),
+          const Text("Click the + button to upload your first case."),
         ],
       ),
     );
   }
 
-  Widget _buildGridOrList(bool isWide) {
-    return GridView.builder(
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: isWide ? 3 : 1,
-        childAspectRatio: isWide ? 2.5 : 3.5,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
+  Widget _buildNoSearchResults() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off, size: 80, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text(
+            "No results found",
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: Colors.grey),
+          ),
+        ],
       ),
-      itemCount: _testCases.length,
-      itemBuilder: (context, index) {
-        final testCase = _testCases[index];
-        return Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ShowInputPage(
-                    // UPDATED: Passing ID here
-                    testCaseId: testCase['id'],
-                    testCaseName: testCase['case_name'],
-                    data: testCase['input_data'],
-                  ),
-                ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.description,
-                      color: Theme.of(context).primaryColor,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          testCase['case_name'] ?? "Untitled",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Uploaded: ${testCase['created_at'].toString().split('T')[0]}",
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.grey),
-                    onPressed: () async {
-                      await _dataService.deleteTestCase(testCase['id']);
-                      _loadData();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
+    );
+  }
+
+  Widget _buildDrawer() {
+    final userEmail = _authService.currentUser?.email ?? "student@iitg.ac.in";
+
+    return HomeDrawer(
+      userEmail: userEmail,
+      themeNotifier: widget.themeNotifier,
+      onLogout: () async {
+        await _authService.signOut();
       },
-    );
-  }
-}
-
-class _AddTestCaseDialog extends StatefulWidget {
-  final VoidCallback onSuccess;
-  const _AddTestCaseDialog({required this.onSuccess});
-
-  @override
-  State<_AddTestCaseDialog> createState() => _AddTestCaseDialogState();
-}
-
-class _AddTestCaseDialogState extends State<_AddTestCaseDialog> {
-  final _nameController = TextEditingController();
-  final DataService _dataService = DataService();
-  bool _isUploading = false;
-  String? _selectedFileName;
-  Uint8List? _selectedFileBytes;
-
-  Future<void> _pickFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx', 'xls'],
-      withData: true,
-    );
-    if (result != null) {
-      setState(() {
-        _selectedFileName = result.files.single.name;
-        _selectedFileBytes = result.files.single.bytes;
-      });
-    }
-  }
-
-  Future<void> _handleUpload() async {
-    if (_nameController.text.isEmpty || _selectedFileBytes == null) {
-      AppSnackbar.show(
-        context,
-        message: "Name and File are mandatory",
-        isError: true,
-      );
-      return;
-    }
-    setState(() => _isUploading = true);
-    try {
-      final jsonData = ExcelParser.parseExcelBytes(_selectedFileBytes!);
-      await _dataService.uploadTestCase(_nameController.text.trim(), jsonData);
-      if (mounted) {
-        AppSnackbar.show(context, message: "Test Case Uploaded!");
-        widget.onSuccess();
-      }
-    } catch (e) {
-      if (mounted)
-        AppSnackbar.show(context, message: "Upload failed: $e", isError: true);
-    } finally {
-      if (mounted) setState(() => _isUploading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    return AlertDialog(
-      title: const Text("Add New Test Case"),
-      content: SizedBox(
-        width: width > 600 ? 400 : width * 0.8,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: "Test Case Name"),
-            ),
-            const SizedBox(height: 20),
-            InkWell(
-              onTap: _pickFile,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.borderColor),
-                  borderRadius: BorderRadius.circular(8),
-                  color: AppColors.lightBackground,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.upload_file,
-                      color: AppColors.primaryBrand,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _selectedFileName ?? "Click to upload Excel file",
-                        style: TextStyle(
-                          color: _selectedFileName == null
-                              ? Colors.grey
-                              : Colors.black87,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        if (_isUploading)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: CircularProgressIndicator(),
-          )
-        else ...[
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(onPressed: _handleUpload, child: const Text("Upload")),
-        ],
-      ],
     );
   }
 }

@@ -5,18 +5,21 @@ import 'package:flutter_application_1/config/env.dart';
 class OptimizationService {
   /// triggers the optimization process on the backend.
   /// Requires [testCaseId] to tell the server which data to process.
-  Future<Map<String, dynamic>> runOptimization(String testCaseId) async {
+  Future<Map<String, dynamic>> runOptimization(
+    String testCaseId, {
+    String mode = 'standard',
+  }) async {
     try {
       final uri = Uri.parse(Env.optimizeEndpoint);
 
-      // We pass the ID in the body so the Python backend knows what to fetch from Supabase
+      // We pass the ID and mode in the body so the backend knows what to fetch and how to run
       final response = await http.post(
         uri,
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
-        body: jsonEncode({"test_case_id": testCaseId}),
+        body: jsonEncode({"test_case_id": testCaseId, "mode": mode}),
       );
 
       if (response.statusCode == 200) {

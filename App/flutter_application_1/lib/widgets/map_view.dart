@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,11 +9,15 @@ import 'package:flutter_application_1/theme/theme.dart';
 class MapViewWidget extends StatefulWidget {
   final List employees;
   final List vehicles;
+  final void Function(Map<String, dynamic> employee)? onEmployeeTap;
+  final void Function(Map<String, dynamic> vehicle)? onVehicleTap;
 
   const MapViewWidget({
     super.key,
     required this.employees,
     required this.vehicles,
+    this.onEmployeeTap,
+    this.onVehicleTap,
   });
 
   @override
@@ -20,41 +26,103 @@ class MapViewWidget extends StatefulWidget {
 
 class _MapViewWidgetState extends State<MapViewWidget> {
   final MapController _mapController = MapController();
+  late LatLng _center;
+  bool _mapReady = false;
+  bool _showLegend = false;
 
   // Color Filter Matrix to invert map colors for Dark Mode
-  // This turns white backgrounds to dark grey/black
   static const List<double> _darkModeMatrix = [
-    -1, 0, 0, 0, 255, // Red
-    0, -1, 0, 0, 255, // Green
-    0, 0, -1, 0, 255, // Blue
-    0, 0, 0, 1, 0, // Alpha
+    -1,
+    0,
+    0,
+    0,
+    255,
+    0,
+    -1,
+    0,
+    0,
+    255,
+    0,
+    0,
+    -1,
+    0,
+    255,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
+
+  // Priority color mapping for employee markers
+  static const Map<int, Color> _priorityMarkerColors = {
+    1: Color(0xFFEF4444), // Red
+    2: Color(0xFFF59E0B), // Amber
+    3: Color(0xFF3B82F6), // Blue
+    4: Color(0xFF8B5CF6), // Violet
+    5: Color(0xFF64748B), // Slate
+  };
+
+  static const Map<int, String> _priorityLabels = {
+    1: 'Critical',
+    2: 'High',
+    3: 'Medium',
+    4: 'Low',
+    5: 'Flex',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _center = _computeCenter();
+  }
+
+  LatLng _computeCenter() {
+    final allPoints = <LatLng>[];
+    for (var emp in widget.employees) {
+      final lat = _toDouble(emp['pickup_lat']);
+      final lng = _toDouble(emp['pickup_lng']);
+      if (lat != 0 && lng != 0) allPoints.add(LatLng(lat, lng));
+    }
+    for (var veh in widget.vehicles) {
+      final lat = _toDouble(veh['current_lat']);
+      final lng = _toDouble(veh['current_lng']);
+      if (lat != 0 && lng != 0) allPoints.add(LatLng(lat, lng));
+    }
+    if (allPoints.isEmpty) {
+      return const LatLng(MapConfig.defaultLat, MapConfig.defaultLng);
+    }
+    double latSum = 0, lngSum = 0;
+    for (var p in allPoints) {
+      latSum += p.latitude;
+      lngSum += p.longitude;
+    }
+    return LatLng(latSum / allPoints.length, lngSum / allPoints.length);
+  }
+
+  double _toDouble(dynamic val) => (val as num?)?.toDouble() ?? 0.0;
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    // 1. Generate Markers
     List<Marker> markers = _buildMarkers(context);
-
-    // 2. Calculate Center
-    LatLng center = markers.isNotEmpty
-        ? _calculateCenter(markers)
-        : const LatLng(MapConfig.defaultLat, MapConfig.defaultLng);
 
     return Stack(
       children: [
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
-            initialCenter: center,
+            initialCenter: _center,
             initialZoom: MapConfig.defaultZoom,
+            onMapReady: () => _mapReady = true,
             interactionOptions: const InteractionOptions(
               flags: InteractiveFlag.all,
             ),
+            onTap: (_, __) {
+              if (_showLegend) setState(() => _showLegend = false);
+            },
           ),
           children: [
-            // Dark Mode Logic: Invert colors if dark theme is active
             ColorFiltered(
               colorFilter: isDarkMode
                   ? const ColorFilter.matrix(_darkModeMatrix)
@@ -71,104 +139,269 @@ class _MapViewWidgetState extends State<MapViewWidget> {
           ],
         ),
 
-        // --- CONTROLS OVERLAY ---
-
-        // 1. North / Reset Rotation
+        // ── North / Reset Rotation ──
         Positioned(
           top: 16,
           right: 16,
-          child: FloatingActionButton.small(
-            heroTag: "btn_north",
-            backgroundColor: Theme.of(context).cardColor,
-            child: const Icon(Icons.navigation, color: AppColors.primaryBrand),
+          child: _mapButton(
+            context,
+            icon: Icons.navigation_rounded,
             onPressed: () {
-              _mapController.rotate(0);
+              if (_mapReady) _mapController.rotate(0);
             },
           ),
         ),
 
-        // 2. Relocate / Re-center Button
+        // ── Recenter ──
         Positioned(
-          top: 70, // Below the North button
+          top: 70,
           right: 16,
-          child: FloatingActionButton.small(
-            heroTag: "btn_relocate",
-            backgroundColor: Theme.of(context).cardColor,
-            child: const Icon(Icons.my_location, color: AppColors.primaryBrand),
+          child: _mapButton(
+            context,
+            icon: Icons.my_location_rounded,
             onPressed: () {
-              // Smoothly move back to center
-              _mapController.move(center, MapConfig.defaultZoom);
+              if (_mapReady) {
+                final freshCenter = _computeCenter();
+                _mapController.move(freshCenter, MapConfig.defaultZoom);
+              }
             },
           ),
         ),
 
-        // 3. Zoom Controls
+        // ── Legend / Info button ──
         Positioned(
-          bottom: 16,
+          top: 124,
           right: 16,
-          child: Column(
-            children: [
-              FloatingActionButton.small(
-                heroTag: "btn_zoom_in",
-                backgroundColor: Theme.of(context).cardColor,
-                child: const Icon(Icons.add, color: AppColors.primaryBrand),
-                onPressed: () {
-                  final zoom = _mapController.camera.zoom + 1;
-                  _mapController.move(_mapController.camera.center, zoom);
-                },
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton.small(
-                heroTag: "btn_zoom_out",
-                backgroundColor: Theme.of(context).cardColor,
-                child: const Icon(Icons.remove, color: AppColors.primaryBrand),
-                onPressed: () {
-                  final zoom = _mapController.camera.zoom - 1;
-                  _mapController.move(_mapController.camera.center, zoom);
-                },
-              ),
-            ],
+          child: _mapButton(
+            context,
+            icon: Icons.info_outline_rounded,
+            onPressed: () => setState(() => _showLegend = !_showLegend),
           ),
+        ),
+
+        // ── Legend overlay ──
+        if (_showLegend)
+          Positioned(top: 124, right: 62, child: _buildLegend(context)),
+      ],
+    );
+  }
+
+  Widget _mapButton(
+    BuildContext context, {
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      elevation: 3,
+      borderRadius: BorderRadius.circular(12),
+      color: isDark ? AppColors.darkSurface : Colors.white,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onPressed,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, color: AppColors.primaryBrand, size: 20),
+        ),
+      ),
+    );
+  }
+
+  // ── Legend panel ───────────────────────────────────────
+  Widget _buildLegend(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? AppColors.darkSurface : Colors.white;
+    final textC = isDark ? Colors.white : AppColors.textPrimaryLight;
+    final subC = isDark ? Colors.white54 : AppColors.textSecondaryLight;
+
+    // Collect which priorities exist
+    final usedPriorities = <int>{};
+    for (var emp in widget.employees) {
+      final p = int.tryParse(emp['priority']?.toString() ?? '') ?? 0;
+      if (p >= 1 && p <= 5) usedPriorities.add(p);
+    }
+
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(14),
+      color: bg,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        constraints: const BoxConstraints(maxWidth: 200),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Map Legend',
+              style: TextStyle(
+                color: textC,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Company
+            _legendRow(
+              context,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryBrand,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.business_rounded,
+                  color: Colors.white,
+                  size: 12,
+                ),
+              ),
+              label: 'Company / Drop',
+              color: subC,
+            ),
+            const SizedBox(height: 8),
+
+            // Employee priorities
+            Text(
+              'Employees (by priority)',
+              style: TextStyle(
+                color: subC,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final p in [1, 2, 3, 4, 5])
+              if (usedPriorities.contains(p))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _legendRow(
+                    context,
+                    child: Container(
+                      width: 20,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: _priorityMarkerColors[p],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    label: 'P$p — ${_priorityLabels[p]}',
+                    color: subC,
+                  ),
+                ),
+
+            const SizedBox(height: 6),
+
+            // Vehicles
+            Text(
+              'Vehicles',
+              style: TextStyle(
+                color: subC,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            _legendRow(
+              context,
+              child: Container(
+                width: 20,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: AppColors.markerPremium,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Center(
+                  child: Text(
+                    'V',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              label: 'Premium',
+              color: subC,
+            ),
+            const SizedBox(height: 4),
+            _legendRow(
+              context,
+              child: Container(
+                width: 20,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: AppColors.markerNormal,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Center(
+                  child: Text(
+                    'V',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              label: 'Normal',
+              color: subC,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendRow(
+    BuildContext context, {
+    required Widget child,
+    required String label,
+    required Color color,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(width: 24, child: Center(child: child)),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(label, style: TextStyle(color: color, fontSize: 11)),
         ),
       ],
     );
   }
 
-  LatLng _calculateCenter(List<Marker> markers) {
-    if (markers.isEmpty) return const LatLng(0, 0);
-    double latSum = 0;
-    double lngSum = 0;
-    for (var m in markers) {
-      latSum += m.point.latitude;
-      lngSum += m.point.longitude;
-    }
-    return LatLng(latSum / markers.length, lngSum / markers.length);
-  }
-
   List<Marker> _buildMarkers(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     List<Marker> markers = [];
     bool companyAdded = false;
 
-    double getLat(dynamic val) => (val as num?)?.toDouble() ?? 0.0;
-    double getLng(dynamic val) => (val as num?)?.toDouble() ?? 0.0;
-
-    // A. Employees
+    // A. Employees — colored by priority, tappable
     for (var emp in widget.employees) {
-      double pLat = getLat(emp['pickup_lat']);
-      double pLng = getLng(emp['pickup_lng']);
-      double dLat = getLat(emp['drop_lat']);
-      double dLng = getLng(emp['drop_lng']);
+      double pLat = _toDouble(emp['pickup_lat']);
+      double pLng = _toDouble(emp['pickup_lng']);
+      double dLat = _toDouble(emp['drop_lat']);
+      double dLng = _toDouble(emp['drop_lng']);
+      final priority = int.tryParse(emp['priority']?.toString() ?? '') ?? 5;
+      final color =
+          _priorityMarkerColors[priority] ?? _priorityMarkerColors[5]!;
+      final shortId = (emp['employee_id']?.toString() ?? '');
+      final empData = Map<String, dynamic>.from(emp as Map);
 
       if (pLat != 0 && pLng != 0) {
         markers.add(
           Marker(
             point: LatLng(pLat, pLng),
-            width: 40,
-            height: 40,
-            child: const Icon(
-              Icons.person_pin_circle,
-              color: AppColors.markerEmployee,
-              size: 35,
+            width: 64,
+            height: 36,
+            child: GestureDetector(
+              onTap: () => widget.onEmployeeTap?.call(empData),
+              child: _EmployeeMarker(label: shortId, color: color),
             ),
           ),
         );
@@ -178,12 +411,25 @@ class _MapViewWidgetState extends State<MapViewWidget> {
         markers.add(
           Marker(
             point: LatLng(dLat, dLng),
-            width: 50,
-            height: 50,
-            child: const Icon(
-              Icons.business,
-              color: AppColors.markerCompany,
-              size: 45,
+            width: 40,
+            height: 40,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.primaryBrand,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryBrand.withOpacity(0.4),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.business_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
             ),
           ),
         );
@@ -191,24 +437,27 @@ class _MapViewWidgetState extends State<MapViewWidget> {
       }
     }
 
-    // B. Vehicles
+    // B. Vehicles — pill label style, tappable
     for (var veh in widget.vehicles) {
       final isPremium = veh['category'].toString().toLowerCase() == 'premium';
-      double cLat = getLat(veh['current_lat']);
-      double cLng = getLng(veh['current_lng']);
+      double cLat = _toDouble(veh['current_lat']);
+      double cLng = _toDouble(veh['current_lng']);
+      final vId = veh['vehicle_id']?.toString() ?? '';
+      final vehData = Map<String, dynamic>.from(veh as Map);
 
       if (cLat != 0 && cLng != 0) {
         markers.add(
           Marker(
             point: LatLng(cLat, cLng),
-            width: 40,
-            height: 40,
-            child: Icon(
-              Icons.directions_car,
-              color: isPremium
-                  ? AppColors.markerPremium
-                  : AppColors.markerNormal,
-              size: 35,
+            width: 64,
+            height: 36,
+            child: GestureDetector(
+              onTap: () => widget.onVehicleTap?.call(vehData),
+              child: _VehicleMarker(
+                label: vId,
+                isPremium: isPremium,
+                isDark: isDark,
+              ),
             ),
           ),
         );
@@ -217,4 +466,134 @@ class _MapViewWidgetState extends State<MapViewWidget> {
 
     return markers;
   }
+}
+
+// ── Custom Employee Marker ───────────────────────────────
+class _EmployeeMarker extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _EmployeeMarker({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.4),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
+              height: 1.2,
+            ),
+          ),
+        ),
+        CustomPaint(
+          size: const Size(8, 5),
+          painter: _TrianglePainter(color: color),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Custom Vehicle Marker — pill label style (like employee) ─
+class _VehicleMarker extends StatelessWidget {
+  final String label;
+  final bool isPremium;
+  final bool isDark;
+
+  const _VehicleMarker({
+    required this.label,
+    required this.isPremium,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isPremium ? AppColors.markerPremium : AppColors.markerNormal;
+    final bg = isDark ? AppColors.darkSurface : Colors.white;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.3),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isPremium ? Icons.star_rounded : Icons.directions_car_rounded,
+                color: color,
+                size: 11,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+        CustomPaint(
+          size: const Size(8, 5),
+          painter: _TrianglePainter(color: color),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Triangle pointer painter ─────────────────────────────
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  _TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = ui.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

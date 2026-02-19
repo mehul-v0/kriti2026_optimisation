@@ -247,7 +247,7 @@ class _InfoListWidgetState extends State<InfoListWidget> {
       ),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: AppColors.markerEmployee.withOpacity(0.1),
+          backgroundColor: const Color(0x1A3B82F6),
           child: Text(
             displayId,
             style: const TextStyle(

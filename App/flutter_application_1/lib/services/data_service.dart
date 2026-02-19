@@ -38,6 +38,14 @@ class DataService {
     await _supabase.from('test_cases').delete().eq('id', id);
   }
 
+  // Rename a test case
+  Future<void> renameTestCase(String id, String newName) async {
+    await _supabase
+        .from('test_cases')
+        .update({'case_name': newName})
+        .eq('id', id);
+  }
+
   // --- NEW: Solution Handling ---
 
   // Fetch existing solution (if any)
