@@ -11,17 +11,43 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  // Global theme notifier
+  final ValueNotifier<ThemeMode> _themeNotifier = ValueNotifier(
+    ThemeMode.system,
+  );
+
+  // Cache the child widget so theme changes don't recreate the subtree
+  late final Widget _cachedAuthGate = AuthGate(themeNotifier: _themeNotifier);
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system, // auto toggle
-      home: const AuthGate(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: _themeNotifier,
+      // Pass cached child so it's NOT rebuilt on theme toggle
+      child: _cachedAuthGate,
+      builder: (context, themeMode, child) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeMode,
+          home: child,
+        );
+      },
     );
+  }
+
+  @override
+  void dispose() {
+    _themeNotifier.dispose();
+    super.dispose();
   }
 }

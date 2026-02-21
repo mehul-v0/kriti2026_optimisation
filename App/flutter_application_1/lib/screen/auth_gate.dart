@@ -4,7 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_page.dart';
 
 class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
+  final ValueNotifier<ThemeMode>? themeNotifier;
+
+  const AuthGate({super.key, this.themeNotifier});
 
   @override
   Widget build(BuildContext context) {
@@ -16,7 +18,7 @@ class AuthGate extends StatelessWidget {
 
         // If we have a session, go to Home. Otherwise, stay on Auth.
         if (session != null) {
-          return const HomePage();
+          return HomePage(themeNotifier: themeNotifier);
         } else {
           return const AuthPage();
         }
