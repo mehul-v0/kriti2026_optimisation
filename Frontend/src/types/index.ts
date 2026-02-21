@@ -1,98 +1,120 @@
-export interface EmployeeRequest {
+export interface Employee {
   id: string;
-  scenario_id: string;
-  employee_id: string;
-  priority: 'high' | 'medium' | 'low';
-  pickup_lat: number;
-  pickup_lng: number;
-  pickup_address: string;
-  destination_lat: number;
-  destination_lng: number;
-  destination_address: string;
-  time_window_start: string;
-  time_window_end: string;
-  vehicle_preference: 'premium' | 'normal';
-  sharing_preference: 'single' | 'double' | 'triple';
+  priority: 'High' | 'Medium' | 'Low';
+  pickupLocation: string;
+  pickupLat: number;
+  pickupLng: number;
+  destination: string;
+  destinationLat: number;
+  destinationLng: number;
+  timeWindowStart: string;
+  timeWindowEnd: string;
+  vehiclePreference: 'Premium' | 'Normal';
+  sharingPreference: 'Single' | 'Double' | 'Triple';
+  baselineCost: number;
 }
 
 export interface Vehicle {
   id: string;
-  scenario_id: string;
-  vehicle_id: string;
-  fuel_type: 'petrol' | 'diesel' | 'electric';
-  vehicle_mode: '2-wheeler' | '4-wheeler' | 'van';
+  fuelType: 'Electric' | 'Petrol' | 'Diesel';
+  mode: '2-Wheeler' | '4-Wheeler' | 'Van';
   capacity: number;
-  cost_per_km: number;
-  avg_mileage: number;
-  avg_speed: number;
-  vehicle_age: number;
-  current_lat: number;
-  current_lng: number;
-  current_address: string;
-  availability_time: string;
+  costPerKm: number;
+  currentLocation: string;
+  currentLat: number;
+  currentLng: number;
+  availabilityTime: string;
+}
+
+export interface Trip {
+  tripNumber: number;
+  vehicleId: string;
+  employees: string[];
+  route: RoutePoint[];
+  distance: number;
+  duration: number;
+  cost: number;
+  startTime: string;
+  endTime: string;
+}
+
+export interface RoutePoint {
+  type: 'pickup' | 'dropoff' | 'office';
+  lat: number;
+  lng: number;
+  address: string;
+  employeeId?: string;
+  time: string;
+  arrivalTime: string;
+  departureTime: string;
+  distanceFromPrev: number;
+  geometry?: [number, number][];  // Array of [lat, lng] coordinates for actual road route
+}
+
+export interface Assignment {
+  employeeId: string;
+  vehicleId: string;
+  tripNumber: number;
+  pickupTime: string;
+  dropoffTime: string;
+  actualSharing: string;
+  vehiclePreferenceMet: boolean;
+  sharingPreferenceMet: boolean;
+  timeWindowMet: boolean;
 }
 
 export interface OptimizationResult {
-  id?: string;
-  scenario_id: string;
-  total_cost: number;
-  baseline_cost: number;
-  cost_savings: number;
-  cost_savings_percent: number;
-  total_distance: number;
-  total_time: number;
-  vehicles_used: number;
-  vehicles_available: number;
-  hard_violations?: number;
-  soft_violations?: number;
-  completed_at?: string;
+  sessionId: string;
+  timestamp: string;
+  inputFile: string;
+  employees: Employee[];
+  vehicles: Vehicle[];
+  trips: Trip[];
+  assignments: Assignment[];
+  baselineCost: number;
+  optimizedCost: number;
+  savings: number;
+  savingsPercentage: number;
+  totalTime: number;
+  baselineTime: number;
+  constraints: ConstraintReport;
+  solverDuration: number;
+  solverMode: 'Quick' | 'Standard' | 'Thorough' | 'Maximum';
 }
 
-export interface VehicleAssignment {
-  id?: string;
-  scenario_id?: string;
-  vehicle_id: string;
-  employee_id: string;
-  pickup_time: string;
-  dropoff_time: string;
-  sequence_order: number;
-  is_pickup: boolean;
-  trip_number?: number;
+export interface ConstraintReport {
+  hard: ConstraintCategory;
+  soft: ConstraintCategory;
 }
 
-export interface Route {
-  id?: string;
-  scenario_id?: string;
-  vehicle_id: string;
-  route_points: Array<{ lat: number; lng: number; type: 'start' | 'pickup' | 'dropoff' | 'end' | 'office'; employee_id?: string; trip_number?: number }>;
-  total_distance: number;
-  total_cost: number;
-  passengers_count: number;
-  capacity_utilization: number;
-  trips_count?: number;
+export interface ConstraintCategory {
+  total: number;
+  satisfied: number;
+  violated: number;
+  complianceRate: number;
+  details: ConstraintDetail[];
 }
 
-export interface Scenario {
-  id: string;
+export interface ConstraintDetail {
   name: string;
   description: string;
-  created_at: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'satisfied' | 'violated' | 'relaxed';
+  violations: any[];
 }
 
-export interface DataDigest {
-  employees_count: number;
-  vehicles_count: number;
-  time_window_span: string;
-  high_priority_percent: number;
-  fleet_composition: {
-    electric: number;
-    petrol: number;
-    diesel: number;
-  };
-  vehicle_modes: {
-    '2-wheeler': number;
-    '4-wheeler': number;
-    'van': number;
-  };
+export interface SessionHistory {
+  id: string;
+  timestamp: string;
+  employeeCount: number;
+  vehiclesUsed: number;
+  savings: number;
+  status: 'completed' | 'failed';
+  result?: OptimizationResult;
+}
+
+export interface LifetimeMetrics {
+  totalOptimizations: number;
+  cumulativeSavings: number;
+  totalEmployees: number;
+  totalKilometers: number;
 }

@@ -1,0 +1,387 @@
+{
+  "cost": 1306.6462900000001,
+  "score": 1062.852403,
+  "solution_type": "OPTIMAL - No violations",
+  "stats": {
+    "cost": 1306.6462900000001,
+    "hard_violations": 0,
+    "soft_violations": 0,
+    "time": 494.0
+  },
+  "total_time": 494.0,
+  "vehicles": [
+    {
+      "total_cost": 364.53520000000003,
+      "total_distance": 36.45352,
+      "total_time": 92,
+      "trips": [
+        {
+          "stops": [
+            {
+              "arrival_time": "08:00",
+              "departure_time": "08:00",
+              "distance_from_prev": 0.0,
+              "location": "Vehicle Depot",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:01",
+              "departure_time": "08:15",
+              "distance_from_prev": 0.35283,
+              "location": "E02 Pickup",
+              "wait_time": 14
+            },
+            {
+              "arrival_time": "08:30",
+              "departure_time": "08:30",
+              "distance_from_prev": 7.21727,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 75.701,
+          "total_distance": 7.5701,
+          "total_time": 30,
+          "trip_number": 1
+        },
+        {
+          "stops": [
+            {
+              "arrival_time": "08:30",
+              "departure_time": "08:30",
+              "distance_from_prev": 0.0,
+              "location": "Office",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:43",
+              "departure_time": "08:43",
+              "distance_from_prev": 6.03089,
+              "location": "E07 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:55",
+              "departure_time": "08:55",
+              "distance_from_prev": 5.41922,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 114.50110000000001,
+          "total_distance": 11.45011,
+          "total_time": 25,
+          "trip_number": 2
+        },
+        {
+          "stops": [
+            {
+              "arrival_time": "08:55",
+              "departure_time": "08:55",
+              "distance_from_prev": 0.0,
+              "location": "Office",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "09:11",
+              "departure_time": "09:11",
+              "distance_from_prev": 7.66594,
+              "location": "E03 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "09:16",
+              "departure_time": "09:16",
+              "distance_from_prev": 2.4950300000000003,
+              "location": "E12 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "09:32",
+              "departure_time": "09:32",
+              "distance_from_prev": 7.27234,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 174.3331,
+          "total_distance": 17.43331,
+          "total_time": 37,
+          "trip_number": 3
+        }
+      ],
+      "vehicle_id": "V01"
+    },
+    {
+      "total_cost": 192.58249999999998,
+      "total_distance": 17.5075,
+      "total_time": 43,
+      "trips": [
+        {
+          "stops": [
+            {
+              "arrival_time": "08:00",
+              "departure_time": "08:00",
+              "distance_from_prev": 0.0,
+              "location": "Vehicle Depot",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:02",
+              "departure_time": "08:10",
+              "distance_from_prev": 0.8854299999999999,
+              "location": "E01 Pickup",
+              "wait_time": 8
+            },
+            {
+              "arrival_time": "08:24",
+              "departure_time": "08:24",
+              "distance_from_prev": 6.97339,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 86.44702,
+          "total_distance": 7.85882,
+          "total_time": 24,
+          "trip_number": 1
+        },
+        {
+          "stops": [
+            {
+              "arrival_time": "08:24",
+              "departure_time": "08:24",
+              "distance_from_prev": 0.0,
+              "location": "Office",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:34",
+              "departure_time": "08:34",
+              "distance_from_prev": 4.99967,
+              "location": "E13 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:43",
+              "departure_time": "08:43",
+              "distance_from_prev": 4.6490100000000005,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 106.13548,
+          "total_distance": 9.64868,
+          "total_time": 19,
+          "trip_number": 2
+        }
+      ],
+      "vehicle_id": "V02"
+    },
+    {
+      "total_cost": 181.70265,
+      "total_distance": 12.11351,
+      "total_time": 131,
+      "trips": [
+        {
+          "stops": [
+            {
+              "arrival_time": "08:00",
+              "departure_time": "08:00",
+              "distance_from_prev": 0.0,
+              "location": "Vehicle Depot",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:01",
+              "departure_time": "09:45",
+              "distance_from_prev": 0.32439,
+              "location": "E14 Pickup",
+              "wait_time": 104
+            },
+            {
+              "arrival_time": "09:46",
+              "departure_time": "09:46",
+              "distance_from_prev": 0.68841,
+              "location": "E05 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "09:54",
+              "departure_time": "10:00",
+              "distance_from_prev": 4.60532,
+              "location": "E09 Pickup",
+              "wait_time": 6
+            },
+            {
+              "arrival_time": "10:11",
+              "departure_time": "10:11",
+              "distance_from_prev": 6.49539,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 181.70265,
+          "total_distance": 12.11351,
+          "total_time": 131,
+          "trip_number": 1
+        }
+      ],
+      "vehicle_id": "V03"
+    },
+    {
+      "total_cost": 199.37156,
+      "total_distance": 10.49324,
+      "total_time": 49,
+      "trips": [
+        {
+          "stops": [
+            {
+              "arrival_time": "08:00",
+              "departure_time": "08:00",
+              "distance_from_prev": 0.0,
+              "location": "Vehicle Depot",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:06",
+              "departure_time": "08:35",
+              "distance_from_prev": 2.9739899999999997,
+              "location": "E15 Pickup",
+              "wait_time": 29
+            },
+            {
+              "arrival_time": "08:35",
+              "departure_time": "08:35",
+              "distance_from_prev": 0.038119999999999994,
+              "location": "E06 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:49",
+              "departure_time": "08:49",
+              "distance_from_prev": 7.48113,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 199.37156,
+          "total_distance": 10.49324,
+          "total_time": 49,
+          "trip_number": 1
+        }
+      ],
+      "vehicle_id": "V04"
+    },
+    {
+      "total_cost": 220.84608,
+      "total_distance": 27.60576,
+      "total_time": 130,
+      "trips": [
+        {
+          "stops": [
+            {
+              "arrival_time": "08:00",
+              "departure_time": "08:00",
+              "distance_from_prev": 0.0,
+              "location": "Vehicle Depot",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:00",
+              "departure_time": "09:30",
+              "distance_from_prev": 0.0,
+              "location": "E10 Pickup",
+              "wait_time": 90
+            },
+            {
+              "arrival_time": "09:41",
+              "departure_time": "09:41",
+              "distance_from_prev": 7.57228,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 60.57824,
+          "total_distance": 7.57228,
+          "total_time": 101,
+          "trip_number": 1
+        },
+        {
+          "stops": [
+            {
+              "arrival_time": "09:41",
+              "departure_time": "09:41",
+              "distance_from_prev": 0.0,
+              "location": "Office",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "09:56",
+              "departure_time": "09:56",
+              "distance_from_prev": 10.25219,
+              "location": "E08 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "10:10",
+              "departure_time": "10:10",
+              "distance_from_prev": 9.78129,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 160.26784,
+          "total_distance": 20.03348,
+          "total_time": 29,
+          "trip_number": 2
+        }
+      ],
+      "vehicle_id": "V05"
+    },
+    {
+      "total_cost": 147.60829999999999,
+      "total_distance": 10.54345,
+      "total_time": 49,
+      "trips": [
+        {
+          "stops": [
+            {
+              "arrival_time": "08:10",
+              "departure_time": "08:10",
+              "distance_from_prev": 0.0,
+              "location": "Vehicle Depot",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:10",
+              "departure_time": "08:40",
+              "distance_from_prev": 0.0,
+              "location": "E11 Pickup",
+              "wait_time": 30
+            },
+            {
+              "arrival_time": "08:47",
+              "departure_time": "08:47",
+              "distance_from_prev": 3.81025,
+              "location": "E04 Pickup",
+              "wait_time": 0
+            },
+            {
+              "arrival_time": "08:59",
+              "departure_time": "08:59",
+              "distance_from_prev": 6.7332,
+              "location": "Office (Drop-off)",
+              "wait_time": 0
+            }
+          ],
+          "total_cost": 147.60829999999999,
+          "total_distance": 10.54345,
+          "total_time": 49,
+          "trip_number": 1
+        }
+      ],
+      "vehicle_id": "V06"
+    }
+  ]
+}
