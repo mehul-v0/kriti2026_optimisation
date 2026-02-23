@@ -361,8 +361,18 @@ class _ShowInputPageState extends State<ShowInputPage>
       }
 
       if (resultData == null || forceRun) {
+        // Fetch the input JSON data from Supabase
+        final inputData = await _dataService.fetchInputData(widget.testCaseId);
+
+        if (inputData == null) {
+          throw Exception(
+            "Input data not found. Please re-upload the test case.",
+          );
+        }
+
+        // Run optimization by sending JSON directly to backend
         resultData = await _optimizationService.runOptimization(
-          widget.testCaseId,
+          inputData,
           mode: _optimizationMode,
         );
         await _dataService.saveSolution(widget.testCaseId, resultData);

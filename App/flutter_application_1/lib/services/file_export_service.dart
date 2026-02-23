@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:excel/excel.dart';
+import 'package:flutter/foundation.dart'; // for compute()
 import 'package:flutter_application_1/elements/snackbar.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart'; // Add this package
+import 'package:printing/printing.dart'; // PdfGoogleFonts — embeds real TTF
+import 'package:device_info_plus/device_info_plus.dart';
 
 class FileExportService {
   Future<void> exportFile(
@@ -18,19 +21,20 @@ class FileExportService {
     try {
       // 1. Robust Permission Check
       if (!await _checkStoragePermission()) {
-        // If permission denied, show a specific error or open settings
         AppSnackbar.show(
           context,
           message:
               "Storage permission is required to save files. Please enable it in Settings.",
           isError: true,
         );
-        await openAppSettings(); // Guide user to settings
+        await openAppSettings();
         return;
       }
 
       List<int> bytes = [];
       String extension = "";
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final exportName = 'optimization_output_$timestamp';
 
       switch (type) {
         case 'json':
@@ -43,14 +47,17 @@ class FileExportService {
           extension = "xlsx";
           break;
         case 'pdf':
-          bytes = await _generatePdf(data);
+          // Run in background isolate — pdf.save() is CPU-intensive
+          // (font embedding + zlib compression) and would freeze the UI
+          // if executed on the main thread.
+          bytes = await compute(FileExportService._generatePdf, data);
           extension = "pdf";
           break;
       }
 
       final String filePath = await _saveToDownloads(
         bytes,
-        fileName,
+        exportName,
         extension,
       );
       AppSnackbar.show(context, message: "Saved successfully to: $filePath");
@@ -125,136 +132,504 @@ class FileExportService {
   Future<List<int>> _generateExcel(Map<String, dynamic> data) async {
     var excel = Excel.createExcel();
 
-    Sheet sheet1 = excel['Summary'];
-    Map stats = data['result'] ?? {};
+    // ── Sheet 1: Summary ──
+    Sheet summary = excel['Summary'];
+    final Map result = data['result'] ?? data['stats'] ?? {};
 
-    // REMOVED 'const'
-    sheet1.appendRow([TextCellValue('Metric'), TextCellValue('Value')]);
-
-    sheet1.appendRow([
+    summary.appendRow([TextCellValue('Metric'), TextCellValue('Value')]);
+    summary.appendRow([
       TextCellValue('Total Cost'),
-      DoubleCellValue((stats['total_cost'] ?? 0).toDouble()),
+      DoubleCellValue((result['total_cost'] ?? data['cost'] ?? 0).toDouble()),
     ]);
-    sheet1.appendRow([
+    summary.appendRow([
       TextCellValue('Total Time'),
-      DoubleCellValue((stats['total_time'] ?? 0).toDouble()),
+      DoubleCellValue(
+        (result['total_time'] ?? data['total_time'] ?? 0).toDouble(),
+      ),
     ]);
-    sheet1.appendRow([
+    summary.appendRow([
       TextCellValue('Total Distance'),
-      DoubleCellValue((stats['total_distance'] ?? 0).toDouble()),
+      DoubleCellValue((result['total_distance'] ?? 0).toDouble()),
     ]);
-    sheet1.appendRow([
+    summary.appendRow([
       TextCellValue('Vehicles Used'),
-      IntCellValue((stats['vehicles_used'] ?? 0)),
+      IntCellValue(result['vehicles_used'] ?? 0),
+    ]);
+    summary.appendRow([
+      TextCellValue('Vehicles Available'),
+      IntCellValue(result['vehicles_available'] ?? 0),
+    ]);
+    summary.appendRow([
+      TextCellValue('Hard Violations'),
+      IntCellValue(
+        result['hard_violations'] ?? data['stats']?['hard_violations'] ?? 0,
+      ),
+    ]);
+    summary.appendRow([
+      TextCellValue('Soft Violations'),
+      IntCellValue(
+        result['soft_violations'] ?? data['stats']?['soft_violations'] ?? 0,
+      ),
+    ]);
+    if (result['baseline_cost'] != null) {
+      summary.appendRow([
+        TextCellValue('Baseline Cost'),
+        DoubleCellValue((result['baseline_cost'] as num).toDouble()),
+      ]);
+    }
+    if (result['cost_savings'] != null) {
+      summary.appendRow([
+        TextCellValue('Cost Savings'),
+        DoubleCellValue((result['cost_savings'] as num).toDouble()),
+      ]);
+    }
+    if (result['cost_savings_percent'] != null) {
+      summary.appendRow([
+        TextCellValue('Cost Savings %'),
+        DoubleCellValue((result['cost_savings_percent'] as num).toDouble()),
+      ]);
+    }
+    summary.appendRow([
+      TextCellValue('Generated'),
+      TextCellValue(DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())),
     ]);
 
-    Sheet sheet2 = excel['Routes'];
+    // ── Sheet 2: Vehicle Routes ──
+    Sheet routeSheet = excel['Vehicle Routes'];
 
-    // REMOVED 'const'
-    sheet2.appendRow([
-      TextCellValue('Vehicle ID'),
-      TextCellValue('Trip #'),
+    // Detect format
+    final bool isFormatB = data.containsKey('routes') && data['routes'] is List;
+
+    if (isFormatB) {
+      routeSheet.appendRow([
+        TextCellValue('Vehicle ID'),
+        TextCellValue('Trip #'),
+        TextCellValue('Type'),
+        TextCellValue('Employee ID'),
+        TextCellValue('Arrival'),
+        TextCellValue('Departure'),
+        TextCellValue('Distance (km)'),
+      ]);
+
+      List routes = data['routes'] ?? [];
+      for (var route in routes) {
+        String vId = route['vehicle_id']?.toString() ?? '';
+        List points = route['route_points'] ?? [];
+        for (var p in points) {
+          routeSheet.appendRow([
+            TextCellValue(vId),
+            IntCellValue(p['trip_number'] ?? 1),
+            TextCellValue(p['type']?.toString() ?? ''),
+            TextCellValue(p['employee_id']?.toString() ?? 'Office'),
+            TextCellValue(p['arrival_time']?.toString() ?? ''),
+            TextCellValue(p['departure_time']?.toString() ?? ''),
+            DoubleCellValue((p['distance_from_prev'] as num?)?.toDouble() ?? 0),
+          ]);
+        }
+      }
+    } else {
+      // Format A
+      routeSheet.appendRow([
+        TextCellValue('Vehicle ID'),
+        TextCellValue('Trip #'),
+        TextCellValue('Location'),
+        TextCellValue('Arrival'),
+        TextCellValue('Departure'),
+        TextCellValue('Distance (km)'),
+        TextCellValue('Wait (min)'),
+      ]);
+
+      List vehicles = data['vehicles'] ?? [];
+      for (var veh in vehicles) {
+        String vId = veh['vehicle_id']?.toString() ?? '';
+        for (var trip in (veh['trips'] as List? ?? [])) {
+          for (var stop in (trip['stops'] as List? ?? [])) {
+            routeSheet.appendRow([
+              TextCellValue(vId),
+              IntCellValue(trip['trip_number'] ?? 1),
+              TextCellValue(stop['location']?.toString() ?? ''),
+              TextCellValue(stop['arrival_time']?.toString() ?? ''),
+              TextCellValue(stop['departure_time']?.toString() ?? ''),
+              DoubleCellValue(
+                (stop['distance_from_prev'] as num?)?.toDouble() ?? 0,
+              ),
+              IntCellValue(stop['wait_time'] ?? 0),
+            ]);
+          }
+        }
+      }
+    }
+
+    // ── Sheet 3: Constraint Violations ──
+    Sheet violSheet = excel['Violations'];
+    final Map vd = data['violation_details'] ?? {};
+
+    violSheet.appendRow([
       TextCellValue('Type'),
-      TextCellValue('ID'),
-      TextCellValue('Time'),
+      TextCellValue('Severity'),
+      TextCellValue('Vehicle'),
+      TextCellValue('Employee'),
+      TextCellValue('Trip'),
+      TextCellValue('Details'),
     ]);
 
-    List routes = data['routes'] ?? [];
-    for (var route in routes) {
-      String vId = route['vehicle_id'];
-      List points = route['route_points'] ?? [];
-      for (var p in points) {
-        sheet2.appendRow([
-          TextCellValue(vId),
-          IntCellValue(p['trip_number'] ?? 1),
-          TextCellValue(p['type']),
-          TextCellValue(p['employee_id'] ?? 'Office'),
-          TextCellValue(p['pickup_time'] ?? ''),
+    for (var v in (vd['capacity_violations'] as List? ?? [])) {
+      violSheet.appendRow([
+        TextCellValue('Capacity'),
+        TextCellValue('HARD'),
+        TextCellValue(v['vehicle']?.toString() ?? ''),
+        TextCellValue(v['employees']?.toString() ?? ''),
+        IntCellValue(v['trip'] ?? 0),
+        TextCellValue('${v['passengers']} pax / ${v['capacity']} capacity'),
+      ]);
+    }
+    for (var v in (vd['time_window_violations'] as List? ?? [])) {
+      violSheet.appendRow([
+        TextCellValue('Time Window'),
+        TextCellValue('HARD'),
+        TextCellValue(v['vehicle']?.toString() ?? ''),
+        TextCellValue(v['employee']?.toString() ?? ''),
+        IntCellValue(v['trip'] ?? 0),
+        TextCellValue(
+          'Arrived ${v['office_arrival']}, deadline ${v['deadline']}, ${v['delay_min']} min late',
+        ),
+      ]);
+    }
+    for (var v in (vd['unassigned_employees'] as List? ?? [])) {
+      violSheet.appendRow([
+        TextCellValue('Unassigned'),
+        TextCellValue('HARD'),
+        TextCellValue(''),
+        TextCellValue(v['employee']?.toString() ?? ''),
+        IntCellValue(0),
+        TextCellValue('Not assigned to any vehicle'),
+      ]);
+    }
+    for (var v in (vd['vehicle_pref_violations'] as List? ?? [])) {
+      violSheet.appendRow([
+        TextCellValue('Vehicle Pref'),
+        TextCellValue('SOFT'),
+        TextCellValue(v['vehicle']?.toString() ?? ''),
+        TextCellValue(v['employee']?.toString() ?? ''),
+        IntCellValue(0),
+        TextCellValue('Preferred ${v['preferred']}, got ${v['assigned']}'),
+      ]);
+    }
+    for (var v in (vd['sharing_pref_violations'] as List? ?? [])) {
+      violSheet.appendRow([
+        TextCellValue('Sharing Pref'),
+        TextCellValue('SOFT'),
+        TextCellValue(v['vehicle']?.toString() ?? ''),
+        TextCellValue(v['employee']?.toString() ?? ''),
+        IntCellValue(v['trip'] ?? 0),
+        TextCellValue(
+          'Preferred ${v['preferred']}, trip has ${v['actual_riders']} riders',
+        ),
+      ]);
+    }
+
+    // ── Sheet 4: Metrics ──
+    Sheet metricsSheet = excel['Metrics'];
+    metricsSheet.appendRow([
+      TextCellValue('Vehicle ID'),
+      TextCellValue('Trips'),
+      TextCellValue('Passengers'),
+      TextCellValue('Distance (km)'),
+      TextCellValue('Cost'),
+      TextCellValue('Utilization %'),
+    ]);
+
+    if (isFormatB) {
+      for (var route in (data['routes'] as List? ?? [])) {
+        metricsSheet.appendRow([
+          TextCellValue(route['vehicle_id']?.toString() ?? ''),
+          IntCellValue(route['trips_count'] ?? 1),
+          IntCellValue(route['passengers_count'] ?? 0),
+          DoubleCellValue((route['total_distance'] as num?)?.toDouble() ?? 0),
+          DoubleCellValue((route['total_cost'] as num?)?.toDouble() ?? 0),
+          DoubleCellValue(
+            (route['capacity_utilization'] as num?)?.toDouble() ?? 0,
+          ),
         ]);
       }
+    } else {
+      for (var veh in (data['vehicles'] as List? ?? [])) {
+        metricsSheet.appendRow([
+          TextCellValue(veh['vehicle_id']?.toString() ?? ''),
+          IntCellValue((veh['trips'] as List?)?.length ?? 0),
+          IntCellValue(0), // Not easily derivable without parsing stops
+          DoubleCellValue((veh['total_distance'] as num?)?.toDouble() ?? 0),
+          DoubleCellValue((veh['total_cost'] as num?)?.toDouble() ?? 0),
+          DoubleCellValue(0),
+        ]);
+      }
+    }
+
+    // Remove default Sheet1 if it exists
+    if (excel.sheets.containsKey('Sheet1')) {
+      excel.delete('Sheet1');
     }
 
     return excel.encode() ?? [];
   }
 
-  Future<List<int>> _generatePdf(Map<String, dynamic> data) async {
-    final pdf = pw.Document();
-    final Map result = data['result'] ?? {};
-    final List routes = data['routes'] ?? [];
+  // static so it can be passed to compute() and run in a background isolate
+  static Future<List<int>> _generatePdf(Map<String, dynamic> data) async {
+    // Load a real TrueType font so the document uses physically-embedded glyphs.
+    // The default PDF built-in fonts (Helvetica/Times) are not embedded — many
+    // Android PDF readers can't find them and render boxes instead.
+    // PdfGoogleFonts downloads from Google CDN once, then caches to disk.
+    final font = await PdfGoogleFonts.notoSansRegular();
+    final fontBold = await PdfGoogleFonts.notoSansBold();
+
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(base: font, bold: fontBold),
+    );
+
+    // Helper: format a number to 2 decimal places
+    String fmt(dynamic v) {
+      if (v == null) return 'N/A';
+      final n = num.tryParse(v.toString());
+      return n != null ? n.toStringAsFixed(2) : v.toString();
+    }
+
+    final Map result = data['result'] ?? data['stats'] ?? {};
+    final List routes = data['routes'] ?? data['vehicles'] ?? [];
+    final Map vd = data['violation_details'] ?? {};
+    final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+    final isFormatB = data.containsKey('routes');
+
+    // ── Helper: section title ──
+    pw.Widget sectionTitle(String text) => pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 20, bottom: 8),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+      ),
+    );
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (ctx) => pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'Optimization Report',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey700,
+              ),
+            ),
+            pw.Text(
+              'Generated: $now',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500),
+            ),
+          ],
+        ),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500),
+          ),
+        ),
         build: (pw.Context context) {
           return [
-            pw.Header(
-              level: 0,
+            // ── Title ──
+            pw.Center(
               child: pw.Text(
-                "Optimization Report",
+                "Vehicle Route Optimization Report",
                 style: pw.TextStyle(
                   fontSize: 24,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
             ),
-            pw.SizedBox(height: 20),
-
-            pw.Text(
-              "Summary Statistics",
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+            pw.SizedBox(height: 8),
+            pw.Center(
+              child: pw.Text(
+                now,
+                style: const pw.TextStyle(
+                  fontSize: 12,
+                  color: PdfColors.grey600,
+                ),
+              ),
             ),
-            pw.SizedBox(height: 10),
+            pw.SizedBox(height: 24),
+
+            // ── Summary Statistics ──
+            sectionTitle("Summary Statistics"),
             pw.Table.fromTextArray(
               context: context,
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 11,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 10),
+              cellAlignment: pw.Alignment.centerLeft,
               data: <List<String>>[
-                <String>['Metric', 'Value'],
-                <String>['Total Cost', result['total_cost'].toString()],
-                <String>[
-                  'Savings %',
-                  result['cost_savings_percent'].toString(),
+                ['Metric', 'Value'],
+                ['Total Cost', fmt(result['total_cost'] ?? data['cost'])],
+                ['Total Distance', '${fmt(result['total_distance'])} km'],
+                [
+                  'Total Time',
+                  '${fmt(result['total_time'] ?? data['total_time'])} min',
                 ],
-                <String>['Vehicles Used', result['vehicles_used'].toString()],
-                <String>['Total Distance', result['total_distance'].toString()],
+                [
+                  'Vehicles Used',
+                  '${result['vehicles_used'] ?? routes.length}',
+                ],
+                ['Hard Violations', '${result['hard_violations'] ?? 0}'],
+                ['Soft Violations', '${result['soft_violations'] ?? 0}'],
+                if (result['baseline_cost'] != null)
+                  ['Baseline Cost', fmt(result['baseline_cost'])],
+                if (result['cost_savings'] != null)
+                  ['Cost Savings', fmt(result['cost_savings'])],
+                if (result['cost_savings_percent'] != null)
+                  ['Cost Savings %', '${fmt(result['cost_savings_percent'])}%'],
               ],
             ),
 
-            pw.SizedBox(height: 30),
-
-            pw.Text(
-              "Optimized Routes",
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-            ),
-            pw.SizedBox(height: 10),
+            // ── Optimized Routes ──
+            sectionTitle("Optimized Routes"),
             ...routes.map((route) {
+              final vid = route['vehicle_id']?.toString() ?? '';
+
+              // Build stops list
+              List<String> stopsList = [];
+              if (isFormatB) {
+                for (var p in (route['route_points'] as List? ?? [])) {
+                  final type = p['type']?.toString().toUpperCase() ?? '';
+                  final emp = p['employee_id']?.toString() ?? 'Office';
+                  final arr = p['arrival_time']?.toString() ?? '';
+                  stopsList.add('$type: $emp @ $arr');
+                }
+              } else {
+                for (var trip in (route['trips'] as List? ?? [])) {
+                  for (var stop in (trip['stops'] as List? ?? [])) {
+                    stopsList.add(
+                      '${stop['location']} (${stop['arrival_time'] ?? ''})',
+                    );
+                  }
+                }
+              }
+
               return pw.Container(
-                margin: const pw.EdgeInsets.only(bottom: 10),
+                margin: const pw.EdgeInsets.only(bottom: 12),
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(4),
+                ),
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      "Vehicle: ${route['vehicle_id']} (Cost: ${route['total_cost']})",
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                      'Vehicle: $vid  |  Cost: ${fmt(route['total_cost'])}  |  Dist: ${fmt(route['total_distance'])} km',
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 10,
+                      ),
                     ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.only(left: 10),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: (route['route_points'] as List).map((p) {
-                          return pw.Text(
-                            "- ${p['type'].toUpperCase()}: ${p['employee_id'] ?? 'Office'}",
-                          );
-                        }).toList(),
+                    pw.SizedBox(height: 4),
+                    ...stopsList.map(
+                      (s) => pw.Padding(
+                        padding: const pw.EdgeInsets.only(left: 10, top: 2),
+                        child: pw.Text(
+                          "- $s",
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
                       ),
                     ),
                   ],
                 ),
               );
-            }).toList(),
+            }),
+
+            // ── Violations ──
+            if (_hasViolations(vd)) ...[
+              sectionTitle("Constraint Violations"),
+              _pdfViolationSection(
+                'Capacity Violations',
+                vd['capacity_violations'],
+                (v) =>
+                    'Vehicle ${v['vehicle']}, Trip ${v['trip']}: ${v['passengers']} pax / ${v['capacity']} capacity',
+              ),
+              _pdfViolationSection(
+                'Time Window Violations',
+                vd['time_window_violations'],
+                (v) =>
+                    'Employee ${v['employee']} on ${v['vehicle']}: arrived ${v['office_arrival']}, deadline ${v['deadline']} (${v['delay_min']} min late)',
+              ),
+              _pdfViolationSection(
+                'Unassigned Employees',
+                vd['unassigned_employees'],
+                (v) => 'Employee ${v['employee']} not assigned',
+              ),
+              _pdfViolationSection(
+                'Vehicle Preference',
+                vd['vehicle_pref_violations'],
+                (v) =>
+                    '${v['employee']}: preferred ${v['preferred']}, assigned ${v['assigned']}',
+              ),
+              _pdfViolationSection(
+                'Sharing Preference',
+                vd['sharing_pref_violations'],
+                (v) =>
+                    '${v['employee']} on ${v['vehicle']}: preferred ${v['preferred']}, ${v['actual_riders']} riders',
+              ),
+            ] else ...[
+              sectionTitle("Constraint Violations"),
+              pw.Text(
+                "No violations detected.",
+                style: pw.TextStyle(fontSize: 11, color: PdfColors.green700),
+              ),
+            ],
           ];
         },
       ),
     );
 
     return pdf.save();
+  }
+
+  static bool _hasViolations(Map vd) {
+    return (vd['capacity_violations'] as List?)?.isNotEmpty == true ||
+        (vd['time_window_violations'] as List?)?.isNotEmpty == true ||
+        (vd['unassigned_employees'] as List?)?.isNotEmpty == true ||
+        (vd['vehicle_pref_violations'] as List?)?.isNotEmpty == true ||
+        (vd['sharing_pref_violations'] as List?)?.isNotEmpty == true;
+  }
+
+  static pw.Widget _pdfViolationSection(
+    String title,
+    List? items,
+    String Function(Map) formatter,
+  ) {
+    if (items == null || items.isEmpty) return pw.SizedBox.shrink();
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 8, bottom: 4),
+          child: pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        ...items.map(
+          (v) => pw.Padding(
+            padding: const pw.EdgeInsets.only(left: 10, top: 2),
+            child: pw.Text(
+              "- ${formatter(v is Map ? v : {})}",
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -14,6 +14,7 @@ import 'package:flutter_application_1/services/data_service.dart';
 import 'package:flutter_application_1/services/file_export_service.dart';
 import 'package:flutter_application_1/widgets/download_dialog.dart';
 import 'package:flutter_application_1/theme/theme.dart';
+import 'package:flutter_application_1/screen/output_details_page.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  OutputPage — Roxio Theme, Route Visualization & Animation
@@ -257,16 +258,10 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   }
 
   /// Parse Format B: backend API response with routes + assignments.
+  /// route_points already carry arrival_time, departure_time, distance_from_prev
+  /// and lat/lng directly — use them instead of secondary lookups.
   List<_VehicleRoute> _parseFromBackendFormat(Map<String, dynamic> data) {
     final List routesList = data['routes'] ?? [];
-    final List assignmentsList = data['assignments'] ?? [];
-
-    // Extract solver result (has arrival_time on Office stops)
-    final Map<String, dynamic>? solverResult =
-        data['result'] is Map<String, dynamic>
-        ? data['result'] as Map<String, dynamic>
-        : null;
-    final List solverVehicles = solverResult?['vehicles'] as List? ?? [];
     final List<_VehicleRoute> routes = [];
 
     for (int i = 0; i < routesList.length; i++) {
@@ -277,7 +272,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       final tripsCount = (r['trips_count'] as num?)?.toInt() ?? 1;
       final color = _routePalette[i % _routePalette.length];
 
-      // Build stops from route_points
+      // Build stops from route_points using data already embedded in each point
       final List routePoints = r['route_points'] ?? [];
       final List<_StopInfo> allStops = [];
 
@@ -296,47 +291,18 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           location = type.isNotEmpty ? type : 'Stop';
         }
 
-        // Find matching assignment for pickup time
-        String pickupTime = '';
-        if (type == 'pickup' && empId.isNotEmpty) {
-          final assignment = assignmentsList.firstWhere(
-            (a) => a['vehicle_id'] == vehicleId && a['employee_id'] == empId,
-            orElse: () => <String, dynamic>{},
-          );
-          pickupTime =
-              (assignment as Map<String, dynamic>)['pickup_time']?.toString() ??
-              '';
-        }
-
-        // For office stops, extract arrival time from solver result
-        String officeArrivalTime = '';
-        if (type == 'office') {
-          final solverVeh = solverVehicles
-              .cast<Map<String, dynamic>>()
-              .firstWhere(
-                (v) => v['vehicle_id'] == vehicleId,
-                orElse: () => <String, dynamic>{},
-              );
-          // Find the last "Office (Drop-off)" stop across trips
-          final List trips = solverVeh['trips'] as List? ?? [];
-          for (var trip in trips) {
-            for (var stop in (trip as Map<String, dynamic>)['stops'] ?? []) {
-              final loc = stop['location']?.toString() ?? '';
-              if (loc.contains('Drop-off') || loc == 'Office') {
-                final t = stop['arrival_time']?.toString() ?? '';
-                if (t.isNotEmpty) officeArrivalTime = t;
-              }
-            }
-          }
-        }
+        // Use times and distance directly from route_point — they are correct
+        final arrTime = pt['arrival_time']?.toString() ?? '';
+        final depTime = pt['departure_time']?.toString() ?? '';
+        final distPrev = (pt['distance_from_prev'] as num?)?.toDouble() ?? 0.0;
 
         allStops.add(
           _StopInfo(
             location: location,
-            arrivalTime: type == 'office' ? officeArrivalTime : pickupTime,
-            departureTime: type == 'office' ? officeArrivalTime : pickupTime,
-            distanceFromPrev: 0,
-            waitTime: 0,
+            arrivalTime: arrTime,
+            departureTime: depTime,
+            distanceFromPrev: distPrev,
+            waitTime: 0, // not available in route_points
             lat: (pt['lat'] as num?)?.toDouble(),
             lng: (pt['lng'] as num?)?.toDouble(),
             employeeId: (type == 'pickup' && empId.isNotEmpty) ? empId : null,
@@ -344,7 +310,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         );
       }
 
-      // Group stops into synthetic trips (split by office drop-offs)
+      // Group stops into trips by splitting at every office drop-off.
+      // Also tally per-trip distance from distanceFromPrev so each card
+      // shows accurate km and proportional cost.
       final List<_TripInfo> parsedTrips = [];
       List<_StopInfo> currentTripStops = [];
       int tripNum = 1;
@@ -353,12 +321,21 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         currentTripStops.add(stop);
         if (stop.location.contains('Drop-off') ||
             stop.location.contains('Office')) {
+          // sum distance from the stops in this trip
+          final tripDist = currentTripStops.fold(
+            0.0,
+            (sum, s) => sum + s.distanceFromPrev,
+          );
+          // Cost proportional to distance share
+          final tripCost = totalDist > 0
+              ? totalCost * (tripDist / totalDist)
+              : 0.0;
           parsedTrips.add(
             _TripInfo(
               tripNumber: tripNum,
-              totalCost: totalCost / max(tripsCount, 1),
-              totalDistance: totalDist / max(tripsCount, 1),
-              totalTime: 0,
+              totalCost: tripCost,
+              totalDistance: tripDist,
+              totalTime: 0, // not available in Format B
               stops: List.from(currentTripStops),
             ),
           );
@@ -368,17 +345,23 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       }
       // Remaining stops that didn't end with a drop-off
       if (currentTripStops.isNotEmpty) {
+        final tripDist = currentTripStops.fold(
+          0.0,
+          (sum, s) => sum + s.distanceFromPrev,
+        );
         parsedTrips.add(
           _TripInfo(
             tripNumber: tripNum,
-            totalCost: 0,
-            totalDistance: 0,
+            totalCost: totalDist > 0 ? totalCost * (tripDist / totalDist) : 0.0,
+            totalDistance: tripDist,
             totalTime: 0,
             stops: currentTripStops,
           ),
         );
       }
 
+      // Use tripsCount from backend if parsedTrips is empty
+      // (vehicle in solution but no route_points means unassigned)
       routes.add(
         _VehicleRoute(
           vehicleId: vehicleId,
@@ -568,9 +551,17 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   Future<void> _handleRetry() async {
     setState(() => _isLoading = true);
     try {
-      final newData = await _optimizationService.runOptimization(
-        widget.testCaseId,
-      );
+      // Fetch the input JSON data from Supabase
+      final inputData = await _dataService.fetchInputData(widget.testCaseId);
+
+      if (inputData == null) {
+        throw Exception(
+          "Input data not found. Please re-upload the test case.",
+        );
+      }
+
+      // Run optimization by sending JSON directly to backend
+      final newData = await _optimizationService.runOptimization(inputData);
       await _dataService.saveSolution(widget.testCaseId, newData);
 
       if (mounted) {
@@ -642,10 +633,26 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   }
 
   // ── AppBar ─────────────────────────────────────────────
+  /// Derive a human-readable solution type from the stored data.
+  /// Format B (backend) has no top-level solution_type — derive from violations.
+  String get _solutionType {
+    // Format B: result.hard_violations / soft_violations
+    final result = _currentData['result'] as Map<String, dynamic>?;
+    if (result != null) {
+      final hard = (result['hard_violations'] as num?)?.toInt() ?? 0;
+      final soft = (result['soft_violations'] as num?)?.toInt() ?? 0;
+      if (hard == 0 && soft == 0) return 'OPTIMAL - No violations';
+      if (hard == 0)
+        return 'Feasible - $soft soft violation${soft > 1 ? 's' : ''}';
+      return 'Infeasible - $hard hard violation${hard > 1 ? 's' : ''}';
+    }
+    // Format A: top-level solution_type
+    return _currentData['solution_type']?.toString() ?? 'Completed';
+  }
+
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final dark = _isDark(context);
-    final solutionType =
-        _currentData['solution_type']?.toString() ?? 'Completed';
+    final solutionType = _solutionType;
 
     return AppBar(
       backgroundColor: _bgColor(context),
@@ -1865,6 +1872,10 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       }
     }
 
+    // Cost savings (Format B only)
+    final costSavings = (result['cost_savings'] as num?)?.toDouble();
+    final costSavingsPct = (result['cost_savings_percent'] as num?)?.toDouble();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1924,7 +1935,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   context,
                   icon: Icons.local_shipping_rounded,
                   label: 'Vehicles Used',
-                  value: '${_vehicleRoutes.length}',
+                  value:
+                      '${(result['vehicles_used'] as num?)?.toInt() ?? _vehicleRoutes.length}',
                   color: const Color(0xFF8B5CF6),
                 ),
               ),
@@ -1943,6 +1955,42 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                 if (softViolations > 0)
                   _violationChip('Soft: $softViolations', AppColors.warning),
               ],
+            ),
+          ],
+
+          // Cost savings (Format B only)
+          if (costSavings != null && costSavings > 0) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryBrand.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.primaryBrand.withOpacity(0.25),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.trending_down_rounded,
+                    color: AppColors.primaryBrand,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Saved ₹${costSavings.toStringAsFixed(0)}'
+                    '${costSavingsPct != null ? ' (${costSavingsPct.toStringAsFixed(1)}%)' : ''}'
+                    ' vs baseline',
+                    style: const TextStyle(
+                      color: AppColors.primaryBrand,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -2476,7 +2524,16 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // No function for now
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => OutputDetailsPage(
+                        testCaseId: widget.testCaseId,
+                        testCaseName: widget.testCaseName,
+                        resultData: _currentData,
+                      ),
+                    ),
+                  );
                 },
                 icon: const Icon(Icons.info_outline_rounded, size: 18),
                 label: const Text(

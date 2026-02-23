@@ -595,6 +595,10 @@ class _HomePageState extends State<HomePage> {
               builder: (ctx) => AddTestCaseDialog(
                 onSuccess: () {
                   Navigator.pop(ctx);
+                  AppSnackbar.show(
+                    context,
+                    message: "Test Case Uploaded Successfully",
+                  );
                   _loadData();
                 },
               ),

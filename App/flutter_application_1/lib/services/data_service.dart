@@ -18,6 +18,7 @@ class DataService {
   }
 
   // Upload a new test case
+  // Stores backend-generated JSON exactly as-is in input_data
   Future<void> uploadTestCase(
     String name,
     Map<String, dynamic> jsonData,
@@ -31,6 +32,21 @@ class DataService {
       'input_data': jsonData,
       // output_json is null by default in DB, so we don't send it here
     });
+  }
+
+  // Fetch input JSON data for optimization
+  Future<Map<String, dynamic>?> fetchInputData(String id) async {
+    try {
+      final response = await _supabase
+          .from('test_cases')
+          .select('input_data')
+          .eq('id', id)
+          .single();
+
+      return response['input_data'] as Map<String, dynamic>?;
+    } catch (e) {
+      return null;
+    }
   }
 
   // Delete a test case

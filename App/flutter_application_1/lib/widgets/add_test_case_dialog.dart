@@ -2,9 +2,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/services/data_service.dart';
-import 'package:flutter_application_1/utils/excel_parser.dart';
-import 'package:flutter_application_1/utils/google_sheets_parser.dart';
-import 'package:flutter_application_1/elements/snackbar.dart';
+import 'package:flutter_application_1/services/upload_service.dart';
 import 'package:flutter_application_1/theme/theme.dart';
 
 enum InputMode { excel, googleSheets }
@@ -22,9 +20,11 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
   final _nameController = TextEditingController();
   final _sheetsUrlController = TextEditingController();
   final DataService _dataService = DataService();
+  final UploadService _uploadService = UploadService();
 
   bool _isUploading = false;
   InputMode _inputMode = InputMode.excel;
+  String? _errorMessage;
 
   // Excel state
   String? _selectedFileName;
@@ -46,66 +46,90 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
       }
     } catch (e) {
       if (mounted) {
-        AppSnackbar.show(
-          context,
-          message: "Error picking file: $e",
-          isError: true,
-        );
+        setState(() => _errorMessage = 'Error picking file: $e');
       }
     }
   }
 
   Future<void> _handleUpload() async {
+    // Clear any previous error
+    setState(() => _errorMessage = null);
+
     if (_nameController.text.trim().isEmpty) {
-      AppSnackbar.show(
-        context,
-        message: "Please enter a case name",
-        isError: true,
-      );
+      setState(() => _errorMessage = 'Please enter a case name');
       return;
     }
 
     if (_inputMode == InputMode.excel && _selectedFileBytes == null) {
-      AppSnackbar.show(
-        context,
-        message: "Please select an Excel file",
-        isError: true,
-      );
+      setState(() => _errorMessage = 'Please select an Excel file');
       return;
     }
 
     if (_inputMode == InputMode.googleSheets &&
         _sheetsUrlController.text.trim().isEmpty) {
-      AppSnackbar.show(
-        context,
-        message: "Please enter a Google Sheets URL",
-        isError: true,
-      );
+      setState(() => _errorMessage = 'Please enter a Google Sheets URL');
       return;
     }
 
     setState(() => _isUploading = true);
 
     try {
-      Map<String, dynamic> jsonData;
+      Map<String, dynamic> backendResponse;
 
+      // Send file to backend for conversion
       if (_inputMode == InputMode.excel) {
-        jsonData = ExcelParser.parseExcelBytes(_selectedFileBytes!);
+        // Ensure filename always has .xlsx extension (Android FilePicker
+        // can return display name without extension, causing backend 400)
+        final rawName = _selectedFileName ?? 'upload.xlsx';
+        final safeFileName =
+            (rawName.toLowerCase().endsWith('.xlsx') ||
+                rawName.toLowerCase().endsWith('.xls'))
+            ? rawName
+            : '$rawName.xlsx';
+        backendResponse = await _uploadService.uploadExcelFile(
+          _selectedFileBytes!,
+          safeFileName,
+        );
       } else {
-        jsonData = await GoogleSheetsParser.parseFromUrl(
+        // Extract Google Sheets ID and export as Excel, then upload
+        final spreadsheetId = UploadService.extractSpreadsheetId(
           _sheetsUrlController.text.trim(),
         );
+
+        if (spreadsheetId == null) {
+          throw Exception(
+            'Invalid Google Sheets URL. Please provide a valid link.',
+          );
+        }
+
+        backendResponse = await _uploadService.uploadGoogleSheet(spreadsheetId);
       }
 
-      await _dataService.uploadTestCase(_nameController.text.trim(), jsonData);
+      // Backend /api/upload returns: employees, vehicles, digest, baseline_cost
+      // It does NOT return metadata or baseline list — use safe defaults.
+      final inputJson = {
+        "employees": backendResponse["employees"] ?? [],
+        "vehicles": backendResponse["vehicles"] ?? [],
+        // metadata is not returned by backend; use empty map — optimizer
+        // fills it in from request params (costWeight, timeWeight etc.)
+        "metadata": <String, dynamic>{},
+        // baseline list is not returned by backend; use empty list
+        "baseline": <dynamic>[],
+      };
+
+      // Store the backend-generated JSON in Supabase exactly as-is
+      // NO file storage, NO modifications
+      await _dataService.uploadTestCase(_nameController.text.trim(), inputJson);
 
       if (mounted) {
-        AppSnackbar.show(context, message: "Test Case Uploaded Successfully");
         widget.onSuccess();
       }
     } catch (e) {
       if (mounted) {
-        AppSnackbar.show(context, message: "Upload failed: $e", isError: true);
+        // Clean up the error message for display
+        String msg = e.toString();
+        if (msg.startsWith('Exception: ')) msg = msg.substring(11);
+        setState(() => _errorMessage = msg);
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -164,7 +188,51 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
               else
                 _buildGoogleSheetsInput(isDark, borderColor),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 20),
+
+              // Inline error banner — always in front, no z-order issues
+              if (_errorMessage != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1FE53935),
+                    border: Border.all(color: const Color(0x66E53935)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Color(0xFFE53935),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFFE53935),
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => setState(() => _errorMessage = null),
+                        child: const Icon(
+                          Icons.close,
+                          color: Color(0xFFE53935),
+                          size: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Action Buttons
               _buildActionButtons(isDark, borderColor),
