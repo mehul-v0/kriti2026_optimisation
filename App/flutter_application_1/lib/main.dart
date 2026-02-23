@@ -20,9 +20,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   // Global theme notifier
-  final ValueNotifier<ThemeMode> _themeNotifier = ValueNotifier(
-    ThemeMode.system,
-  );
+  final ValueNotifier<ThemeMode> _themeNotifier = ValueNotifier(ThemeMode.dark);
 
   // Cache the child widget so theme changes don't recreate the subtree
   late final Widget _cachedAuthGate = AuthGate(themeNotifier: _themeNotifier);

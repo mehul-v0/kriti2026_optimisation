@@ -59,6 +59,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
   // ── UI State ────────────────────────────────────────────
   bool _isLoading = false;
+  bool _isDownloading = false; // true only during file export/download
   final TextEditingController _searchController = TextEditingController();
 
   // ── Fleet Filter ────────────────────────────────────────
@@ -229,17 +230,46 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           );
         }
 
-        parsedTrips.add(
-          _TripInfo(
-            tripNumber: tripNum,
-            totalCost: tripCost,
-            totalDistance: tripDist,
-            totalTime: tripTime,
-            stops: tripStops,
-          ),
-        );
+        // Skip phantom trips: a trip whose every stop is office/depot and
+        // which has 0 distance — these are solver artefacts where the vehicle
+        // just sits at the office between runs.
+        final isPhantom =
+            tripDist == 0 &&
+            tripStops.isNotEmpty &&
+            tripStops.every((s) {
+              final l = s.location.toLowerCase();
+              return l.contains('office') ||
+                  l.contains('drop') ||
+                  l.contains('depot');
+            });
+
+        if (!isPhantom) {
+          parsedTrips.add(
+            _TripInfo(
+              tripNumber: tripNum,
+              totalCost: tripCost,
+              totalDistance: tripDist,
+              totalTime: tripTime,
+              stops: tripStops,
+            ),
+          );
+        }
         allStops.addAll(tripStops);
       }
+
+      // Re-number trips sequentially after phantom filtering
+      for (int n = 0; n < parsedTrips.length; n++) {
+        parsedTrips[n] = _TripInfo(
+          tripNumber: n + 1,
+          totalCost: parsedTrips[n].totalCost,
+          totalDistance: parsedTrips[n].totalDistance,
+          totalTime: parsedTrips[n].totalTime,
+          stops: parsedTrips[n].stops,
+        );
+      }
+
+      // Prepend office departure stop to each trip after the first
+      final finalTripsA = _addOfficeCarryOvers(parsedTrips);
 
       routes.add(
         _VehicleRoute(
@@ -248,7 +278,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           totalDistance: totalDist,
           totalTime: totalTime,
           color: color,
-          trips: parsedTrips,
+          trips: finalTripsA,
           allStops: allStops,
         ),
       );
@@ -362,6 +392,32 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
       // Use tripsCount from backend if parsedTrips is empty
       // (vehicle in solution but no route_points means unassigned)
+      // Remove any solo office/depot trips produced by Format B grouping
+      // (e.g. a trip that starts and ends with just an office stop at 0 km).
+      final cleanedTrips = parsedTrips.where((t) {
+        if (t.stops.isEmpty) return false;
+        if (t.stops.length == 1) {
+          final l = t.stops.first.location.toLowerCase();
+          return !l.contains('office') &&
+              !l.contains('drop') &&
+              !l.contains('depot');
+        }
+        return true;
+      }).toList();
+      // Re-number trips after filtering
+      for (int n = 0; n < cleanedTrips.length; n++) {
+        cleanedTrips[n] = _TripInfo(
+          tripNumber: n + 1,
+          totalCost: cleanedTrips[n].totalCost,
+          totalDistance: cleanedTrips[n].totalDistance,
+          totalTime: cleanedTrips[n].totalTime,
+          stops: cleanedTrips[n].stops,
+        );
+      }
+
+      // Prepend office departure stop to each trip after the first
+      final finalTripsB = _addOfficeCarryOvers(cleanedTrips);
+
       routes.add(
         _VehicleRoute(
           vehicleId: vehicleId,
@@ -369,13 +425,51 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           totalDistance: totalDist,
           totalTime: 0,
           color: color,
-          trips: parsedTrips,
+          trips: finalTripsB,
           allStops: allStops,
         ),
       );
     }
 
     return routes;
+  }
+
+  /// Prepends the office/depot departure from the previous trip as the
+  /// first stop of every subsequent trip, so each trip reads:
+  ///   Office (Departure) → Pickup(s) → Office (Drop-off)
+  List<_TripInfo> _addOfficeCarryOvers(List<_TripInfo> trips) {
+    for (int t = 1; t < trips.length; t++) {
+      final prevStops = trips[t - 1].stops;
+      if (prevStops.isEmpty) continue;
+      final prevLast = prevStops.last;
+      final l = prevLast.location.toLowerCase();
+      if (!l.contains('office') &&
+          !l.contains('drop') &&
+          !l.contains('depot')) {
+        continue;
+      }
+      // Build the departure stop from the previous trip's last stop
+      final departureStop = _StopInfo(
+        location: 'Office (Departure)',
+        arrivalTime: prevLast.departureTime.isNotEmpty
+            ? prevLast.departureTime
+            : prevLast.arrivalTime,
+        departureTime: prevLast.departureTime,
+        distanceFromPrev: 0,
+        waitTime: 0,
+        lat: prevLast.lat,
+        lng: prevLast.lng,
+        employeeId: null,
+      );
+      trips[t] = _TripInfo(
+        tripNumber: trips[t].tripNumber,
+        totalCost: trips[t].totalCost,
+        totalDistance: trips[t].totalDistance,
+        totalTime: trips[t].totalTime,
+        stops: [departureStop, ...trips[t].stops],
+      );
+    }
+    return trips;
   }
 
   /// Parse time string "HH:MM" → minutes since midnight.
@@ -433,6 +527,106 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     final h = (m ~/ 60).toString().padLeft(2, '0');
     final min = (m % 60).toString().padLeft(2, '0');
     return '$h:$min';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  TIME-BASED ANIMATION HELPERS
+  // ══════════════════════════════════════════════════════════
+
+  /// Returns the list of stops aligned with route points.
+  /// For real-coord routes, only stops that have lat/lng are included.
+  List<_StopInfo> _getAlignedStops(_VehicleRoute route) {
+    final hasRealCoords = route.allStops.any(
+      (s) => s.lat != null && s.lng != null,
+    );
+    if (hasRealCoords) {
+      return route.allStops
+          .where((s) => s.lat != null && s.lng != null)
+          .toList();
+    }
+    return route.allStops;
+  }
+
+  /// Computes how far (0.0–1.0) through the route the vehicle is at
+  /// [currentTimeMin], using per-stop arrival/departure times.
+  /// Falls back to global [_playbackProgress] when time data is absent.
+  double _routeProgressAtTime(double currentTimeMin, List<_StopInfo> stops) {
+    if (stops.length < 2) return _playbackProgress;
+    final firstArr = _timeToMinutes(stops.first.arrivalTime).toDouble();
+    final lastArr = _timeToMinutes(stops.last.arrivalTime).toDouble();
+    // Guard: unusable time data
+    if (lastArr <= firstArr) return _playbackProgress;
+
+    if (currentTimeMin <= firstArr) return 0.0;
+    if (currentTimeMin >= lastArr) return 1.0;
+
+    final n = stops.length - 1;
+    for (int s = 0; s < n; s++) {
+      final arrS = _timeToMinutes(stops[s].arrivalTime).toDouble();
+      final depS =
+          stops[s].departureTime.isNotEmpty &&
+              _timeToMinutes(stops[s].departureTime) > 0
+          ? _timeToMinutes(stops[s].departureTime).toDouble()
+          : arrS;
+      final arrNext = _timeToMinutes(stops[s + 1].arrivalTime).toDouble();
+
+      // Vehicle is dwelling at stop s
+      if (currentTimeMin <= depS) return s / n;
+      // Vehicle is travelling to stop s+1
+      if (currentTimeMin <= arrNext) {
+        final travelTime = arrNext - depS;
+        final frac = travelTime > 0
+            ? (currentTimeMin - depS) / travelTime
+            : 1.0;
+        return (s + frac.clamp(0.0, 1.0)) / n;
+      }
+    }
+    return 1.0;
+  }
+
+  /// Returns the interpolated [LatLng] position for a vehicle on [stops]/[points]
+  /// at [currentTimeMin], honouring dwell times between arrival and departure.
+  LatLng _interpolateVehiclePosition(
+    double currentTimeMin,
+    List<_StopInfo> stops,
+    List<LatLng> points,
+  ) {
+    assert(stops.length == points.length);
+    if (stops.isEmpty) return points.first;
+
+    final firstArr = _timeToMinutes(stops.first.arrivalTime).toDouble();
+    final lastArr = _timeToMinutes(stops.last.arrivalTime).toDouble();
+
+    if (currentTimeMin <= firstArr) return points.first;
+    if (currentTimeMin >= lastArr) return points.last;
+
+    for (int s = 0; s < stops.length - 1; s++) {
+      if (s >= points.length - 1) break;
+      final arrS = _timeToMinutes(stops[s].arrivalTime).toDouble();
+      final depS =
+          stops[s].departureTime.isNotEmpty &&
+              _timeToMinutes(stops[s].departureTime) > 0
+          ? _timeToMinutes(stops[s].departureTime).toDouble()
+          : arrS;
+      final arrNext = _timeToMinutes(stops[s + 1].arrivalTime).toDouble();
+
+      // Dwelling at stop
+      if (currentTimeMin >= arrS && currentTimeMin <= depS) return points[s];
+      // Travelling to next stop
+      if (currentTimeMin > depS && currentTimeMin <= arrNext) {
+        final travelTime = arrNext - depS;
+        final frac = travelTime > 0
+            ? ((currentTimeMin - depS) / travelTime).clamp(0.0, 1.0)
+            : 1.0;
+        return LatLng(
+          points[s].latitude +
+              (points[s + 1].latitude - points[s].latitude) * frac,
+          points[s].longitude +
+              (points[s + 1].longitude - points[s].longitude) * frac,
+        );
+      }
+    }
+    return points.last;
   }
 
   // ══════════════════════════════════════════════════════════
@@ -599,7 +793,10 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   }
 
   Future<void> _handleDownload(String type) async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isDownloading = true;
+    });
     await Future.delayed(const Duration(milliseconds: 300));
 
     await _fileExportService.exportFile(
@@ -609,7 +806,12 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       _currentData,
     );
 
-    if (mounted) setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _isDownloading = false;
+      });
+    }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -625,6 +827,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       appBar: _buildAppBar(context),
       body: LoadingOverlay(
         isLoading: _isLoading,
+        spinnerType: _isDownloading
+            ? SpinnerType.downloading
+            : SpinnerType.loading,
         child: isDesktop
             ? _buildDesktopLayout(context)
             : _buildMobileLayout(context, size),
@@ -924,7 +1129,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   // ══════════════════════════════════════════════════════════
   Widget _buildMap(BuildContext context) {
     final isDarkMode = _isDark(context);
-    final markers = _buildMapMarkers(context);
+    final staticMarkers = _buildStaticMarkers(context);
+    final vehicleMarkers = _buildAnimatedVehicleMarkers();
     final polylines = _buildPolylines();
 
     return FlutterMap(
@@ -951,7 +1157,10 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           ),
         ),
         PolylineLayer(polylines: polylines),
-        MarkerLayer(markers: markers),
+        // Static stop/office markers — rendered first (below)
+        MarkerLayer(markers: staticMarkers),
+        // Animated vehicle icons — always on top
+        MarkerLayer(markers: vehicleMarkers),
       ],
     );
   }
@@ -962,6 +1171,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   List<Polyline> _buildPolylines() {
     final List<Polyline> polylines = [];
     final center = _computeCenter();
+    final timeRange = _globalTimeRange();
+    final currentTimeMin =
+        (timeRange.startMin +
+                (timeRange.endMin - timeRange.startMin) * _playbackProgress)
+            .toDouble();
 
     for (int i = 0; i < _vehicleRoutes.length; i++) {
       if (_focusedVehicleIndex != null && _focusedVehicleIndex != i) continue;
@@ -970,9 +1184,19 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       final points = _generateRoutePoints(center, i, route);
 
       if (points.length >= 2) {
-        // Determine how many segments to draw based on playback progress
+        // Use time-based progress so the drawn trail matches real stop times
+        final alignedStops = _getAlignedStops(route);
+        final hasTimedData =
+            alignedStops.isNotEmpty &&
+            alignedStops.first.arrivalTime.isNotEmpty &&
+            _timeToMinutes(alignedStops.first.arrivalTime) > 0;
+
+        final routeProgress = hasTimedData
+            ? _routeProgressAtTime(currentTimeMin, alignedStops)
+            : _playbackProgress;
+
         final totalSegments = points.length - 1;
-        final segmentsToDraw = (totalSegments * _playbackProgress).ceil().clamp(
+        final segmentsToDraw = (totalSegments * routeProgress).ceil().clamp(
           0,
           totalSegments,
         );
@@ -1049,8 +1273,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return points;
   }
 
-  /// Build markers for each stop at its current animated position.
-  List<Marker> _buildMapMarkers(BuildContext context) {
+  /// Build static markers (office/stop/employee) for each route.
+  /// These are rendered BELOW the animated vehicle layer.
+  List<Marker> _buildStaticMarkers(BuildContext context) {
     final List<Marker> markers = [];
     final center = _computeCenter();
 
@@ -1079,7 +1304,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
       if (stopPoints.isEmpty) continue;
 
-      // Start marker (vehicle start — show as company/office marker)
+      // First stop
       final firstStop = stopPoints.first.key;
       final firstLoc = firstStop.location.toLowerCase();
       final firstIsOffice =
@@ -1140,33 +1365,87 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           );
         }
       }
+    }
 
-      // Animated vehicle icon — interpolated between stops
-      final allPoints = stopPoints.map((e) => e.value).toList();
-      if (allPoints.length >= 2) {
+    return markers;
+  }
+
+  /// Build only the animated vehicle position markers.
+  /// Rendered in a separate MarkerLayer ABOVE static markers so vehicles
+  /// are never hidden behind office/stop markers during playback.
+  /// Vehicle position is time-accurate: it uses each stop's arrival/departure
+  /// time so the vehicle reaches the office exactly at the scheduled time.
+  List<Marker> _buildAnimatedVehicleMarkers() {
+    final List<Marker> markers = [];
+    final center = _computeCenter();
+    final timeRange = _globalTimeRange();
+    final currentTimeMin =
+        (timeRange.startMin +
+                (timeRange.endMin - timeRange.startMin) * _playbackProgress)
+            .toDouble();
+
+    for (int i = 0; i < _vehicleRoutes.length; i++) {
+      if (_focusedVehicleIndex != null && _focusedVehicleIndex != i) continue;
+
+      final route = _vehicleRoutes[i];
+      final hasRealCoords = route.allStops.any(
+        (s) => s.lat != null && s.lng != null,
+      );
+
+      // Build aligned (stop info, point) pairs so time lookup and position
+      // are always in sync.
+      final List<_StopInfo> alignedStops = [];
+      final List<LatLng> allPoints = [];
+      if (hasRealCoords) {
+        for (final stop in route.allStops) {
+          if (stop.lat != null && stop.lng != null) {
+            alignedStops.add(stop);
+            allPoints.add(LatLng(stop.lat!, stop.lng!));
+          }
+        }
+      } else {
+        alignedStops.addAll(route.allStops);
+        allPoints.addAll(_generateRoutePoints(center, i, route));
+      }
+
+      if (allPoints.length < 2) continue;
+
+      // Check if usable time data is present
+      final hasTimedData =
+          alignedStops.isNotEmpty &&
+          alignedStops.first.arrivalTime.isNotEmpty &&
+          _timeToMinutes(alignedStops.first.arrivalTime) > 0;
+
+      final LatLng vehiclePos;
+      if (hasTimedData) {
+        // Time-accurate: vehicle arrives at each stop exactly on schedule
+        vehiclePos = _interpolateVehiclePosition(
+          currentTimeMin,
+          alignedStops,
+          allPoints,
+        );
+      } else {
+        // Fallback: linear distribution when no time data is available
         final totalSegments = allPoints.length - 1;
         final exactPos = _playbackProgress * totalSegments;
         final segIdx = exactPos.floor().clamp(0, totalSegments - 1);
         final segFrac = exactPos - segIdx;
-
         final from = allPoints[segIdx];
         final to = allPoints[min(segIdx + 1, allPoints.length - 1)];
-        final animLat = from.latitude + (to.latitude - from.latitude) * segFrac;
-        final animLng =
-            from.longitude + (to.longitude - from.longitude) * segFrac;
-
-        markers.add(
-          Marker(
-            point: LatLng(animLat, animLng),
-            width: 64,
-            height: 42,
-            child: _AnimatedVehicleMarker(
-              color: route.color,
-              label: 'V${i + 1}',
-            ),
-          ),
+        vehiclePos = LatLng(
+          from.latitude + (to.latitude - from.latitude) * segFrac,
+          from.longitude + (to.longitude - from.longitude) * segFrac,
         );
       }
+
+      markers.add(
+        Marker(
+          point: vehiclePos,
+          width: 64,
+          height: 42,
+          child: _AnimatedVehicleMarker(color: route.color, label: 'V${i + 1}'),
+        ),
+      );
     }
 
     return markers;
@@ -2376,12 +2655,14 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     required bool isFirst,
     required bool isLast,
   }) {
+    final locLower = stop.location.toLowerCase();
+    final isDeparture = locLower.contains('departure');
     final isDropoff =
-        stop.location.toLowerCase().contains('drop') ||
-        stop.location.toLowerCase().contains('office');
-    final isDepot = stop.location.toLowerCase().contains('depot');
+        !isDeparture &&
+        (locLower.contains('drop') || locLower.contains('office'));
+    final isDepot = locLower.contains('depot');
 
-    final dotColor = isDepot
+    final dotColor = isDepot || isDeparture
         ? color
         : isDropoff
         ? AppColors.error

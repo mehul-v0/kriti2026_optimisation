@@ -366,10 +366,10 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
     return GestureDetector(
       onTap: () => setState(() => _inputMode = mode),
       child: Container(
-        margin: const EdgeInsets.all(3),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: isActive ? AppColors.primaryBrand : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(7), // 10 (outer) − 3 (margin) = 7
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

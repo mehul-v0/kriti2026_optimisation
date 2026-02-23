@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/elements/spinner.dart';
 import 'package:flutter_application_1/elements/snackbar.dart';
@@ -415,11 +416,31 @@ class _ShowInputPageState extends State<ShowInputPage>
       backgroundColor: _bgColor(context),
       appBar: _buildAppBar(context),
       floatingActionButton: _showBackToTop
-          ? FloatingActionButton.small(
-              heroTag: 'backToTop',
-              onPressed: _scrollToTop,
-              backgroundColor: AppColors.primaryBrand,
-              child: const Icon(Icons.arrow_upward, color: Colors.white),
+          ? GestureDetector(
+              onTap: _scrollToTop,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBrand.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.primaryBrand.withOpacity(0.6),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_upward_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
             )
           : null,
       body: LoadingOverlay(

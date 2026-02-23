@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/screen/show_input_page.dart';
 import 'package:flutter_application_1/services/auth_service.dart';
@@ -570,25 +571,49 @@ class _HomePageState extends State<HomePage> {
         if (_showScrollToTop)
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
-            child: FloatingActionButton.small(
-              heroTag: "scroll_top",
-              onPressed: () {
+            child: GestureDetector(
+              onTap: () {
                 _scrollController.animateTo(
                   0,
                   duration: const Duration(milliseconds: 500),
                   curve: Curves.easeOut,
                 );
               },
-              backgroundColor: Theme.of(context).cardColor,
-              child: const Icon(
-                Icons.keyboard_arrow_up,
-                color: AppColors.primaryBrand,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: Builder(
+                    builder: (ctx) {
+                      final isDark =
+                          Theme.of(ctx).brightness == Brightness.dark;
+                      return Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryBrand,
+                          borderRadius: BorderRadius.circular(16),
+                          border: isDark
+                              ? Border.all(
+                                  color: Colors.white.withOpacity(0.6),
+                                  width: 1.2,
+                                )
+                              : null,
+                        ),
+                        child: const Icon(
+                          Icons.keyboard_arrow_up_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
           ),
-        FloatingActionButton(
-          heroTag: "add_case",
-          onPressed: () {
+        GestureDetector(
+          onTap: () {
             showDialog(
               context: context,
               barrierDismissible: false,
@@ -604,8 +629,32 @@ class _HomePageState extends State<HomePage> {
               ),
             );
           },
-          backgroundColor: AppColors.primaryBrand,
-          child: const Icon(Icons.add, color: Colors.white),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Builder(
+                builder: (ctx) {
+                  final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                  return Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBrand,
+                      borderRadius: BorderRadius.circular(18),
+                      border: isDark
+                          ? Border.all(
+                              color: Colors.white.withOpacity(0.6),
+                              width: 1.2,
+                            )
+                          : null,
+                    ),
+                    child: const Icon(Icons.add, color: Colors.white, size: 28),
+                  );
+                },
+              ),
+            ),
+          ),
         ),
       ],
     );

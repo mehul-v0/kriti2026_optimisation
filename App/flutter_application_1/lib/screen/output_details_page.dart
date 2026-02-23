@@ -196,7 +196,7 @@ class _OutputDetailsPageState extends State<OutputDetailsPage>
     return Scaffold(
       backgroundColor: _bg(context),
       appBar: _buildAppBar(context),
-      body: _buildBody(context),
+      body: SafeArea(child: _buildBody(context)),
     );
   }
 
