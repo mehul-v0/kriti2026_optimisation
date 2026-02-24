@@ -12,14 +12,14 @@ import { formatNumber } from '../utils/helpers';
 // Animated Chart Component with Scroll Trigger
 function AnimatedChart({ children, delay = 0 }: { children: React.ReactNode, delay?: number }) {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "0px" });
+  const isInView = useInView(ref, { once: true, amount: 0.1 });
   
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 30 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
-      transition={{ duration: 0.5, delay }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+      transition={{ duration: 0.4, delay: delay * 0.5 }}
       className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6"
     >
       {children}
@@ -681,14 +681,20 @@ export default function VehicleFleet() {
                           {allSegments.map((segment, sIdx) => (
                             <div 
                               key={sIdx}
-                              className="h-full relative group transition-all hover:brightness-110"
+                              className="h-full relative group/segment transition-all hover:brightness-125 hover:z-10"
                               style={{ 
                                 width: `${segment.percent}%`,
                                 backgroundColor: segment.color,
                                 borderRight: sIdx < allSegments.length - 1 ? '1px solid rgba(0,0,0,0.2)' : 'none'
                               }}
-                              title={`${segment.passengers} passenger(s) - ${segment.distance.toFixed(1)} km`}
                             >
+                              {/* Hover tooltip */}
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-700 border border-gray/30 rounded-lg text-xs whitespace-nowrap opacity-0 invisible group-hover/segment:opacity-100 group-hover/segment:visible transition-all duration-150 z-50 shadow-xl pointer-events-none">
+                                <span className="text-white font-medium">{segment.passengers} passenger{segment.passengers !== 1 ? 's' : ''}</span>
+                                <span className="text-gray/60 mx-1">•</span>
+                                <span className="text-primary">{segment.distance.toFixed(1)} km</span>
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-dark-700"></div>
+                              </div>
                               {segment.percent > 5 && segment.passengers > 0 && (
                                 <div className="absolute inset-0 flex items-center justify-center">
                                   <span className="text-[9px] font-bold text-white opacity-80">{segment.passengers}p</span>
@@ -777,25 +783,57 @@ export default function VehicleFleet() {
                         <ZAxis type="number" dataKey="capacity" range={[50, 400]} name="Capacity" />
                         <Tooltip 
                           cursor={{ strokeDasharray: '3 3' }}
-                          contentStyle={{ 
-                            backgroundColor: '#1F2937', 
-                            border: '1px solid #374151',
-                            borderRadius: '8px',
-                            color: '#ffffff'
-                          }}
-                          itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
-                          labelStyle={{ color: '#bbe5a9' }}
-                          formatter={(value: any, name: string) => {
-                            if (name === 'Distance') return [<span key="val" style={{ color: '#ffffff', fontWeight: 'bold' }}>{value.toFixed(1)} km</span>, 'Distance'];
-                            if (name === 'Cost Per Passenger') return [<span key="val" style={{ color: '#ffffff', fontWeight: 'bold' }}>₹{Math.round(value)}</span>, 'Cost/Passenger'];
-                            if (name === 'Capacity') return [<span key="val" style={{ color: '#ffffff', fontWeight: 'bold' }}>{value} seats</span>, 'Capacity'];
-                            return [value, name];
-                          }}
-                          labelFormatter={(_label, payload) => {
-                            if (payload && payload.length > 0) {
-                              return `Vehicle: ${payload[0].payload.vehicleId}`;
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length > 0) {
+                              const data = payload[0].payload;
+                              // Determine performance rating
+                              let rating = '';
+                              let ratingColor = '';
+                              if (data.distance > avgDistance && data.costPerPassenger < avgCost) {
+                                rating = 'Efficiency Winner';
+                                ratingColor = '#10B981';
+                              } else if (data.distance > avgDistance && data.costPerPassenger > avgCost) {
+                                rating = 'High Mileage - High Cost';
+                                ratingColor = '#F59E0B';
+                              } else if (data.distance < avgDistance && data.costPerPassenger < avgCost) {
+                                rating = 'Low Utilization';
+                                ratingColor = '#3B82F6';
+                              } else {
+                                rating = 'Needs Optimization';
+                                ratingColor = '#EF4444';
+                              }
+                              return (
+                                <div className="bg-dark-800/95 backdrop-blur-xl border border-gray/20 rounded-lg p-3 shadow-2xl min-w-[200px]">
+                                  <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray/20">
+                                    <span className="text-white font-bold text-sm">{data.vehicleId}</span>
+                                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${ratingColor}20`, color: ratingColor }}>{rating}</span>
+                                  </div>
+                                  <div className="space-y-1.5 text-xs">
+                                    <div className="flex justify-between">
+                                      <span className="text-gray">Distance</span>
+                                      <span className="text-white font-medium">{data.distance.toFixed(1)} km</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray">Cost/Passenger</span>
+                                      <span className="text-white font-medium">₹{Math.round(data.costPerPassenger)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray">Capacity</span>
+                                      <span className="text-white font-medium">{data.capacity} seats</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray">Trips</span>
+                                      <span className="text-white font-medium">{data.trips}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray">Type</span>
+                                      <span className="text-white font-medium">{data.mode || 'N/A'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
                             }
-                            return '';
+                            return null;
                           }}
                         />
                         <Scatter 
@@ -1038,9 +1076,7 @@ export default function VehicleFleet() {
                     </div>
 
                     {/* Route sequence - 2 column layout */}
-                    {/* Route Timeline */}
                     <div className="relative pl-8">
-                      <p className="text-xs text-gray font-medium uppercase tracking-wider mb-3">Route Timeline</p>
                         {trip.route.map((point, pIdx) => {
                           const isPickup = point.type === 'pickup';
                           const isDropoff = point.type === 'dropoff';

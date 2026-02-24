@@ -109,22 +109,9 @@ def _compute_baseline_cost(baseline_list):
     return sum(float(b.get('baseline_cost', 0)) for b in baseline_list)
 
 
-def _compute_baseline_time(employees, avg_speed_kmph=40):
-    """
-    Estimate total time if each employee took an individual trip.
-    Time = distance / speed, where distance is haversine from pickup to drop.
-    Returns total time in minutes.
-    """
-    total_minutes = 0
-    for emp in employees:
-        pickup_lat = float(emp.get('pickup_lat', 0))
-        pickup_lng = float(emp.get('pickup_lng', 0))
-        drop_lat = float(emp.get('drop_lat', 0))
-        drop_lng = float(emp.get('drop_lng', 0))
-        dist_km = _haversine(pickup_lat, pickup_lng, drop_lat, drop_lng)
-        time_hours = dist_km / avg_speed_kmph if avg_speed_kmph > 0 else 0
-        total_minutes += time_hours * 60
-    return total_minutes
+def _compute_baseline_time(baseline_list):
+    """Sum baseline times for all employees from the baseline data (in minutes)."""
+    return sum(float(b.get('baseline_time', 0)) for b in baseline_list)
 
 
 def _haversine(lat1, lng1, lat2, lng2):
@@ -594,7 +581,7 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
     import time
 
     baseline_cost = _compute_baseline_cost(baseline_list)
-    baseline_time = _compute_baseline_time(employees)
+    baseline_time = _compute_baseline_time(baseline_list)
     total_cost = float(solver_output.get('cost', 0))
     cost_savings = baseline_cost - total_cost
     cost_savings_percent = round(cost_savings / baseline_cost * 100, 2) if baseline_cost > 0 else 0
@@ -634,11 +621,19 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
         veh_total_distance = float(sv.get('total_distance', 0))
         veh_total_cost = float(sv.get('total_cost', 0))
         passengers_in_vehicle = set()
+        
+        # Store per-trip cost/distance data
+        trip_costs = {}  # trip_num -> cost
+        trip_distances = {}  # trip_num -> distance
 
         for trip in sv.get('trips', []):
             trip_num = trip['trip_number']
             stops = trip.get('stops', [])
             passengers_in_trip = []
+            
+            # Store per-trip totals from solver output
+            trip_costs[trip_num] = float(trip.get('total_cost', 0))
+            trip_distances[trip_num] = float(trip.get('total_distance', 0))
             
             # Track previous location for geometry fetching
             # For first trip, start from vehicle's current location;  for subsequent trips, start from office
@@ -808,6 +803,8 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
             'passengers_count': len(passengers_in_vehicle),
             'capacity_utilization': cap_util,
             'trips_count': trips_count,
+            'trip_costs': trip_costs,
+            'trip_distances': trip_distances,
         })
 
     # Unassigned employees
@@ -1076,7 +1073,8 @@ def optimize():
         try:
             solver_result = subprocess.run(
                 [solver_executable, input_json, output_json, str(solver_duration)],
-                capture_output=True, text=True, timeout=timeout_sec,
+                capture_output=True, timeout=timeout_sec,
+                encoding='utf-8', errors='replace',
             )
             solver_time = time.time() - solver_start
             

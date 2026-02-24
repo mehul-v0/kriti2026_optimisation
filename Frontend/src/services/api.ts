@@ -2,7 +2,8 @@
  * API Service Layer — connects frontend to Server2 (Flask backend on port 5000)
  */
 
-const API_BASE = '/api';
+// Use environment variable in production, fallback to /api for dev (proxied by Vite)
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 interface UploadResponse {
   success: boolean;
@@ -92,6 +93,8 @@ export interface BackendRoute {
   passengers_count: number;
   capacity_utilization: number;
   trips_count: number;
+  trip_costs?: Record<number, number>;  // Per-trip costs keyed by trip number
+  trip_distances?: Record<number, number>;  // Per-trip distances keyed by trip number
 }
 
 export interface BackendAssignment {

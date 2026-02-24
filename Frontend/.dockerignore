@@ -1,0 +1,25 @@
+# Dependencies (reinstalled in Docker)
+node_modules/
+
+# Build output (rebuilt in Docker)
+dist/
+
+# Git
+.git/
+.gitignore
+
+# Environment files (use Coolify env vars instead)
+.env.local
+.env.development
+.env.development.local
+.env.production.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Logs
+*.log
+npm-debug.log*

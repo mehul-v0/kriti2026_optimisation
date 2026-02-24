@@ -3,29 +3,29 @@ echo ========================================
 echo Custom VRP Solver - Windows Build
 echo ========================================
 
-if not exist json.hpp (
+if not exist src\json.hpp (
     echo Downloading nlohmann/json...
-    curl -o json.hpp https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp
+    curl -o src\json.hpp https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp
     if errorlevel 1 (
         echo Error: Download failed
         pause
         exit /b 1
     )
-    echo ✓ Downloaded json.hpp
+    echo Downloaded json.hpp to src/
 )
 
 where g++ >nul 2>nul
 if %errorlevel% equ 0 (
     echo.
-    echo Compiling with g++...
-    g++ -std=c++17 -O3 -Wall -Wextra -I. vrp_solver_custom.cpp -o vrp_solver_custom.exe
+    echo Compiling with g++ -O2...
+    g++ -std=c++17 -O2 -DNDEBUG -I./src src/vrp_solver_custom.cpp -o vrp_solver_custom.exe
     if errorlevel 1 (
-        echo ❌ Build failed
+        echo Build failed
         pause
         exit /b 1
     )
     echo.
-    echo ✅ Build successful: vrp_solver_custom.exe
+    echo Build successful: vrp_solver_custom.exe
     goto :end
 )
 
@@ -33,18 +33,18 @@ where cl >nul 2>nul
 if %errorlevel% equ 0 (
     echo.
     echo Compiling with Visual Studio...
-    cl /EHsc /O2 /std:c++17 /I. vrp_solver_custom.cpp /Fe:vrp_solver_custom.exe
+    cl /EHsc /O2 /std:c++17 /I./src src/vrp_solver_custom.cpp /Fe:vrp_solver_custom.exe
     if errorlevel 1 (
-        echo ❌ Build failed
+        echo Build failed
         pause
         exit /b 1
     )
     echo.
-    echo ✅ Build successful: vrp_solver_custom.exe
+    echo Build successful: vrp_solver_custom.exe
     goto :end
 )
 
-echo ❌ No C++ compiler found!
+echo No C++ compiler found!
 echo Install MinGW or Visual Studio
 pause
 exit /b 1

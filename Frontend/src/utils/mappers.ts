@@ -90,6 +90,10 @@ export function mapRoutes(backendRoutes: BackendRoute[]): Trip[] {
       if (!tripGroups.has(tn)) tripGroups.set(tn, []);
       tripGroups.get(tn)!.push(pt);
     }
+    
+    // Get per-trip cost/distance data (if provided by backend)
+    const tripCosts = route.trip_costs || {};
+    const tripDistances = route.trip_distances || {};
 
     for (const [tripNumber, points] of tripGroups) {
       const routePoints: RoutePoint[] = points.map((pt) => ({
@@ -112,15 +116,19 @@ export function mapRoutes(backendRoutes: BackendRoute[]): Trip[] {
       // Derive start/end time from first and last route points
       const firstTime = routePoints.length > 0 ? routePoints[0].departureTime || routePoints[0].arrivalTime : '';
       const lastTime = routePoints.length > 0 ? routePoints[routePoints.length - 1].arrivalTime : '';
+      
+      // Use actual per-trip cost/distance if available, otherwise fallback to approximation
+      const tripCost = tripCosts[tripNumber] ?? (route.total_cost / (tripGroups.size || 1));
+      const tripDistance = tripDistances[tripNumber] ?? (route.total_distance / (tripGroups.size || 1));
 
       trips.push({
         tripNumber,
         vehicleId: route.vehicle_id,
         employees: employeesInTrip,
         route: routePoints,
-        distance: route.total_distance / (tripGroups.size || 1), // approximate per-trip
+        distance: tripDistance,
         duration: 0,
-        cost: route.total_cost / (tripGroups.size || 1),
+        cost: tripCost,
         startTime: firstTime,
         endTime: lastTime,
       });

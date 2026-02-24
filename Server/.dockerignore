@@ -1,0 +1,31 @@
+__pycache__/
+*.pyc
+*.pyo
+# Never copy .env secrets into Docker
+.env
+.env.*
+.git/
+.gitignore
+*.md
+PS and Test Cases/
+# Exclude test/output data (created at runtime)
+output/
+uploads/
+.vscode/
+# Exclude Windows binary (compiled fresh in Docker)
+*.exe
+# Exclude test/analysis scripts not needed in production
+validate_*.py
+check_*.py
+compare_*.py
+*_test.py
+analyze_*.py
+ortools_*.py
+or_solution.py
+random_test.py
+quick_compare.py
+tc_compare.py
+solver_comparison.py
+build.bat
+# Exclude local test case files
+PS and Test Cases/

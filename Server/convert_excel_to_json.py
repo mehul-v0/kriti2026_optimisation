@@ -152,10 +152,14 @@ def convert(excel_file, output='input.json'):
     # Baseline
     baseline = []
     for _, row in base_df.iterrows():
+        # baseline_time column may be named 'baseline_time' or 'baseline_time_min'
+        baseline_time = _safe_float(row.get('baseline_time_min', 0))
+        if baseline_time == 0:
+            baseline_time = _safe_float(row.get('baseline_time', 0))
         baseline.append({
             'employee_id': _safe_str(row.get('employee_id', '')),
             'baseline_cost': _safe_float(row.get('baseline_cost', 0)),
-            'baseline_time': _safe_float(row.get('baseline_time', 0))
+            'baseline_time': baseline_time
         })
     data['baseline'] = baseline
     print(f"{len(baseline)} baseline entries")

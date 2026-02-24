@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────
+# Root .gitignore — Kriti 2026 monorepo
+# ──────────────────────────────────────────────
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output
+dist/
+build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+venv/
+env/
+.venv/
+
+# Environment secrets — NEVER commit these
+.env
+.env.local
+.env.production
+.env.*.local
+
+# C++ binaries
+*.exe
+*.out
+*.o
+*.obj
+*.so
+*.dll
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+App/flutter_application_1/.dart_tool/
+App/flutter_application_1/build/
+
+# Logs & temp
+*.log
+tmp/
+temp/
