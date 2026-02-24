@@ -92,7 +92,6 @@ export default function DataInsights() {
   };
 
   // Calculate fleet capacity metrics
-  const totalCapacity = data.vehicles.reduce((sum, vehicle) => sum + vehicle.capacity, 0);
 
   const priorityDist = {
     High: data.employees.filter((e) => e.priority === 'High').length,

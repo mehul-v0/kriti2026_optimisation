@@ -342,6 +342,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           soft: { total: 0, satisfied: 0, violated: 0, complianceRate: 0, details: [] },
         },
         solverMode: (sessionStorage.getItem('solverDuration') || 'Standard') as 'Quick' | 'Standard' | 'Thorough' | 'Maximum',
+        solverDuration: 0,
       };
       setCurrentResult(result);
       setOptimizationStatus('completed');
