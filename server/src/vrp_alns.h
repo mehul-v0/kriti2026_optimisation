@@ -15,6 +15,7 @@
 #include <vector>
 #include <unordered_set>
 #include <set>
+#include <climits>
 #include <map>
 #include <functional>
 
