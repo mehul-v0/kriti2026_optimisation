@@ -281,7 +281,6 @@ export default function RouteExplorer() {
     
     // If we have route points but no geometry at all, geometry might be loading
     // or wasn't fetched (haversine mode)
-    const _hasNoGeometry = totalPoints > 0 && pointsWithGeometry === 0;
     const hasPartialGeometry = totalPoints > 0 && pointsWithGeometry > 0 && pointsWithGeometry < totalPoints;
     
     return {
