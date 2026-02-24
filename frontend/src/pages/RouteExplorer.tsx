@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // Vehicle depot icon (where vehicle starts - shown only once per vehicle)
-const createDepotIcon = (color: string) => L.divIcon({
+const createDepotIcon = (_color: string) => L.divIcon({
   className: 'custom-marker',
   html: `<div style="
     width: 24px;
@@ -281,7 +281,7 @@ export default function RouteExplorer() {
     
     // If we have route points but no geometry at all, geometry might be loading
     // or wasn't fetched (haversine mode)
-    const hasNoGeometry = totalPoints > 0 && pointsWithGeometry === 0;
+    const _hasNoGeometry = totalPoints > 0 && pointsWithGeometry === 0;
     const hasPartialGeometry = totalPoints > 0 && pointsWithGeometry > 0 && pointsWithGeometry < totalPoints;
     
     return {
@@ -341,7 +341,7 @@ export default function RouteExplorer() {
     return L.latLngBounds(allPoints);
   }, [selectedTrips, mapBounds, currentResult.vehicles, vehicleIds, selectedVehicle, officeLocation]);
 
-  const cardClass = "bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-float hover:shadow-float-lg transition-all duration-300";
+  // const cardClass removed - unused
 
   return (
     <div ref={containerRef} className="h-screen bg-dark flex flex-col">

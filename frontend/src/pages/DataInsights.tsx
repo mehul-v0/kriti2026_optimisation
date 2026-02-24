@@ -93,7 +93,7 @@ export default function DataInsights() {
 
   // Calculate fleet capacity metrics
   const totalCapacity = data.vehicles.reduce((sum, vehicle) => sum + vehicle.capacity, 0);
-  const averageCapacity = data.vehicles.length > 0 ? totalCapacity / data.vehicles.length : 0;
+  const _averageCapacity = data.vehicles.length > 0 ? totalCapacity / data.vehicles.length : 0;
 
   const priorityDist = {
     High: data.employees.filter((e) => e.priority === 'High').length,
@@ -431,7 +431,7 @@ export default function DataInsights() {
                     </tr>
                   </thead>
                   <tbody className="bg-dark-700/30">
-                    {paginatedEmployees.map((emp, index) => (
+                    {paginatedEmployees.map((emp) => (
                       <tr key={emp.id} className="border-b border-gray/10 hover:bg-dark-600/30 transition-colors">
                         <td className="px-4 py-3 text-sm font-medium text-white">{emp.id}</td>
                         <td className="px-4 py-3">

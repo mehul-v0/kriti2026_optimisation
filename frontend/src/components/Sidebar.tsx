@@ -23,7 +23,7 @@ const navigation = [
 export default function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const { currentResult, optimizationStatus } = useApp();
-  const location = useLocation(); // Re-render on route change
+  useLocation(); // Re-render on route change
 
   const hasData = !!sessionStorage.getItem('uploadedData');
   // Only unlock results sections when optimization has fully completed
