@@ -10,8 +10,8 @@
 vrp_solver_custom
 vrp_solver_custom.exe
 
-# Downloaded dependencies
-json.hpp
+# Downloaded dependencies (tracked - needed for Docker build)
+# json.hpp  <- tracked in src/
 
 # Temporary files
 input.json
