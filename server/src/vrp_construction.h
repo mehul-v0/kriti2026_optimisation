@@ -6,6 +6,7 @@
 #include "vrp_constraints.h"
 #include <iostream>
 #include <limits>
+#include <cmath>
 #include <algorithm>
 #include <random>
 

@@ -8,6 +8,7 @@
 #include <sstream>
 #include <numeric>
 #include <climits>
+#include <cmath>
 #include <algorithm>
 
 using json = nlohmann::json;
