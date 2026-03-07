@@ -1,32 +1,24 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { 
-  Home, Upload, BarChart3, Play, TrendingUp, 
-  Shield, Map, Truck, Users, Download,
-  ChevronLeft
-} from 'lucide-react';
-import { useSidebar } from '../context/SidebarContext';
 import { useApp } from '../context/AppContext';
 
 const navigation = [
-  { name: 'Dashboard', to: '/', icon: Home, requires: null },
-  { name: 'Upload Data', to: '/upload', icon: Upload, requires: null },
-  { name: 'Data Insights', to: '/insights', icon: BarChart3, requires: 'data' },
-  { name: 'Processing', to: '/processing', icon: Play, requires: 'data' },
-  { name: 'Results', to: '/results', icon: TrendingUp, requires: 'results' },
-  { name: 'Constraints', to: '/constraints', icon: Shield, requires: 'results' },
-  { name: 'Map', to: '/routes', icon: Map, requires: 'results' },
-  { name: 'Fleet', to: '/fleet', icon: Truck, requires: 'results' },
-  { name: 'Employees', to: '/employees', icon: Users, requires: 'results' },
-  { name: 'Export', to: '/export', icon: Download, requires: 'results' },
+  { name: 'Dashboard', to: '/', icon: 'pie_chart', requires: null },
+  { name: 'Upload', to: '/upload', icon: 'upload', requires: null },
+  { name: 'Insights', to: '/insights', icon: 'trending_up', requires: 'data' },
+  { name: 'Processing', to: '/processing', icon: 'sync', requires: 'data' },
+  { name: 'Results', to: '/results', icon: 'check_circle', requires: 'results' },
+  { name: 'Constraints', to: '/constraints', icon: 'shield', requires: 'results' },
+  { name: 'Map', to: '/routes', icon: 'map', requires: 'results' },
+  { name: 'Fleet', to: '/fleet', icon: 'local_shipping', requires: 'results' },
+  { name: 'Employees', to: '/employees', icon: 'groups', requires: 'results' },
+  { name: 'Export', to: '/export', icon: 'download', requires: 'results' },
 ];
 
 export default function Sidebar() {
-  const { collapsed, toggle } = useSidebar();
   const { currentResult, optimizationStatus } = useApp();
   useLocation(); // Re-render on route change
 
   const hasData = !!sessionStorage.getItem('uploadedData');
-  // Only unlock results sections when optimization has fully completed
   const hasResults = sessionStorage.getItem('optimizationComplete') === 'true' && (optimizationStatus === 'completed' || !!currentResult);
 
   const isDisabled = (item: typeof navigation[0]) => {
@@ -37,54 +29,33 @@ export default function Sidebar() {
   };
 
   return (
-    <aside
-      className={`fixed top-0 left-0 z-40 h-screen p-3 flex flex-col gap-2 transition-[width] duration-300 ease-in-out ${
-        collapsed ? 'w-[80px]' : 'w-[260px]'
-      }`}
-    >
-      {/* Logo Block — separate floating card */}
-      <div className="relative bg-dark-800/80 backdrop-blur-xl rounded-2xl border border-gray/10 px-3 py-3 flex items-center overflow-hidden shadow-float">
-        <div
-          className={`flex-1 min-w-0 overflow-hidden transition-[opacity] duration-200 ${
-            collapsed ? 'opacity-0 w-0' : 'opacity-100'
-          }`}
-        >
-          <h1 className="text-xl font-display font-extrabold text-white tracking-wide leading-tight whitespace-nowrap pl-1">
-            VELORA
-          </h1>
+    <aside className="w-64 flex-shrink-0 border-r border-border-dark bg-background-light dark:bg-[#0a1511] flex flex-col justify-between">
+      <div className="flex flex-col gap-4 p-4">
+        {/* Logo */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary text-xl">hub</span>
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-slate-900 dark:text-white text-base font-bold leading-normal tracking-wide">VELORA</h1>
+            <p className="text-slate-500 dark:text-slate-400 text-xs font-medium uppercase tracking-wider">VRP Platform</p>
+          </div>
         </div>
 
-        <button
-          onClick={toggle}
-          className="flex-shrink-0 w-8 h-8 rounded-full bg-dark-600 flex items-center justify-center text-gray/60 hover:text-white hover:bg-dark-500 transition-colors ml-auto"
-        >
-          <ChevronLeft
-            className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
-          />
-        </button>
-      </div>
-
-      {/* Navigation Block — main floating card */}
-      <div className="flex-1 flex flex-col bg-dark-800/80 backdrop-blur-xl rounded-2xl border border-gray/10 overflow-hidden shadow-float">
-        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto scrollbar-thin">
+        {/* Navigation */}
+        <nav className="flex flex-col gap-1">
           {navigation.map((item) => {
             const disabled = isDisabled(item);
-            
+
             if (disabled) {
               return (
                 <div
                   key={item.name}
-                  title={collapsed ? item.name : `${item.name} (locked)`}
-                  className="flex items-center gap-3 rounded-xl text-sm overflow-hidden px-3 py-2.5 text-white/20 cursor-not-allowed"
+                  title={`${item.name} (locked)`}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600/30 dark:text-slate-500/30 cursor-not-allowed"
                 >
-                  <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                  <span
-                    className={`whitespace-nowrap transition-[opacity] duration-200 ${
-                      collapsed ? 'opacity-0 w-0' : 'opacity-100'
-                    }`}
-                  >
-                    {item.name}
-                  </span>
+                  <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
+                  <p className="text-sm font-medium leading-normal">{item.name}</p>
                 </div>
               );
             }
@@ -93,36 +64,31 @@ export default function Sidebar() {
               <NavLink
                 key={item.name}
                 to={item.to}
-                title={item.name}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl transition-all duration-200 text-sm overflow-hidden px-3 py-2.5 ${
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-white/90 text-dark-800 font-semibold'
-                      : 'text-white/80 hover:text-white hover:bg-white/5'
+                      ? 'bg-primary/10 text-primary'
+                      : 'hover:bg-surface-dark-hover text-slate-600 dark:text-slate-300'
                   }`
                 }
               >
-                <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                <span
-                  className={`whitespace-nowrap transition-[opacity] duration-200 ${
-                    collapsed ? 'opacity-0 w-0' : 'opacity-100'
-                  }`}
-                >
-                  {item.name}
-                </span>
+                <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
+                <p className={`text-sm leading-normal`}>{item.name}</p>
               </NavLink>
             );
           })}
         </nav>
+      </div>
 
-        {/* Footer */}
-        <div
-          className={`px-4 py-3 border-t border-gray/10 overflow-hidden transition-[opacity] duration-200 ${
-            collapsed ? 'opacity-0 h-0 py-0 border-0' : 'opacity-100'
-          }`}
-        >
-          <div className="text-[10px] text-gray/40 text-center whitespace-nowrap">
-            © 2026 Velora Optimization
+      {/* Footer / User info */}
+      <div className="p-4 border-t border-border-dark">
+        <div className="flex items-center gap-3 px-3 py-2">
+          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary text-base">person</span>
+          </div>
+          <div className="flex flex-col">
+            <p className="text-sm font-medium leading-normal">Fleet Manager</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Logistics Dept</p>
           </div>
         </div>
       </div>

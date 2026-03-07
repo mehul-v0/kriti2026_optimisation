@@ -1,5 +1,4 @@
 import { useLocation } from 'react-router-dom';
-import { Upload, Settings, Play, TrendingUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 const steps = [
@@ -7,28 +6,28 @@ const steps = [
     id: 1,
     name: 'Upload Data',
     path: '/upload',
-    icon: Upload,
+    icon: 'upload',
     requires: null as null | 'data' | 'results',
   },
   {
     id: 2,
     name: 'Review Insights & Configure',
     path: '/insights',
-    icon: Settings,
+    icon: 'settings',
     requires: null as null | 'data' | 'results',
   },
   {
     id: 3,
     name: 'Optimise',
     path: '/processing',
-    icon: Play,
+    icon: 'play_arrow',
     requires: null as null | 'data' | 'results',
   },
   {
     id: 4,
     name: 'Results',
     path: '/results',
-    icon: TrendingUp,
+    icon: 'trending_up',
     requires: null as null | 'data' | 'results',
   },
 ];
@@ -68,7 +67,7 @@ export default function StepProgress() {
   };
 
   return (
-    <div className="bg-dark-900/95 border-b border-gray/10 py-6 px-8 shadow-float">
+    <div className="border-b border-border-dark py-6 px-8 bg-[rgba(255,255,255,0.02)]">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-4">
           {steps.map((step, index) => {
@@ -83,31 +82,33 @@ export default function StepProgress() {
                 <div
                   className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 mb-3 ${
                     isLocked
-                      ? 'bg-dark-800/40 border-gray/10'
+                      ? 'bg-surface-dark border-border-dark'
                       : isCompleted || isActive
                         ? 'bg-primary border-primary'
-                        : 'bg-dark-800 border-gray/30'
+                        : 'bg-surface-dark border-slate-600'
                   }`}
                 >
-                  <step.icon 
-                    className={`w-5 h-5 ${
+                  <span 
+                    className={`material-symbols-outlined text-xl ${
                       isLocked
-                        ? 'text-gray/20'
+                        ? 'text-slate-600'
                         : isCompleted || isActive
-                          ? 'text-black'
-                          : 'text-gray/50'
-                    }`} 
-                  />
+                          ? 'text-background-dark'
+                          : 'text-slate-500'
+                    }`}
+                  >
+                    {step.icon}
+                  </span>
                 </div>
                 
                 {/* Step Label */}
                 <p
                   className={`text-sm font-semibold transition-colors duration-300 ${
                     isLocked
-                      ? 'text-gray/20'
+                      ? 'text-slate-600'
                       : isActive || isCompleted
                         ? 'text-white'
-                        : 'text-gray/50'
+                        : 'text-slate-500'
                   }`}
                 >
                   {step.name}
@@ -115,7 +116,7 @@ export default function StepProgress() {
                 
                 {/* Connector Line */}
                 {index < steps.length - 1 && (
-                  <div className={`absolute top-6 left-[calc(50%+32px)] right-[calc(-50%+32px)] h-0.5 ${isLocked ? 'bg-gray/10' : 'bg-gray/20'}`}>
+                  <div className={`absolute top-6 left-[calc(50%+32px)] right-[calc(-50%+32px)] h-0.5 ${isLocked ? 'bg-border-dark' : 'bg-slate-700'}`}>
                     <div
                       className={`h-full transition-all duration-500 ${
                         isCompleted ? 'bg-primary' : 'bg-transparent'

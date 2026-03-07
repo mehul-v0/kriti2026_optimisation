@@ -1,0 +1,61 @@
+# Compiled binaries
+*.exe
+*.out
+*.o
+*.obj
+*.so
+*.dll
+
+# Build artifacts
+vrp_solver_custom
+vrp_solver_custom.exe
+
+# Downloaded dependencies (tracked - needed for Docker build)
+# json.hpp  <- tracked in src/
+
+# Temporary files
+input.json
+solution.json
+output.json
+
+# Test outputs (keep only final results)
+output/sol_*.json
+output/test_*.json
+output/solution_*.json
+output/*_30s*.json
+output/solsol_*.json
+
+# Track empty directory markers
+!output/.gitkeep
+!uploads/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.env
+
+# Verification scripts (temporary)
+verify_manual_*.py
+
+# OS/Editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Excel temporary files
+~$*.xlsx
+*.tmp
+
+# Logs and debug files
+*.log
+debug.txt
+
+
+output/
+uploads/

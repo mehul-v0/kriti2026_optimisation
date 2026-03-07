@@ -12,7 +12,7 @@ const PARTICLE_COUNT = 80;
 const CONNECTION_DISTANCE = 140;
 const MOUSE_RADIUS = 180;
 const BASE_SPEED = 0.3;
-const PRIMARY_COLOR = { r: 217, g: 239, b: 146 }; // #D9EF92
+const PRIMARY_COLOR = { r: 19, g: 236, b: 160 }; // #13eca0
 
 export default function ParticleNetwork({ className = '' }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -8,41 +9,52 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#bce33c',
-          dark: '#96b244',
-          light: '#f07f7f',
-          bright: '#cafb34',
-          muted: '#8FAB6A',
+          DEFAULT: '#13eca0',
+          dark: '#0fc488',
+          light: '#3dfdb8',
+          bright: '#13eca0',
+          muted: '#0da87a',
         },
         button: {
-          DEFAULT: '#bce33c',
-          hover: '#bce33c',
+          DEFAULT: '#13eca0',
+          hover: '#0fc488',
         },
         dark: {
-          DEFAULT: '#000000',
-          900: '#000000',
-          800: '#0a0a0a',
-          750: '#121212',
-          700: '#1a1a1a',
-          600: '#242424',
-          500: '#2e2e2e',
+          DEFAULT: '#10221c',
+          900: '#0a1511',
+          800: '#0d1b15',
+          750: '#10221c',
+          700: '#142a23',
+          600: '#1a3a30',
+          500: '#21493d',
         },
         gray: {
           DEFAULT: '#808284',
           light: '#a0a0a0',
           dark: '#606060',
         },
+        'background-light': '#f6f8f7',
+        'background-dark': '#10221c',
+        'surface-dark': 'rgba(255, 255, 255, 0.05)',
+        'surface-dark-hover': 'rgba(255, 255, 255, 0.1)',
+        'border-dark': 'rgba(255, 255, 255, 0.1)',
       },
       boxShadow: {
         'float': '0 8px 30px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3)',
         'float-lg': '0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 20px rgba(0, 0, 0, 0.4)',
         'float-xl': '0 30px 80px rgba(0, 0, 0, 0.6), 0 12px 30px rgba(0, 0, 0, 0.5)',
-        'glow': '0 0 20px rgba(217, 239, 146, 0.3), 0 0 40px rgba(217, 239, 146, 0.1)',
-        'glow-lg': '0 0 30px rgba(217, 239, 146, 0.4), 0 0 60px rgba(217, 239, 146, 0.2)',
+        'glow': '0 0 20px rgba(19, 236, 160, 0.3), 0 0 40px rgba(19, 236, 160, 0.1)',
+        'glow-lg': '0 0 30px rgba(19, 236, 160, 0.4), 0 0 60px rgba(19, 236, 160, 0.2)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['Outfit', 'Inter', 'sans-serif'],
+        display: ['Inter', 'sans-serif'],
+      },
+      borderRadius: {
+        DEFAULT: '0.25rem',
+        lg: '0.5rem',
+        xl: '0.75rem',
+        full: '9999px',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
