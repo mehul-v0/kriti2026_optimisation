@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useApp } from '../context/AppContext';
-import { Download, FileSpreadsheet, FileJson, Check } from 'lucide-react';
+// Material Symbols icon helper
+const MIcon = ({ name, className = '' }: { name: string; className?: string }) => (
+  <span className={`material-symbols-outlined ${className}`}>{name}</span>
+);
 import { downloadJSON } from '../utils/helpers';
 import { downloadSolution } from '../services/api';
 import * as XLSX from 'xlsx';
@@ -22,12 +25,12 @@ export default function ExportReports() {
 
   if (!currentResult) {
     return (
-      <div className="min-h-screen bg-dark p-6 lg:p-8">
-        <div className="max-w-7xl mx-auto">
+      <div className="min-h-screen p-6 lg:p-8">
+        <div className="max-w-[1400px] mx-auto">
           <div className="text-center py-20">
             <h1 className="text-3xl font-bold mb-4">Export & Reports</h1>
-            <p className="text-gray mb-6">No optimization results available</p>
-            <Link to="/upload" className="inline-flex items-center gap-2 px-6 py-3 bg-primary rounded-xl text-dark font-semibold hover:bg-button-hover transition-all hover:scale-105">
+            <p className="text-xs font-mono text-white/30 mb-6">No optimization results available</p>
+            <Link to="/upload" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-background-dark font-label font-bold uppercase tracking-widest glow-amber transition-all">
               Start New Optimization
             </Link>
           </div>
@@ -174,7 +177,7 @@ export default function ExportReports() {
     {
       title: 'Employee Assignments (Excel)',
       description: 'Full employee assignment table with all columns',
-      icon: FileSpreadsheet,
+      icon: 'table_chart',
       format: '.xlsx',
       color: 'text-primary-bright',
       action: () => handleExport('employees'),
@@ -182,7 +185,7 @@ export default function ExportReports() {
     {
       title: 'Vehicle Routes (Excel)',
       description: 'All vehicles with their trip details, sequences, distances, costs',
-      icon: FileSpreadsheet,
+      icon: 'table_chart',
       format: '.xlsx',
       color: 'text-primary-bright',
       action: () => handleExport('vehicles'),
@@ -190,7 +193,7 @@ export default function ExportReports() {
     {
       title: 'Solver Solution (JSON)',
       description: 'Raw solver output from the backend — exact C++ solver results',
-      icon: FileJson,
+      icon: 'data_object',
       format: '.json',
       color: 'text-primary-bright',
       action: () => handleExport('solution'),
@@ -198,7 +201,7 @@ export default function ExportReports() {
     {
       title: 'Complete Results (JSON)',
       description: 'All optimization outputs in structured format for developers',
-      icon: FileJson,
+      icon: 'data_object',
       format: '.json',
       color: 'text-primary-bright',
       action: () => handleExport('json'),
@@ -206,26 +209,26 @@ export default function ExportReports() {
   ];
 
   return (
-    <div className="min-h-screen bg-dark p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen p-6 lg:p-8">
+      <div className="max-w-[1400px] mx-auto space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-black uppercase tracking-tight text-white">
             Export & Reports
           </h1>
-          <p className="text-gray mt-1">Download your optimization results in various formats</p>
+          <p className="text-xs font-mono text-white/30 mt-1">Download your optimization results in various formats</p>
         </motion.div>
 
         {/* Quick Exports */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }} 
           animate={{ opacity: 1, y: 0 }}
-          className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6"
+          className="bg-panel-dark border border-white/10 p-6"
         >
-          <h2 className="text-2xl font-bold mb-6">Quick Exports</h2>
+          <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 mb-6">Quick Exports</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {exportCards.map((card, index) => (
               <motion.div
@@ -233,18 +236,18 @@ export default function ExportReports() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="bg-dark-700/50 backdrop-blur-xl rounded-xl border border-gray/10 p-5"
+                className="bg-white/[0.02] border border-white/10 p-5"
               >
-                <card.icon className={`w-10 h-10 ${card.color} mb-3`} />
-                <h3 className="font-bold mb-2 text-sm">{card.title}</h3>
-                <p className="text-xs text-gray mb-4 line-clamp-2">{card.description}</p>
+                <MIcon name={card.icon} className={`text-4xl ${card.color} mb-3`} />
+                <h3 className="font-label font-bold mb-2 text-xs uppercase tracking-widest text-white/70">{card.title}</h3>
+                <p className="text-[10px] font-mono text-white/30 mb-4 line-clamp-2">{card.description}</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray/60">{card.format}</span>
+                  <span className="text-[9px] font-mono text-white/20">{card.format}</span>
                   <button 
                     onClick={card.action} 
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-dark rounded-lg text-xs font-semibold hover:bg-button-hover hover:scale-105 transition-all duration-200"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-background-dark text-xs font-label font-bold uppercase tracking-widest hover:brightness-110 transition-all duration-200"
                   >
-                    <Download className="w-3 h-3" />
+                    <MIcon name="download" className="text-sm" />
                     Export
                   </button>
                 </div>
@@ -258,10 +261,10 @@ export default function ExportReports() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6"
+          className="bg-panel-dark border border-white/10 p-6"
         >
-          <h2 className="text-2xl font-bold mb-4">Custom Report Builder</h2>
-          <p className="text-gray mb-6">Select sections to include in your custom report</p>
+          <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 mb-4">Custom Report Builder</h2>
+          <p className="text-xs font-mono text-white/30 mb-6">Select sections to include in your custom report</p>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {[
@@ -275,15 +278,15 @@ export default function ExportReports() {
             ].map((section) => (
               <label 
                 key={section} 
-                className="flex items-center gap-3 p-3 bg-dark-700/40 rounded-lg cursor-pointer hover:bg-dark-600/50 hover:border-primary/30 border border-transparent transition-all"
+                className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/10 cursor-pointer hover:bg-white/[0.04] hover:border-white/10 border border-transparent transition-all"
               >
                 <input 
                   type="checkbox" 
                   checked={selectedSections.includes(section)}
                   onChange={() => toggleSection(section)}
-                  className="w-4 h-4 text-primary rounded focus:ring-primary focus:ring-offset-0 focus:ring-2 bg-dark-600 border-gray"
+                  className="w-4 h-4 text-primary rounded focus:ring-primary focus:ring-offset-0 focus:ring-2 bg-white/[0.04] border-white/10"
                 />
-                <span className="text-sm">{section}</span>
+                <span className="text-xs font-mono text-white/60">{section}</span>
               </label>
             ))}
           </div>
@@ -292,7 +295,7 @@ export default function ExportReports() {
             <select 
               value={reportFormat}
               onChange={(e) => setReportFormat(e.target.value)}
-              className="flex-1 px-4 py-2.5 bg-dark-700 border border-gray/20 rounded-lg text-sm text-white focus:outline-none focus:border-primary/50 transition-colors"
+              className="flex-1 px-4 py-2.5 bg-white/[0.02] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-primary/40 transition-colors"
             >
               <option>PDF Format</option>
               <option>Excel Format</option>
@@ -300,7 +303,7 @@ export default function ExportReports() {
             </select>
             <button 
               onClick={handleGenerateCustomReport}
-              className="px-6 py-2.5 bg-primary text-dark hover:bg-button-hover hover:scale-105 rounded-lg font-semibold transition-all duration-200 whitespace-nowrap"
+              className="px-6 py-2.5 bg-primary text-background-dark font-label font-bold uppercase tracking-widest glow-amber transition-all duration-200 whitespace-nowrap"
             >
               Generate Custom Report
             </button>
@@ -312,13 +315,13 @@ export default function ExportReports() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-primary/20 p-6"
+          className="bg-panel-dark border border-primary/20 border-t-2 border-t-primary p-6"
         >
           <div className="flex items-start gap-4">
-            <Check className="w-6 h-6 text-primary flex-shrink-0 mt-1" />
+            <MIcon name="check_circle" className="text-2xl text-primary flex-shrink-0 mt-1" />
             <div>
-              <p className="font-semibold text-primary mb-2">Data Persistence</p>
-              <p className="text-sm text-gray">
+              <p className="font-label font-bold text-primary/80 mb-2 text-[10px] uppercase tracking-widest">Data Persistence</p>
+              <p className="text-xs font-mono text-white/30">
                 Your optimization results are saved in your browser's local storage and will be available 
                 in Session History on your next visit. To save results permanently, please download the 
                 exports above.

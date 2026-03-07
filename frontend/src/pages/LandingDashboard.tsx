@@ -1,11 +1,20 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useCallback, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import ParticleNetwork from '../components/ParticleNetwork';
 import { formatCurrency, formatNumber, formatDate } from '../utils/helpers';
 
 export default function LandingDashboard() {
   const { sessionHistory, lifetimeMetrics, clearHistory } = useApp();
+
+  // Mouse spotlight for grid
+  const heroRef = useRef<HTMLDivElement>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = heroRef.current?.getBoundingClientRect();
+    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
+  const handleMouseLeave = useCallback(() => setMousePos(null), []);
 
   const metrics = [
     {
@@ -18,9 +27,7 @@ export default function LandingDashboard() {
       label: 'Cumulative Cost Saved',
       value: formatCurrency(lifetimeMetrics.cumulativeSavings),
       icon: 'savings',
-      iconColor: 'text-primary',
       change: '+8%',
-      glow: true,
     },
     {
       label: 'Employees Transported',
@@ -37,31 +44,57 @@ export default function LandingDashboard() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-8">
+    <div className="max-w-[1400px] mx-auto p-6 md:p-8 space-y-8">
       {/* Hero Section */}
-      <div className="relative w-full rounded-xl overflow-hidden glass-card min-h-[320px] flex items-center justify-center p-8 border border-border-dark">
-        {/* Particle Network background */}
-        <ParticleNetwork className="z-0" />
-        <div className="absolute inset-0 z-[1] bg-gradient-to-r from-background-dark/90 to-background-dark/70 pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col items-center text-center max-w-2xl gap-6">
-          <div className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-primary/20 text-primary border border-primary/30 text-xs font-medium uppercase tracking-wider mb-2">
-            AI-Powered Logistics
-          </div>
-          <h1 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-            Vehicle Routing Optimization
+      <div
+        ref={heroRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="relative w-full bg-panel-dark border border-white/10 border-t-2 border-t-primary overflow-hidden min-h-[420px] flex items-center justify-center p-8"
+      >
+        {/* Grid Background */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          backgroundImage: `
+            linear-gradient(rgba(255,184,0,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,184,0,0.04) 1px, transparent 1px)
+          `,
+          backgroundSize: '48px 48px',
+        }} />
+        {/* Mouse spotlight - brighter grid near cursor */}
+        {mousePos && (
+          <div className="absolute inset-0 pointer-events-none transition-opacity duration-200" style={{
+            backgroundImage: `
+              linear-gradient(rgba(255,184,0,0.15) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255,184,0,0.15) 1px, transparent 1px)
+            `,
+            backgroundSize: '48px 48px',
+            maskImage: `radial-gradient(circle 180px at ${mousePos.x}px ${mousePos.y}px, black, transparent)`,
+            WebkitMaskImage: `radial-gradient(circle 180px at ${mousePos.x}px ${mousePos.y}px, black, transparent)`,
+          }} />
+        )}
+        {/* Radial fade so grid fades at edges */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: 'radial-gradient(ellipse at center, transparent 30%, #0D1117 80%)',
+        }} />
+        <div className="relative z-10 flex flex-col items-center text-center max-w-2xl gap-5">
+          <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-[9px] font-mono text-white/50 uppercase tracking-widest">
+            AI-Powered Logistics // v2.0
+          </span>
+          <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight uppercase leading-tight">
+            Vehicle Routing<br />Optimization
           </h1>
-          <p className="text-base md:text-lg text-slate-600 dark:text-slate-300 max-w-xl">
-            Optimize your corporate logistics and fleet operations efficiently. Reduce costs, minimize carbon footprint, and streamline delivery routes.
+          <p className="text-sm text-white/40 font-mono max-w-xl leading-relaxed">
+            Optimize your corporate logistics and fleet operations efficiently.
+            Reduce costs, minimize carbon footprint, and streamline delivery routes.
           </p>
           <Link to="/upload">
             <motion.button
-              whileHover={{ scale: 1.04 }}
+              whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
-              className="mt-4 px-8 py-3.5 bg-primary text-background-dark font-bold rounded-lg shadow-lg hover:bg-primary/90 transition-all flex items-center gap-2"
+              className="mt-4 bg-primary text-background-dark font-label font-bold py-3 px-8 text-sm tracking-widest uppercase glow-amber transition-all flex items-center gap-2"
             >
-              <span className="material-symbols-outlined">rocket_launch</span>
-              Start New Optimization
+              <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+              Start Optimization
             </motion.button>
           </Link>
         </div>
@@ -69,10 +102,12 @@ export default function LandingDashboard() {
 
       {/* KPI Cards */}
       <div>
-        <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">monitoring</span>
-          Lifetime Performance
-        </h2>
+        <div className="flex items-center gap-3 mb-4">
+          <span className="material-symbols-outlined text-primary text-[18px]">monitoring</span>
+          <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40">
+            Lifetime Performance
+          </h2>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {metrics.map((metric, index) => (
             <motion.div
@@ -80,21 +115,18 @@ export default function LandingDashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1, duration: 0.5 }}
-              className={`glass-card rounded-xl p-5 flex flex-col gap-2 ${metric.glow ? 'relative overflow-hidden' : ''}`}
+              className="bg-panel-dark border border-white/10 p-5 flex flex-col gap-2"
             >
-              {metric.glow && (
-                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-xl -mr-10 -mt-10 pointer-events-none" />
-              )}
               <div className="flex justify-between items-start">
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{metric.label}</p>
-                <span className={`material-symbols-outlined text-sm ${metric.iconColor || 'text-slate-400'}`}>{metric.icon}</span>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/40">{metric.label}</p>
+                <span className="material-symbols-outlined text-sm text-white/20">{metric.icon}</span>
               </div>
-              <p className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{metric.value}</p>
-              <div className="flex items-center gap-1 mt-auto">
-                <span className="text-primary text-xs font-semibold bg-primary/10 px-1.5 py-0.5 rounded flex items-center">
-                  <span className="material-symbols-outlined text-[12px]">arrow_upward</span> {metric.change}
+              <p className="text-3xl font-bold font-mono text-white mt-1">{metric.value}</p>
+              <div className="flex items-center gap-2 mt-auto">
+                <span className="text-[9px] font-mono text-primary bg-primary/10 px-1.5 py-0.5 flex items-center gap-0.5">
+                  <span className="material-symbols-outlined text-[11px]">arrow_upward</span>{metric.change}
                 </span>
-                <span className="text-xs text-slate-500">vs last month</span>
+                <span className="text-[10px] font-mono text-white/30">vs last month</span>
               </div>
             </motion.div>
           ))}
@@ -104,46 +136,52 @@ export default function LandingDashboard() {
       {/* Session History & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Session History Table */}
-        <div className="lg:col-span-2 glass-card rounded-xl border border-border-dark overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-border-dark flex justify-between items-center bg-[rgba(255,255,255,0.025)]">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span className="material-symbols-outlined text-slate-400">history</span>
-              Session History
-            </h2>
+        <div className="lg:col-span-2 bg-panel-dark border border-white/10 overflow-hidden flex flex-col">
+          <div className="p-5 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-white/20 text-[18px]">history</span>
+              <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40">
+                Session History
+              </h2>
+            </div>
             {sessionHistory.length > 0 && (
-              <button className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">View All</button>
+              <button className="text-[10px] font-mono text-primary hover:text-primary/80 transition-colors uppercase tracking-wider">
+                View All
+              </button>
             )}
           </div>
           <div className="overflow-x-auto">
             {sessionHistory.length === 0 ? (
               <div className="text-center py-16 px-6">
-                <span className="material-symbols-outlined text-slate-500/40 text-5xl mb-4 block">history</span>
-                <p className="text-slate-500 dark:text-slate-400 text-sm">No optimization history yet. Start your first optimization to see results here.</p>
+                <span className="material-symbols-outlined text-white/10 text-5xl mb-4 block">history</span>
+                <p className="text-xs font-mono text-white/30">
+                  No optimization history yet. Start your first optimization to see results here.
+                </p>
               </div>
             ) : (
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-border-dark bg-[rgba(255,255,255,0.015)]">
-                    <th className="px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date</th>
-                    <th className="px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cost Saved</th>
-                    <th className="px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employees</th>
-                    <th className="px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Outcome</th>
+                  <tr className="border-b border-white/10 bg-white/[0.015]">
+                    <th className="px-5 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Date</th>
+                    <th className="px-5 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Cost Saved</th>
+                    <th className="px-5 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Employees</th>
+                    <th className="px-5 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Outcome</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border-dark">
+                <tbody className="divide-y divide-white/5">
                   {sessionHistory.map((session) => (
-                    <tr key={session.id} className="hover:bg-surface-dark-hover transition-colors">
-                      <td className="px-5 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">{formatDate(session.timestamp)}</td>
-                      <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-400">{formatCurrency(session.savings)}</td>
-                      <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-400">{session.employeeCount}</td>
+                    <tr key={session.id} className="hover:bg-white/[0.03] transition-colors">
+                      <td className="px-5 py-4 text-sm font-mono text-white/70">{formatDate(session.timestamp)}</td>
+                      <td className="px-5 py-4 text-sm font-mono text-white/50">{formatCurrency(session.savings)}</td>
+                      <td className="px-5 py-4 text-sm font-mono text-white/50">{session.employeeCount}</td>
                       <td className="px-5 py-4">
                         {session.status === 'completed' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary"></span> Success
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 text-[9px] font-mono uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 bg-primary"></span> Success
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span> Failed
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-action/10 text-action border border-action/20 text-[9px] font-mono uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 bg-action"></span> Failed
                           </span>
                         )}
                       </td>
@@ -156,36 +194,38 @@ export default function LandingDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="glass-card rounded-xl border border-border-dark p-5 flex flex-col h-full">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-            <span className="material-symbols-outlined text-slate-400">bolt</span>
-            Quick Actions
-          </h2>
+        <div className="bg-panel-dark border border-white/10 p-5 flex flex-col h-full">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="material-symbols-outlined text-white/20 text-[18px]">bolt</span>
+            <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40">
+              Quick Actions
+            </h2>
+          </div>
           <div className="flex flex-col gap-3 flex-1">
             <Link to="/results">
-              <button className="w-full flex items-center justify-between px-4 py-3 bg-surface-dark hover:bg-surface-dark-hover border border-border-dark rounded-lg transition-colors group">
+              <button className="w-full flex items-center justify-between px-4 py-3 border border-white/10 bg-white/[0.02] hover:bg-white/5 transition-colors group">
                 <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary">visibility</span>
-                  <span className="text-sm font-medium">View Last Session</span>
+                  <span className="material-symbols-outlined text-primary text-[18px]">visibility</span>
+                  <span className="text-xs font-label font-bold uppercase tracking-wider text-white/60">View Last Session</span>
                 </div>
-                <span className="material-symbols-outlined text-slate-500 group-hover:text-slate-300 text-sm transition-colors">arrow_forward</span>
+                <span className="material-symbols-outlined text-white/20 group-hover:text-white/40 text-sm transition-colors">arrow_forward</span>
               </button>
             </Link>
-            <button className="w-full flex items-center justify-between px-4 py-3 bg-surface-dark hover:bg-surface-dark-hover border border-border-dark rounded-lg transition-colors group">
+            <button className="w-full flex items-center justify-between px-4 py-3 border border-white/10 bg-white/[0.02] hover:bg-white/5 transition-colors group">
               <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-slate-400">psychology</span>
-                <span className="text-sm font-medium">About Algorithm</span>
+                <span className="material-symbols-outlined text-white/30 text-[18px]">psychology</span>
+                <span className="text-xs font-label font-bold uppercase tracking-wider text-white/60">About Algorithm</span>
               </div>
-              <span className="material-symbols-outlined text-slate-500 group-hover:text-slate-300 text-sm transition-colors">arrow_forward</span>
+              <span className="material-symbols-outlined text-white/20 group-hover:text-white/40 text-sm transition-colors">arrow_forward</span>
             </button>
             {sessionHistory.length > 0 && (
               <button
                 onClick={clearHistory}
-                className="w-full flex items-center justify-between px-4 py-3 bg-surface-dark hover:bg-surface-dark-hover border border-border-dark rounded-lg transition-colors group mt-auto"
+                className="w-full flex items-center justify-between px-4 py-3 border border-white/10 bg-white/[0.02] hover:bg-action/10 transition-colors group mt-auto"
               >
                 <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-slate-400">delete_sweep</span>
-                  <span className="text-sm font-medium">Clear History</span>
+                  <span className="material-symbols-outlined text-action/60 text-[18px]">delete_sweep</span>
+                  <span className="text-xs font-label font-bold uppercase tracking-wider text-white/60">Clear History</span>
                 </div>
               </button>
             )}

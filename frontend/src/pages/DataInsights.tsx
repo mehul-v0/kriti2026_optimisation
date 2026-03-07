@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, Car, ChevronDown, ChevronUp, RotateCcw, ChevronLeft, ChevronRight, Search, Filter, Info } from 'lucide-react';
 import type { Employee, Vehicle } from '../types';
 import { useApp } from '../context/AppContext';
 
@@ -139,534 +138,480 @@ export default function DataInsights() {
     navigate('/processing');
   };
 
+  /* ---------- tiny helper for the bar‑graph dots ---------- */
+  const BarDots = ({ filled, total }: { filled: number; total: number }) => (
+    <div className="flex gap-0.5">
+      {Array.from({ length: 10 }, (_, i) => (
+        <div
+          key={i}
+          className={`w-1 h-4 rounded ${
+            i + 1 <= (filled / total) * 10 ? 'bg-primary' : 'bg-white/[0.04]'
+          }`}
+        />
+      ))}
+    </div>
+  );
+
   return (
-    <div className="min-h-screen p-3" style={{ background: 'linear-gradient(180deg, #000000 0%, #0a0a0a 50%, #121212 100%)' }}>
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold mb-2">Data Insights Preview</h1>
-        <p className="text-gray mb-8">Review your uploaded data before optimization</p>
+    <div className="max-w-[1400px] mx-auto p-6 md:p-8">
+      {/* Page header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-black text-white tracking-tight uppercase">Data Insights Preview</h1>
+        <p className="text-xs font-mono text-white/30 mt-1">Review your uploaded data before optimization</p>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
-          {/* Employee Requests */}
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6 relative overflow-hidden shadow-float hover:shadow-float-lg transition-all duration-300">
-            {/* Background icon - zoomed, top-right-aligned */}
-            <Users className="absolute -right-4 top-6 w-36 h-36 text-primary/10 pointer-events-none z-0" />
-            
-            <h2 className="text-xl font-bold mb-4 relative z-10">
-              Employee Requests Overview
-            </h2>
-            <div className="space-y-4 relative z-10">
-              <div>
-                <p className="text-sm text-gray mb-2">Total Employees</p>
-                <p className="text-3xl font-bold">{data.employees.length}</p>
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-white mb-4">Priority Distribution</p>
-                <div className="grid grid-cols-3 gap-4 mb-4 relative z-10">
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">High</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{priorityDist.High}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (priorityDist.High / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Medium</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{priorityDist.Medium}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (priorityDist.Medium / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Low</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{priorityDist.Low}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (priorityDist.Low / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-white mb-4">Sharing Preferences</p>
-                <div className="grid grid-cols-3 gap-4 relative z-10">
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Single</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{sharingDist.Single}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (sharingDist.Single / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Double</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{sharingDist.Double}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (sharingDist.Double / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Triple</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{sharingDist.Triple}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (sharingDist.Triple / data.employees.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+      {/* ===== Two‑column layout: scrollable left | sticky right ===== */}
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
 
-          {/* Vehicle Fleet */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6 relative overflow-hidden shadow-float hover:shadow-float-lg transition-all duration-300">
-            {/* Background icon - zoomed, top-right-aligned */}
-            <Car className="absolute right-4 top-6 w-36 h-36 text-primary/10 pointer-events-none z-0" />
-            
-            <h2 className="text-xl font-bold mb-4 relative z-10">
-              Fleet Capacity Overview
-            </h2>
-            <div className="space-y-4 relative z-10">
-              <div>
-                <p className="text-sm text-gray mb-2">Total Vehicles</p>
-                <p className="text-3xl font-bold">{data.vehicles.length}</p>
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-white mb-4">Fuel Type Distribution</p>
-                <div className="grid grid-cols-3 gap-4 mb-4 relative z-10">
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Electric</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{fuelDist.Electric}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (fuelDist.Electric / data.vehicles.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Petrol</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{fuelDist.Petrol}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (fuelDist.Petrol / data.vehicles.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Diesel</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{fuelDist.Diesel}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (fuelDist.Diesel / data.vehicles.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-white mb-4">Vehicle Mode Distribution</p>
-                <div className="grid grid-cols-3 gap-4 relative z-10">
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">2-Wheeler</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{modeDist['2-Wheeler']}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (modeDist['2-Wheeler'] / data.vehicles.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">4-Wheeler</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{modeDist['4-Wheeler']}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (modeDist['4-Wheeler'] / data.vehicles.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-dark-600/80 p-4 rounded-lg shadow-float">
-                    <div className="text-sm text-gray mb-1">Van</div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold">{modeDist.Van}</div>
-                      <div className="flex gap-1">
-                        {Array.from({ length: 10 }, (_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1 h-4 rounded ${(i + 1) <= (modeDist.Van / data.vehicles.length) * 10 ? 'bg-primary' : 'bg-dark-500'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
+        {/* ── LEFT COLUMN ── scrollable insights ── */}
+        <div className="flex-1 min-w-0 space-y-6">
 
-        {/* Employee Data Table */}
-        <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6 mb-3 shadow-float">
-          <button
-            onClick={() => setShowEmployees(!showEmployees)}
-            className="w-full flex items-center justify-between py-3 hover:bg-dark-700/30 rounded-lg transition-colors"
+          {/* KPI row ─ Employee & Vehicle counts */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Employee KPI */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="bg-panel-dark border border-white/10 p-5 flex flex-col gap-2 relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="flex justify-between items-start">
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Total Employees</p>
+                <span className="material-symbols-outlined text-primary text-sm">groups</span>
+              </div>
+              <p className="text-3xl font-bold font-mono text-white mt-1">{data.employees.length}</p>
+            </motion.div>
+
+            {/* Vehicle KPI */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="bg-panel-dark border border-white/10 p-5 flex flex-col gap-2 relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="flex justify-between items-start">
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Total Vehicles</p>
+                <span className="material-symbols-outlined text-primary text-sm">local_shipping</span>
+              </div>
+              <p className="text-3xl font-bold font-mono text-white mt-1">{data.vehicles.length}</p>
+            </motion.div>
+          </div>
+
+          {/* ── Employee Requests Overview ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="bg-panel-dark border border-white/10 overflow-hidden"
           >
-            <h3 className="text-xl font-bold text-white">Employee Requests Preview</h3>
-            {showEmployees ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-          
-          {showEmployees && (
-            <div className="mt-4">
-              {/* Search and Filter Controls */}
-              <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray/60" />
-                  <input
-                    type="text"
-                    placeholder="Search across all columns..."
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setCurrentPage(0);
-                    }}
-                    className="w-full pl-10 pr-4 py-2 bg-dark-700 border border-gray/30 rounded-lg text-white placeholder-gray/60 focus:border-primary focus:outline-none"
-                  />
+            <div className="p-5 border-b border-white/10 flex items-center gap-2 bg-white/[0.02]">
+              <span className="material-symbols-outlined text-white/40">groups</span>
+              <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40">Employee Requests Overview</h2>
+            </div>
+            <div className="p-5 space-y-6">
+              {/* Priority Distribution */}
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/30 mb-3">Priority Distribution</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['High', 'Medium', 'Low'] as const).map((level) => (
+                    <div key={level} className="bg-white/[0.02] p-4 border border-white/10">
+                      <div className="text-[10px] font-mono text-white/30 mb-1">{level}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl font-bold font-mono text-white">{priorityDist[level]}</div>
+                        <BarDots filled={priorityDist[level]} total={data.employees.length} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-3">
-                  <Filter className="w-4 h-4 text-gray/60" />
-                  <div className="relative">
-                    <select
-                      value={priorityFilter}
+              </div>
+              {/* Sharing Preferences */}
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/30 mb-3">Sharing Preferences</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['Single', 'Double', 'Triple'] as const).map((pref) => (
+                    <div key={pref} className="bg-white/[0.02] p-4 border border-white/10">
+                      <div className="text-[10px] font-mono text-white/30 mb-1">{pref}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl font-bold font-mono text-white">{sharingDist[pref]}</div>
+                        <BarDots filled={sharingDist[pref]} total={data.employees.length} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ── Fleet Capacity Overview ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.15 }}
+            className="bg-panel-dark border border-white/10 overflow-hidden"
+          >
+            <div className="p-5 border-b border-white/10 flex items-center gap-2 bg-white/[0.02]">
+              <span className="material-symbols-outlined text-white/40">local_shipping</span>
+              <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40">Fleet Capacity Overview</h2>
+            </div>
+            <div className="p-5 space-y-6">
+              {/* Fuel Type */}
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/30 mb-3">Fuel Type Distribution</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['Electric', 'Petrol', 'Diesel'] as const).map((fuel) => (
+                    <div key={fuel} className="bg-white/[0.02] p-4 border border-white/10">
+                      <div className="text-[10px] font-mono text-white/30 mb-1">{fuel}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl font-bold font-mono text-white">{fuelDist[fuel]}</div>
+                        <BarDots filled={fuelDist[fuel]} total={data.vehicles.length} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Vehicle Mode */}
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/30 mb-3">Vehicle Mode Distribution</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['2-Wheeler', '4-Wheeler', 'Van'] as const).map((mode) => (
+                    <div key={mode} className="bg-white/[0.02] p-4 border border-white/10">
+                      <div className="text-[10px] font-mono text-white/30 mb-1">{mode}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl font-bold font-mono text-white">{modeDist[mode]}</div>
+                        <BarDots filled={modeDist[mode]} total={data.vehicles.length} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ── Employee Data Table (collapsible) ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            className="bg-panel-dark border border-white/10 overflow-hidden"
+          >
+            <button
+              onClick={() => setShowEmployees(!showEmployees)}
+              className="w-full p-5 flex items-center justify-between hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-white/40">table_chart</span>
+                <h3 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40">Employee Requests Preview</h3>
+              </div>
+              <span className="material-symbols-outlined text-white/40 text-xl">
+                {showEmployees ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+
+            {showEmployees && (
+              <div className="px-5 pb-5">
+                {/* Search and Filter Controls */}
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                  <div className="flex-1 relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-lg">search</span>
+                    <input
+                      type="text"
+                      placeholder="Search across all columns..."
+                      value={searchQuery}
                       onChange={(e) => {
-                        setPriorityFilter(e.target.value as 'All' | 'High' | 'Medium' | 'Low');
+                        setSearchQuery(e.target.value);
                         setCurrentPage(0);
                       }}
-                      className="pl-3 pr-8 py-2 bg-dark-700 border border-gray/30 rounded-lg text-white focus:border-primary focus:outline-none appearance-none cursor-pointer"
-                    >
-                      <option value="All">All Priorities</option>
-                      <option value="High">High</option>
-                      <option value="Medium">Medium</option>
-                      <option value="Low">Low</option>
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray/60 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-              
-              {/* Table */}
-              <div className="overflow-x-auto rounded-lg border border-gray/20">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-primary-muted/20">
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Employee ID</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Priority</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Pickup Location</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Time Window</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray/80">Sharing</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray/80">Baseline Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-dark-700/30">
-                    {paginatedEmployees.map((emp) => (
-                      <tr key={emp.id} className="border-b border-gray/10 hover:bg-dark-600/30 transition-colors">
-                        <td className="px-4 py-3 text-sm font-medium text-white">{emp.id}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            emp.priority === 'High' 
-                              ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
-                              : emp.priority === 'Medium' 
-                              ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' 
-                              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                          }`}>
-                            {emp.priority}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray/90">{emp.pickupLocation}</td>
-                        <td className="px-4 py-3 text-sm text-gray/90">{emp.timeWindowStart} - {emp.timeWindowEnd}</td>
-                        <td className="px-4 py-3 text-sm text-gray/90">{emp.sharingPreference}</td>
-                        <td className="px-4 py-3 text-right text-sm font-medium text-primary-bright">₹{emp.baselineCost || 150}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Pagination Controls */}
-              <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-gray/70">
-                  Showing {currentPage * ROWS_PER_PAGE + 1}-{Math.min((currentPage + 1) * ROWS_PER_PAGE, filteredEmployees.length)} of {filteredEmployees.length} employees
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={prevPage}
-                    disabled={currentPage === 0}
-                    className="p-2 rounded-lg bg-dark-700 hover:bg-dark-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="px-3 py-1 text-sm bg-dark-700 rounded-lg">
-                    {currentPage + 1} of {totalPages || 1}
-                  </span>
-                  <button
-                    onClick={nextPage}
-                    disabled={currentPage >= totalPages - 1}
-                    className="p-2 rounded-lg bg-dark-700 hover:bg-dark-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Solver Configuration */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6 mb-3 shadow-float">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-white">Optimization Settings</h2>
-            <button 
-              onClick={resetConfig}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-primary hover:bg-primary-light text-dark font-semibold rounded-lg transition-all duration-300"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Reset
-            </button>
-          </div>
-          <div className="space-y-6">
-            {/* Distance Calculation Method */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-base font-semibold text-white">Distance Calculation Method</p>
-                <div className="relative group/info">
-                  <Info className="w-4 h-4 text-gray/60 hover:text-gray cursor-help transition-colors" />
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-dark-800 border border-gray/20 rounded-lg text-xs text-gray/90 whitespace-nowrap opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all duration-200 z-50 max-w-xs w-max">
-                    Haversine is faster but less accurate. Actual maps provide real road distances but may be slower.
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray/20" />
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => setConfig({ ...config, distanceMethod: 'haversine' })}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    config.distanceMethod === 'haversine'
-                      ? 'border-primary bg-primary/10 text-white'
-                      : 'border-gray/30 text-gray hover:border-gray/50'
-                  }`}
-                >
-                  <div className="font-bold mb-1">Haversine Formula</div>
-                  <div className="text-xs">Fast calculation using geographic coordinates</div>
-                </button>
-                <button
-                  onClick={() => setConfig({ ...config, distanceMethod: 'actual_maps' })}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    config.distanceMethod === 'actual_maps'
-                      ? 'border-primary bg-primary/10 text-white'
-                      : 'border-gray/30 text-gray hover:border-gray/50'
-                  }`}
-                >
-                  <div className="font-bold mb-1">Actual Map Routes</div>
-                  <div className="text-xs">Real road distances via mapping service</div>
-                </button>
-              </div>
-            </div>
-
-            {/* Combined Cost/Time Weight Slider */}
-            <div>
-              <p className="text-base font-semibold text-white mb-3">Cost vs Time Priority</p>
-              <div className="relative">
-                {/* Weight Labels */}
-                <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-primary rounded-full"></div>
-                    <span className="text-sm text-gray">Cost: {config.costWeight.toFixed(2)}</span>
+                      className="w-full pl-10 pr-4 py-2.5 bg-white/[0.02] border border-white/10 font-mono text-sm text-white/70 placeholder-white/30 focus:border-primary focus:outline-none"
+                    />
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray">Time: {config.timeWeight.toFixed(2)}</span>
-                    <div className="w-3 h-3 bg-white rounded-full"></div>
-                  </div>
-                </div>
-                
-                {/* Custom Slider */}
-                <div className="relative h-6 rounded-full overflow-hidden">
-                  {/* Two-tone background */}
-                  <div className="absolute inset-0 flex">
-                    <div className="bg-primary/40" style={{ width: `${config.costWeight * 100}%` }}></div>
-                    <div className="bg-white/20" style={{ width: `${config.timeWeight * 100}%` }}></div>
-                  </div>
-                  
-                  {/* Slider track */}
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.01" 
-                    value={config.costWeight}
-                    onChange={(e) => updateCostWeight(parseFloat(e.target.value))}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  />
-                  
-                  {/* Slider thumb indicator - Fixed positioning */}
-                  <div 
-                    className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none z-20"
-                    style={{ left: `calc(${config.costWeight * 100}% - 8px)` }}
-                  ></div>
-                </div>
-                
-                <div className="flex justify-between text-xs text-gray mt-1">
-                  <span>Cost Focus</span>
-                  <span>Balanced</span>
-                  <span>Time Focus</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Priority Delay Configuration */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-base font-semibold text-white">Priority Delay Limits</p>
-                <div className="relative group/info">
-                  <Info className="w-4 h-4 text-gray/60 hover:text-gray cursor-help transition-colors" />
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-dark-800 border border-gray/20 rounded-lg text-xs text-gray/90 whitespace-nowrap opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all duration-200 z-50 max-w-xs w-max">
-                    Maximum delay allowed for each priority level before the employee is considered late.
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray/20" />
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                {[1, 2, 3, 4, 5].map((p) => (
-                  <div key={p} className="bg-dark-700/50 p-4 rounded-lg">
-                    <label className="block text-sm text-gray mb-2">Priority {p}</label>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="number"
-                        min="1"
-                        max="60"
-                        value={config.priorityDelays[p]}
-                        onChange={(e) => updatePriorityDelay(p, parseInt(e.target.value) || 0)}
-                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg focus:border-primary focus:outline-none"
-                      />
-                      <span className="text-xs text-gray whitespace-nowrap">min</span>
+                    <span className="material-symbols-outlined text-white/40 text-lg">filter_list</span>
+                    <div className="relative">
+                      <select
+                        value={priorityFilter}
+                        onChange={(e) => {
+                          setPriorityFilter(e.target.value as 'All' | 'High' | 'Medium' | 'Low');
+                          setCurrentPage(0);
+                        }}
+                        className="pl-3 pr-8 py-2 bg-[#0D1117] border border-white/10 font-mono text-[11px] text-white/70 focus:border-primary focus:outline-none appearance-none cursor-pointer"
+                      >
+                        <option value="All" className="bg-[#0D1117] text-white/70">All Priorities</option>
+                        <option value="High" className="bg-[#0D1117] text-white/70">High</option>
+                        <option value="Medium" className="bg-[#0D1117] text-white/70">Medium</option>
+                        <option value="Low" className="bg-[#0D1117] text-white/70">Low</option>
+                      </select>
+                      <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-white/40 text-sm pointer-events-none">expand_more</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* Solver Duration */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-base font-semibold text-white">Solver Duration</p>
-                <div className="relative group/info">
-                  <Info className="w-4 h-4 text-gray/60 hover:text-gray cursor-help transition-colors" />
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-dark-800 border border-gray/20 rounded-lg text-xs text-gray/90 whitespace-nowrap opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all duration-200 z-50 max-w-xs w-max">
-                    Longer runtime allows the solver to explore more solutions and typically produces better cost savings.
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray/20" />
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto border border-white/10">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/10 bg-white/[0.015]">
+                        <th className="px-4 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Employee ID</th>
+                        <th className="px-4 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Priority</th>
+                        <th className="px-4 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Pickup Location</th>
+                        <th className="px-4 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Time Window</th>
+                        <th className="px-4 py-3 text-[10px] font-label uppercase tracking-widest text-white/30">Sharing</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-label uppercase tracking-widest text-white/30">Baseline Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {paginatedEmployees.map((emp) => (
+                        <tr key={emp.id} className="hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 text-sm font-mono text-white/60">{emp.id}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-mono border ${
+                              emp.priority === 'High'
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                : emp.priority === 'Medium'
+                                ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                emp.priority === 'High' ? 'bg-red-400' : emp.priority === 'Medium' ? 'bg-yellow-400' : 'bg-blue-400'
+                              }`} />
+                              {emp.priority}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-mono text-white/40">{emp.pickupLocation}</td>
+                          <td className="px-4 py-3 text-sm font-mono text-white/40">{emp.timeWindowStart} – {emp.timeWindowEnd}</td>
+                          <td className="px-4 py-3 text-sm font-mono text-white/40">{emp.sharingPreference}</td>
+                          <td className="px-4 py-3 text-right text-sm font-medium text-primary">₹{emp.baselineCost || 150}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-xs font-mono text-white/30">
+                    Showing {currentPage * ROWS_PER_PAGE + 1}–{Math.min((currentPage + 1) * ROWS_PER_PAGE, filteredEmployees.length)} of {filteredEmployees.length}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={prevPage}
+                      disabled={currentPage === 0}
+                      className="p-1.5 bg-white/[0.02] border border-white/10 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-lg">chevron_left</span>
+                    </button>
+                    <span className="px-3 py-1 text-xs font-mono bg-white/[0.02] border border-white/10 text-white/40">
+                      {currentPage + 1} / {totalPages || 1}
+                    </span>
+                    <button
+                      onClick={nextPage}
+                      disabled={currentPage >= totalPages - 1}
+                      className="p-1.5 bg-white/[0.02] border border-white/10 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-lg">chevron_right</span>
+                    </button>
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-4 gap-4">
-                {(['Quick', 'Standard', 'Thorough', 'Maximum'] as const).map((mode) => (
+            )}
+          </motion.div>
+
+        </div>{/* end left column */}
+
+        {/* ── RIGHT COLUMN ── sticky optimization config ── */}
+        <div className="w-full lg:w-[460px] flex-shrink-0 lg:sticky lg:bottom-6 lg:self-end">
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="bg-panel-dark border border-white/10 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+              <h2 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">tune</span>
+                Optimization Settings
+              </h2>
+              <button
+                onClick={resetConfig}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-white/[0.02] hover:bg-white/5 border border-white/10 transition-colors text-white/40 hover:text-white"
+              >
+                <span className="material-symbols-outlined text-sm">restart_alt</span>
+                Reset
+              </button>
+            </div>
+
+            <div className="p-5 space-y-6">
+
+              {/* Distance Calculation Method */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Distance Method</p>
+                  <div className="relative group/info">
+                    <span className="material-symbols-outlined text-white/40 text-base cursor-help hover:text-white/60 transition-colors">info</span>
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-panel-dark border border-white/10 text-[10px] font-mono text-white/40 opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all duration-200 z-50 w-56 whitespace-normal">
+                      Haversine is faster but less accurate. Actual maps provide real road distances.
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white/10" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <button
-                    key={mode}
-                    onClick={() => setSolverDuration(mode)}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      solverDuration === mode
+                    onClick={() => setConfig({ ...config, distanceMethod: 'haversine' })}
+                    className={`p-3 border transition-all text-left ${
+                      config.distanceMethod === 'haversine'
                         ? 'border-primary bg-primary/10 text-white'
-                        : 'border-gray/30 text-gray hover:border-gray/50'
+                        : 'border-white/10 text-white/40 hover:border-white/20'
                     }`}
                   >
-                    <div className="font-bold mb-1">{mode}</div>
-                    <div className="text-xs">
-                      {mode === 'Quick' && '15 seconds'}
-                      {mode === 'Standard' && '30 seconds'}
-                      {mode === 'Thorough' && '1 minute'}
-                      {mode === 'Maximum' && '2 minutes'}
-                    </div>
+                    <div className="text-sm font-bold font-mono mb-0.5">Haversine</div>
+                    <div className="text-[11px] font-mono text-white/30">Geographic coords</div>
                   </button>
-                ))}
+                  <button
+                    onClick={() => setConfig({ ...config, distanceMethod: 'actual_maps' })}
+                    className={`p-3 border transition-all text-left ${
+                      config.distanceMethod === 'actual_maps'
+                        ? 'border-primary bg-primary/10 text-white'
+                        : 'border-white/10 text-white/40 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="text-sm font-bold font-mono mb-0.5">Map Routes</div>
+                    <div className="text-[11px] font-mono text-white/30">Real road distances</div>
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>
-        </motion.div>
 
-        {/* Action Footer */}
-        <div className="flex justify-between">
-          <button 
-            onClick={() => navigate('/upload')} 
-            className="bg-dark-700 hover:bg-dark-600 text-white text-base font-semibold px-6 py-3 rounded-lg transition-all duration-300 shadow-float hover:shadow-float-lg"
-          >
-            ← Back to Upload
-          </button>
-          <button 
-            onClick={handleRunOptimization} 
-            className="bg-primary hover:bg-primary-light text-dark text-base font-bold px-6 py-3 rounded-lg transition-all duration-300 shadow-float"
-          >
-            Run Optimization ({solverDuration === 'Quick' ? '15s' : solverDuration === 'Standard' ? '30s' : solverDuration === 'Thorough' ? '1m' : '2m'}) →
-          </button>
-        </div>
+              {/* Cost vs Time Slider */}
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/40 mb-3">Cost vs Time Priority</p>
+                <div className="relative">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-primary" />
+                      <span className="text-xs font-mono text-white/40">Cost: {config.costWeight.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-white/40">Time: {config.timeWeight.toFixed(2)}</span>
+                      <div className="w-2.5 h-2.5 bg-white" />
+                    </div>
+                  </div>
+                  <div className="relative h-6 overflow-hidden">
+                    <div className="absolute inset-0 flex">
+                      <div className="bg-primary/40" style={{ width: `${config.costWeight * 100}%` }} />
+                      <div className="bg-white/20" style={{ width: `${config.timeWeight * 100}%` }} />
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={config.costWeight}
+                      onChange={(e) => updateCostWeight(parseFloat(e.target.value))}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <div
+                      className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none z-20"
+                      style={{ left: `calc(${config.costWeight * 100}% - 8px)` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] font-mono text-white/30 mt-1">
+                    <span>Cost Focus</span>
+                    <span>Balanced</span>
+                    <span>Time Focus</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Priority Delay Limits */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Priority Delay Limits</p>
+                  <div className="relative group/info">
+                    <span className="material-symbols-outlined text-white/40 text-base cursor-help hover:text-white/60 transition-colors">info</span>
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-panel-dark border border-white/10 text-[10px] font-mono text-white/40 opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all duration-200 z-50 w-56 whitespace-normal">
+                      Maximum delay allowed for each priority level before an employee is considered late.
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white/10" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5].map((p) => (
+                    <div key={p} className="bg-white/[0.02] p-2.5 border border-white/10">
+                      <label className="block text-[10px] font-mono text-white/30 mb-1 text-center">P{p}</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="1"
+                          max="60"
+                          value={config.priorityDelays[p]}
+                          onChange={(e) => updatePriorityDelay(p, parseInt(e.target.value) || 0)}
+                          className="w-full px-1.5 py-1.5 bg-transparent border border-white/10 rounded-sm text-center text-sm font-mono focus:border-primary focus:outline-none text-white"
+                        />
+                      </div>
+                      <div className="text-[9px] font-mono text-white/20 text-center mt-0.5">min</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Solver Duration */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Solver Duration</p>
+                  <div className="relative group/info">
+                    <span className="material-symbols-outlined text-white/40 text-base cursor-help hover:text-white/60 transition-colors">info</span>
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-panel-dark border border-white/10 text-[10px] font-mono text-white/40 opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all duration-200 z-50 w-56 whitespace-normal">
+                      Longer runtime lets the solver explore more solutions for better savings.
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white/10" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: 'Quick' as const, time: '15s' },
+                    { key: 'Standard' as const, time: '30s' },
+                    { key: 'Thorough' as const, time: '1m' },
+                    { key: 'Maximum' as const, time: '2m' },
+                  ]).map(({ key, time }) => (
+                    <button
+                      key={key}
+                      onClick={() => setSolverDuration(key)}
+                      className={`p-3 border transition-all text-left ${
+                        solverDuration === key
+                          ? 'border-primary bg-primary/10 text-white'
+                          : 'border-white/10 text-white/40 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="text-sm font-bold font-mono">{key}</div>
+                      <div className="text-[11px] font-mono text-white/30">{time}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Run & Back actions */}
+            <div className="p-5 border-t border-white/10 space-y-3">
+              <button
+                onClick={handleRunOptimization}
+                className="w-full px-8 py-3 bg-primary text-background-dark font-label font-bold tracking-widest uppercase glow-amber hover:bg-primary/90 transition-all flex items-center justify-center gap-2 text-sm"
+              >
+                <span className="material-symbols-outlined text-lg">rocket_launch</span>
+                Run Optimization ({solverDuration === 'Quick' ? '15s' : solverDuration === 'Standard' ? '30s' : solverDuration === 'Thorough' ? '1m' : '2m'})
+              </button>
+              <button
+                onClick={() => navigate('/upload')}
+                className="w-full px-6 py-3 border border-white/10 bg-white/[0.02] hover:bg-white/5 text-white/50 font-label font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 text-sm"
+              >
+                <span className="material-symbols-outlined text-lg">arrow_back</span>
+                Back to Upload
+              </button>
+            </div>
+          </motion.div>
+        </div>{/* end right column */}
+
       </div>
     </div>
   );

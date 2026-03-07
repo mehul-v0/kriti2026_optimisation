@@ -1,12 +1,10 @@
 import { Link } from 'react-router-dom';
 import { motion, useInView } from 'framer-motion';
 import { useApp } from '../context/AppContext';
-import {
-  Users, Search, CheckCircle, XCircle, Clock, 
-  DollarSign, AlertTriangle, UserCheck, Star,
-  ChevronRight, Navigation, Info, TrendingUp, Activity,
-  Gauge, Target, Truck
-} from 'lucide-react';
+// Material Symbols icon helper 
+const MIcon = ({ name, className = '' }: { name: string; className?: string }) => (
+  <span className={`material-symbols-outlined ${className}`}>{name}</span>
+);
 import { useState, useMemo, useRef } from 'react';
 import { formatNumber } from '../utils/helpers';
 import { 
@@ -25,7 +23,7 @@ function AnimatedChart({ children, delay = 0 }: { children: React.ReactNode, del
       initial={{ opacity: 0, y: 30 }}
       animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
       transition={{ duration: 0.5, delay }}
-      className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6"
+      className="bg-panel-dark border border-white/10 p-6"
     >
       {children}
     </motion.div>
@@ -49,11 +47,11 @@ export default function EmployeeAssignments() {
 
   if (!currentResult) {
     return (
-      <div className="min-h-screen bg-dark p-6">
-        <div className="max-w-7xl mx-auto">
+      <div className="min-h-screen p-6">
+        <div className="max-w-[1400px] mx-auto">
           <div className="text-center py-20">
             <h1 className="text-3xl font-bold mb-4">Employee Assignments</h1>
-            <p className="text-gray">No optimization results available</p>
+            <p className="text-white/30 font-mono text-xs">No optimization results available</p>
             <Link 
               to="/upload" 
               className="btn-primary inline-block mt-6"
@@ -259,11 +257,11 @@ export default function EmployeeAssignments() {
     return { status: 'Issue', color: 'text-red-400', bg: 'bg-red-500/20' };
   };
 
-  const cardClass = "bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 shadow-float hover:shadow-float-lg transition-all duration-300 ";
+  const cardClass = "bg-panel-dark border border-white/10 transition-all duration-300 ";
 
   return (
-    <div className="min-h-screen bg-dark p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen p-6 lg:p-8">
+      <div className="max-w-[1400px] mx-auto space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -271,114 +269,128 @@ export default function EmployeeAssignments() {
           className="flex items-center justify-between"
         >
           <div>
-            <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-black uppercase tracking-tight text-white">
               Employee Assignments
             </h1>
-            <p className="text-gray mt-1">Complete traceability for every employee journey</p>
+            <p className="text-xs font-mono text-white/30 mt-1">Complete traceability for every employee journey</p>
           </div>
         </motion.div>
 
-        {/* Fleet-Style Summary Section */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6 mb-2">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 text-center">
-            {/* Employees Assigned */}
-            <div>
-              <UserCheck className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-sm text-primary">Assigned</p>
-                <div className="group relative">
-                  <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-48 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    Employees assigned to vehicles out of total employees
-                  </div>
+        {/* Fleet-Style Metrics Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-2">
+          {/* Employees Assigned */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+            className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">person_check</span>
+              <div className="group relative">
+                <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
+                <div className="absolute right-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  Employees assigned to vehicles out of total employees
                 </div>
               </div>
-              <p className="text-3xl font-bold text-primary">
-                {metrics.assignedCount}/{metrics.totalEmployees}
-              </p>
             </div>
+            <div>
+              <p className="text-[11px] font-label uppercase tracking-widest text-white/30">Assigned</p>
+              <h3 className="text-2xl font-bold font-mono text-white mt-1">{metrics.assignedCount}/{metrics.totalEmployees}</h3>
+            </div>
+          </motion.div>
 
-            {/* Commute Efficiency Ratio */}
-            <div>
-              <Activity className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-sm text-primary">CER</p>
-                <div className="group relative">
-                  <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    <div className="font-semibold text-primary mb-1">Commute Efficiency Ratio</div>
-                    Direct drive time ÷ Actual time in vehicle. 1.0 = taxi-style direct ride.
-                  </div>
+          {/* CER */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }}
+            className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">monitoring</span>
+              <div className="group relative">
+                <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
+                <div className="absolute right-0 top-full mt-2 w-56 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  <span className="font-semibold text-primary">Commute Efficiency Ratio</span><br/>
+                  Direct drive time ÷ Actual time in vehicle. 1.0 = taxi-style direct ride.
                 </div>
               </div>
-              <p className="text-3xl font-bold text-primary">{metrics.commuteEfficiencyRatio.toFixed(2)}</p>
             </div>
+            <div>
+              <p className="text-[11px] font-label uppercase tracking-widest text-white/30">CER</p>
+              <h3 className="text-2xl font-bold font-mono text-white mt-1">{metrics.commuteEfficiencyRatio.toFixed(2)}</h3>
+            </div>
+          </motion.div>
 
-            {/* 95th Percentile Commute */}
-            <div>
-              <Clock className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-sm text-primary">P95 Commute</p>
-                <div className="group relative">
-                  <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    <div className="font-semibold text-primary mb-1">95th Percentile Max Commute</div>
-                    95% of staff commute in under this time. Shows worst reasonable case.
-                  </div>
+          {/* P95 Commute */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
+            className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">schedule</span>
+              <div className="group relative">
+                <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
+                <div className="absolute right-0 top-full mt-2 w-56 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  <span className="font-semibold text-primary">95th Percentile Max Commute</span><br/>
+                  95% of staff commute in under this time. Shows worst reasonable case.
                 </div>
               </div>
-              <p className="text-3xl font-bold text-primary">{metrics.p95Commute}m</p>
             </div>
+            <div>
+              <p className="text-[11px] font-label uppercase tracking-widest text-white/30">P95 Commute</p>
+              <h3 className="text-2xl font-bold font-mono text-white mt-1">{metrics.p95Commute}m</h3>
+            </div>
+          </motion.div>
 
-            {/* Detour Consumption */}
-            <div>
-              <TrendingUp className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-sm text-primary">Detour Used</p>
-                <div className="group relative">
-                  <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    <div className="font-semibold text-primary mb-1">Detour Tolerance Consumption</div>
-                    % of allowable detour time used. Lower = better quality of life.
-                  </div>
+          {/* Detour Used */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }}
+            className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">trending_up</span>
+              <div className="group relative">
+                <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
+                <div className="absolute right-0 top-full mt-2 w-56 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  <span className="font-semibold text-primary">Detour Tolerance Consumption</span><br/>
+                  % of allowable detour time used. Lower = better quality of life.
                 </div>
               </div>
-              <p className="text-3xl font-bold text-primary">{metrics.detourConsumption.toFixed(0)}%</p>
             </div>
+            <div>
+              <p className="text-[11px] font-label uppercase tracking-widest text-white/30">Detour Used</p>
+              <h3 className="text-2xl font-bold font-mono text-white mt-1">{metrics.detourConsumption.toFixed(0)}%</h3>
+            </div>
+          </motion.div>
 
-            {/* Priority Score */}
-            <div>
-              <Star className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-sm text-primary">Priority Score</p>
-                <div className="group relative">
-                  <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    <div className="font-semibold text-primary mb-1">Priority Fulfillment Score</div>
-                    Score 0-100 based on high priority employee constraint satisfaction.
-                  </div>
+          {/* Priority Score */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}
+            className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">star</span>
+              <div className="group relative">
+                <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
+                <div className="absolute right-0 top-full mt-2 w-56 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  <span className="font-semibold text-primary">Priority Fulfillment Score</span><br/>
+                  Score 0-100 based on high priority employee constraint satisfaction.
                 </div>
               </div>
-              <p className="text-3xl font-bold text-primary">{metrics.priorityScore}</p>
             </div>
+            <div>
+              <p className="text-[11px] font-label uppercase tracking-widest text-white/30">Priority Score</p>
+              <h3 className="text-2xl font-bold font-mono text-white mt-1">{metrics.priorityScore}</h3>
+            </div>
+          </motion.div>
 
-            {/* Time Compliance */}
-            <div>
-              <Activity className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-sm text-primary">Time Compliance</p>
-                <div className="group relative">
-                  <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    <div className="font-semibold text-primary mb-1">Time Window Compliance</div>
-                    % of employees arriving within their preferred time window.
-                  </div>
+          {/* Time Compliance */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.25 }}
+            className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">verified</span>
+              <div className="group relative">
+                <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
+                <div className="absolute right-0 top-full mt-2 w-56 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  <span className="font-semibold text-primary">Time Window Compliance</span><br/>
+                  % of employees arriving within their preferred time window.
                 </div>
               </div>
-              <p className="text-3xl font-bold text-primary">{metrics.timeWindowRate.toFixed(0)}%</p>
             </div>
-          </div>
-        </motion.div>
+            <div>
+              <p className="text-[11px] font-label uppercase tracking-widest text-white/30">Time Compliance</p>
+              <h3 className="text-2xl font-bold font-mono text-white mt-1">{metrics.timeWindowRate.toFixed(0)}%</h3>
+            </div>
+          </motion.div>
+        </div>
 
         {/* Arrival Wave Chart + Distribution Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
@@ -386,12 +398,12 @@ export default function EmployeeAssignments() {
           <AnimatedChart delay={0.1}>
             <div className="lg:col-span-2">
               <div className="flex items-center gap-2 mb-4">
-                <Activity className="w-5 h-5 text-primary-muted" />
-                <h3 className="font-bold text-lg">The Arrival Wave</h3>
+                <MIcon name="monitoring" className="text-xl text-primary/60" />
+                <h3 className="font-label font-bold text-sm uppercase tracking-widest text-white/70">The Arrival Wave</h3>
                 <div className="group relative ml-auto">
-                  <Info className="w-4 h-4 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                  <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                    <p className="font-semibold text-primary mb-1">The Arrival Wave</p>
+                  <MIcon name="info" className="text-base text-white/20 hover:text-primary transition-colors cursor-help" />
+                  <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                    <p className="font-label font-bold text-primary/80 mb-1 text-\[10px\] uppercase tracking-widest">The Arrival Wave</p>
                     <p>Employee arrivals in 5-minute buckets - helps Facility Management plan elevator traffic.</p>
                   </div>
                 </div>
@@ -399,7 +411,7 @@ export default function EmployeeAssignments() {
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={metrics.arrivalWaveData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" opacity={0.2} vertical={false} />
                     <XAxis 
                       dataKey="time"
                       axisLine={false}
@@ -418,10 +430,7 @@ export default function EmployeeAssignments() {
                     />
                     <Tooltip 
                       contentStyle={{ 
-                        backgroundColor: '#1F2937', 
-                        border: '1px solid #374151',
-                        borderRadius: '8px',
-                        fontSize: '11px'
+                        backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '11px', fontFamily: 'JetBrains Mono'
                       }}
                       itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
                       labelStyle={{ color: '#ffffff' }}
@@ -429,8 +438,8 @@ export default function EmployeeAssignments() {
                     />
                     <Bar 
                       dataKey="count" 
-                      fill="#3B82F6" 
-                      radius={[4, 4, 0, 0]}
+                      fill="#FFB800" 
+                      radius={[0, 0, 0, 0]}
                       animationDuration={1500}
                       animationBegin={0}
                     />
@@ -443,12 +452,12 @@ export default function EmployeeAssignments() {
           {/* Priority Distribution Bar Chart */}
           <AnimatedChart delay={0.2}>
             <div className="flex items-center gap-2 mb-4">
-              <Star className="w-5 h-5 text-primary-muted" />
-              <h3 className="font-bold text-lg">Priority Distribution</h3>
+              <MIcon name="star" className="text-xl text-primary/60" />
+              <h3 className="font-label font-bold text-sm uppercase tracking-widest text-white/70">Priority Distribution</h3>
               <div className="group relative ml-auto">
-                <Info className="w-4 h-4 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                  <p className="font-semibold text-primary mb-1">Priority Distribution</p>
+                <MIcon name="info" className="text-base text-white/20 hover:text-primary transition-colors cursor-help" />
+                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                  <p className="font-label font-bold text-primary/80 mb-1 text-\[10px\] uppercase tracking-widest">Priority Distribution</p>
                   <p>Distribution of employees by the level (High, Medium, Low).</p>
                 </div>
               </div>
@@ -457,18 +466,18 @@ export default function EmployeeAssignments() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart 
                   data={[
-                    { name: 'High', value: metrics.priorityDist.High, fill: '#b91c1c' },
-                    { name: 'Medium', value: metrics.priorityDist.Medium, fill: '#a16207' },
-                    { name: 'Low', value: metrics.priorityDist.Low, fill: '#1e40af' }
+                    { name: 'High', value: metrics.priorityDist.High, fill: '#FFB800' },
+                    { name: 'Medium', value: metrics.priorityDist.Medium, fill: '#CC9300' },
+                    { name: 'Low', value: metrics.priorityDist.Low, fill: '#997000' }
                   ]} 
                   layout="vertical"
                   margin={{ top: 5, right: 5, left: 5, bottom: 0 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" opacity={0.2} horizontal={false} />
                   <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 10 }} />
                   <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} width={45} />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '11px' }}
+                    contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '11px', fontFamily: 'JetBrains Mono' }}
                     itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
                     labelStyle={{ color: '#ffffff' }}
                     formatter={(value, _name, props) => {
@@ -476,11 +485,11 @@ export default function EmployeeAssignments() {
                       return [`${value} employees`, <span key="label" style={{ color: fillColor }}>Count</span>];
                     }}
                   />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} animationDuration={1500} animationBegin={0}>
+                  <Bar dataKey="value" radius={[0, 0, 0, 0]} animationDuration={1500} animationBegin={0}>
                     {[
-                      { name: 'High', fill: '#b91c1c' },
-                      { name: 'Medium', fill: '#a16207' },
-                      { name: 'Low', fill: '#1e40af' }
+                      { name: 'High', fill: '#FFB800' },
+                      { name: 'Medium', fill: '#CC9300' },
+                      { name: 'Low', fill: '#997000' }
                     ].map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
@@ -493,12 +502,12 @@ export default function EmployeeAssignments() {
           {/* Ride Sharing Distribution Bar Chart */}
           <AnimatedChart delay={0.25}>
             <div className="flex items-center gap-2 mb-4">
-              <Users className="w-5 h-5 text-primary-muted" />
-              <h3 className="font-bold text-lg">Ride Sharing</h3>
+              <MIcon name="groups" className="text-xl text-primary/60" />
+              <h3 className="font-label font-bold text-sm uppercase tracking-widest text-white/70">Ride Sharing</h3>
               <div className="group relative ml-auto">
-                <Info className="w-4 h-4 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                  <p className="font-semibold text-primary mb-1">Ride Sharing</p>
+                <MIcon name="info" className="text-base text-white/20 hover:text-primary transition-colors cursor-help" />
+                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                  <p className="font-label font-bold text-primary/80 mb-1 text-\[10px\] uppercase tracking-widest">Ride Sharing</p>
                   <p>Distribution of solo rides vs. shared rides (+1 or +2 passengers).</p>
                 </div>
               </div>
@@ -507,24 +516,24 @@ export default function EmployeeAssignments() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart 
                   data={[
-                    { name: 'Solo', value: metrics.sharingCounts.Single, fill: '#8B5CF6' },
-                    { name: 'Shared +1', value: metrics.sharingCounts.Double, fill: '#10B981' },
-                    { name: 'Shared +2', value: metrics.sharingCounts.Triple, fill: '#F59E0B' }
+                    { name: 'Solo', value: metrics.sharingCounts.Single, fill: '#FFB800' },
+                    { name: 'Shared +1', value: metrics.sharingCounts.Double, fill: '#CC9300' },
+                    { name: 'Shared +2', value: metrics.sharingCounts.Triple, fill: '#997000' }
                   ]} 
                   layout="vertical"
                   margin={{ top: 5, right: 5, left: 5, bottom: 0 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" opacity={0.2} horizontal={false} />
                   <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 10 }} />
                   <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} width={55} />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '11px' }}
+                    contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '11px', fontFamily: 'JetBrains Mono' }}
                     itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
                     labelStyle={{ color: '#ffffff' }}
                     formatter={(value) => [`${value} rides`, 'Count']}
                   />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} animationDuration={1500} animationBegin={0}>
-                    {['#8B5CF6', '#10B981', '#F59E0B'].map((color, index) => (
+                  <Bar dataKey="value" radius={[0, 0, 0, 0]} animationDuration={1500} animationBegin={0}>
+                    {['#FFB800', '#CC9300', '#997000'].map((color, index) => (
                       <Cell key={`cell-${index}`} fill={color} />
                     ))}
                   </Bar>
@@ -537,14 +546,14 @@ export default function EmployeeAssignments() {
         {/* Advanced Analytics Row - Pain Distribution and Arrival Gap */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Pain Distribution Histogram */}
-          <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6">
+          <div className="bg-panel-dark border border-white/10 p-6">
             <div className="flex items-center gap-2 mb-4">
-              <Clock className="w-5 h-5 text-primary-muted" />
-              <h3 className="font-bold text-lg">Pain Distribution</h3>
+              <MIcon name="schedule" className="text-xl text-primary/60" />
+              <h3 className="font-label font-bold text-sm uppercase tracking-widest text-white/70">Pain Distribution</h3>
               <div className="group relative ml-auto">
-                <Info className="w-4 h-4 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                  <p className="font-semibold text-primary mb-1">Pain Distribution</p>
+                <MIcon name="info" className="text-base text-white/20 hover:text-primary transition-colors cursor-help" />
+                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                  <p className="font-label font-bold text-primary/80 mb-1 text-\[10px\] uppercase tracking-widest">Pain Distribution</p>
                   <p>Additional minutes added to commute. Large bar at 0-5m indicates the algorithm is working well.</p>
                 </div>
               </div>
@@ -590,12 +599,12 @@ export default function EmployeeAssignments() {
                     <AreaChart data={delayData} margin={{ top: 5, right: 5, left: 5, bottom: 15 }}>
                       <defs>
                         <linearGradient id="painGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                          <stop offset="50%" stopColor="#3B82F6" stopOpacity={0.3}/>
-                          <stop offset="100%" stopColor="#3B82F6" stopOpacity={0}/>
+                          <stop offset="0%" stopColor="#FFB800" stopOpacity={0.8}/>
+                          <stop offset="50%" stopColor="#FFB800" stopOpacity={0.3}/>
+                          <stop offset="100%" stopColor="#FFB800" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" opacity={0.2} />
                       <XAxis 
                         dataKey="minute" 
                         axisLine={false} 
@@ -611,7 +620,7 @@ export default function EmployeeAssignments() {
                         label={{ value: 'Employees', angle: -90, position: 'insideLeft', fill: '#9CA3AF', fontSize: 10 }}
                       />
                       <Tooltip 
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '10px' }}
+                        contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '10px', fontFamily: 'JetBrains Mono' }}
                         itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
                         labelStyle={{ color: '#ffffff' }}
                         formatter={(value, name) => [`${value} employees`, `${name === 'count' ? 'Delay' : name}`]}
@@ -620,7 +629,7 @@ export default function EmployeeAssignments() {
                       <Area
                         type="monotone" 
                         dataKey="count" 
-                        stroke="#3B82F6" 
+                        stroke="#FFB800" 
                         strokeWidth={3}
                         fill="url(#painGradient)"
                         dot={false}
@@ -635,14 +644,14 @@ export default function EmployeeAssignments() {
           </div>
 
           {/* Arrival Gap Analysis */}
-          <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6">
+          <div className="bg-panel-dark border border-white/10 p-6">
             <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-5 h-5 text-primary-muted" />
-              <h3 className="font-bold text-lg">Arrival Gap Analysis</h3>
+              <MIcon name="trending_up" className="text-xl text-primary/60" />
+              <h3 className="font-label font-bold text-sm uppercase tracking-widest text-white/70">Arrival Gap Analysis</h3>
               <div className="group relative ml-auto">
-                <Info className="w-4 h-4 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
-                  <p className="font-semibold text-primary mb-1">Arrival Gap Analysis</p>
+                <MIcon name="info" className="text-base text-white/20 hover:text-primary transition-colors cursor-help" />
+                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                  <p className="font-label font-bold text-primary/80 mb-1 text-\[10px\] uppercase tracking-widest">Arrival Gap Analysis</p>
                   <p>Gap between earliest and actual arrival times. Smaller gaps indicate more efficient scheduling.</p>
                 </div>
               </div>
@@ -696,12 +705,12 @@ export default function EmployeeAssignments() {
                     <AreaChart data={gapData} margin={{ top: 5, right: 5, left: 5, bottom: 15 }}>
                       <defs>
                         <linearGradient id="gapGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                          <stop offset="50%" stopColor="#3B82F6" stopOpacity={0.3}/>
-                          <stop offset="100%" stopColor="#3B82F6" stopOpacity={0}/>
+                          <stop offset="0%" stopColor="#FFB800" stopOpacity={0.8}/>
+                          <stop offset="50%" stopColor="#FFB800" stopOpacity={0.3}/>
+                          <stop offset="100%" stopColor="#FFB800" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" opacity={0.2} />
                       <XAxis 
                         dataKey="minute" 
                         axisLine={false} 
@@ -716,7 +725,7 @@ export default function EmployeeAssignments() {
                         width={30}
                       />
                       <Tooltip 
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '10px' }}
+                        contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '10px', fontFamily: 'JetBrains Mono' }}
                         itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
                         labelStyle={{ color: '#ffffff' }}
                         formatter={(value, name) => [`${value} employees`, `${name === 'count' ? 'Gap' : name}`]}
@@ -725,7 +734,7 @@ export default function EmployeeAssignments() {
                       <Area
                         type="monotone" 
                         dataKey="count" 
-                        stroke="#3B82F6" 
+                        stroke="#FFB800" 
                         strokeWidth={3}
                         fill="url(#gapGradient)"
                         dot={false}
@@ -748,41 +757,43 @@ export default function EmployeeAssignments() {
           className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           {/* Left Panel - Employee List */}
-          <div className={`${cardClass} p-4 lg:col-span-1 flex flex-col max-h-[800px]`}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg flex items-center gap-2">
-                <Users className="w-5 h-5 text-primary" />
-                Employees
-              </h3>
-              <span className="text-xs text-gray px-2 py-1 bg-dark-700 rounded-lg">{filteredEmployees.length} found</span>
-            </div>
-
-            {/* Search and Filter */}
-            <div className="space-y-2 mb-4">
-              <div className="relative">
-                <Search className="w-4 h-4 text-gray absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search by ID or location..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-dark-700 border border-gray/20 rounded-lg text-sm text-white placeholder-gray focus:outline-none focus:border-primary/50"
-                />
+          <div className={`${cardClass} p-0 lg:col-span-1 flex flex-col lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)]`}>
+            <div className="sticky top-0 z-10 bg-panel-dark p-4 pb-2 border-b border-white/10">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <MIcon name="groups" className="text-xl text-primary" />
+                  Employees
+                </h3>
+                <span className="text-[9px] font-mono text-white/30 px-2 py-0.5 bg-white/[0.04] border border-white/10">{filteredEmployees.length} found</span>
               </div>
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="w-full px-3 py-2 bg-dark-700 border border-gray/20 rounded-lg text-sm text-white focus:outline-none focus:border-primary/50"
-              >
-                <option value="All">All Priorities</option>
-                <option value="High">High Priority</option>
-                <option value="Medium">Medium Priority</option>
-                <option value="Low">Low Priority</option>
-              </select>
+
+              {/* Search and Filter */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <MIcon name="search" className="text-lg text-white/30 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by ID or location..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-white/[0.02] border border-white/10 text-xs font-mono text-white placeholder-white/20 focus:outline-none focus:border-primary/40"
+                  />
+                </div>
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#0D1117] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-primary/40"
+                >
+                  <option value="All" className="bg-[#0D1117] text-white">All Priorities</option>
+                  <option value="High" className="bg-[#0D1117] text-white">High Priority</option>
+                  <option value="Medium" className="bg-[#0D1117] text-white">Medium Priority</option>
+                  <option value="Low" className="bg-[#0D1117] text-white">Low Priority</option>
+                </select>
+              </div>
             </div>
 
             {/* Employee List */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin pr-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5 p-4 pt-2 pr-2" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
               {filteredEmployees.map((emp) => {
                 const isSelected = selectedEmployeeId === emp.id;
                 
@@ -790,10 +801,10 @@ export default function EmployeeAssignments() {
                   <div
                     key={emp.id}
                     onClick={() => setSelectedEmployeeId(emp.id)}
-                    className={`p-3 rounded-lg cursor-pointer transition-all ${
+                    className={`p-3 cursor-pointer transition-all ${
                       isSelected 
-                        ? 'bg-primary/20 border border-primary/40' 
-                        : 'bg-dark-700/40 border border-transparent hover:bg-dark-600/50 hover:border-gray/20'
+                        ? 'bg-primary/10 border border-primary/30' 
+                        : 'bg-white/[0.02] border border-transparent hover:bg-white/[0.04] hover:border-white/10'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -803,11 +814,11 @@ export default function EmployeeAssignments() {
                           emp.priority === 'Medium' ? 'bg-yellow-400' : 'bg-blue-400'
                         }`} />
                         <div className="min-w-0">
-                          <p className="font-medium text-sm truncate">{emp.id}</p>
-                          <p className="text-xs text-gray/60 truncate">{emp.pickupLocation.substring(0, 25)}...</p>
+                          <p className="font-mono font-medium text-sm truncate text-white/90">{emp.id}</p>
+                          <p className="text-[10px] font-mono text-white/30 truncate">{emp.pickupLocation.substring(0, 25)}...</p>
                         </div>
                       </div>
-                      <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-primary' : 'text-gray/40'}`} />
+                      <MIcon name="chevron_right" className={`text-lg flex-shrink-0 ${isSelected ? 'text-primary' : 'text-white/20'}`} />
                     </div>
                   </div>
                 );
@@ -816,24 +827,24 @@ export default function EmployeeAssignments() {
           </div>
 
           {/* Right Panel - Employee Details (Redesigned) */}
-          <div className={`${cardClass} p-6 lg:col-span-2 flex flex-col`}>
+          <div className={`${cardClass} p-0 lg:col-span-2 flex flex-col`}>
             {selectedEmployee && selectedAssignment ? (
-              <div className="space-y-4">
+              <div className="p-6 space-y-4">
                 {/* Header */}
-                <div className="flex items-center justify-between pb-4 border-b border-gray/10">
+                <div className="flex items-center justify-between pb-4 border-b border-white/10">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
-                      <Users className="w-6 h-6 text-primary" />
+                    <div className="w-12 h-12 bg-primary/10 border border-primary/20 flex items-center justify-center">
+                      <MIcon name="groups" className="text-2xl text-primary" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-bold">{selectedEmployee.id}</h3>
-                      <p className="text-sm text-gray truncate max-w-[300px]">{selectedEmployee.pickupLocation}</p>
+                      <h3 className="text-xl font-mono font-bold text-white">{selectedEmployee.id}</h3>
+                      <p className="text-xs font-mono text-white/30 truncate max-w-[300px]">{selectedEmployee.pickupLocation}</p>
                     </div>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    selectedEmployee.priority === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                    selectedEmployee.priority === 'Medium' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-                    'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                  <span className={`px-2 py-0.5 text-[9px] font-mono font-bold uppercase ${
+                    selectedEmployee.priority === 'High' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                    selectedEmployee.priority === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                    'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                   }`}>
                     {selectedEmployee.priority} Priority
                   </span>
@@ -843,16 +854,16 @@ export default function EmployeeAssignments() {
                 {(() => {
                   const savings = (selectedEmployee.baselineCost || 150) - (selectedTrip ? selectedTrip.cost / selectedTrip.employees.length : 100);
                   return (
-                    <div className="bg-gradient-to-r from-primary/20 to-primary/5 rounded-xl p-4 border border-primary/30">
+                    <div className="bg-primary/5 p-4 border border-primary/20 border-t-2 border-t-primary">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <DollarSign className="w-8 h-8 text-primary" />
+                          <MIcon name="payments" className="text-3xl text-primary" />
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="text-xs text-gray">Individual Savings Contribution</p>
+                              <p className="text-xs text-white/30 font-mono text-xs">Individual Savings Contribution</p>
                               <div className="group relative">
-                                <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                                <div className="absolute left-0 top-full mt-2 w-56 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                                <MIcon name="info" className="text-sm text-white/20 hover:text-primary transition-colors cursor-help" />
+                                <div className="absolute left-0 top-full mt-2 w-56 p-2 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
                                   By riding in this pool, you saved the company this amount compared to baseline individual cost.
                                 </div>
                               </div>
@@ -875,14 +886,14 @@ export default function EmployeeAssignments() {
                     const actualDist = selectedTrip?.distance || directDist;
                     const circuity = (actualDist / directDist).toFixed(2);
                     return (
-                      <div className="relative bg-dark-700/50 rounded-xl p-4 flex flex-col border border-gray/5">
-                        <Gauge className="absolute right-3 bottom-3 w-16 h-16 text-primary/5" />
+                      <div className="relative bg-white/[0.02] p-4 flex flex-col border border-white/10">
+                        <MIcon name="speed" className="absolute right-3 bottom-3 text-6xl text-primary/5" />
                         <div className="relative z-10 flex flex-col h-full">
                           <div className="flex items-center gap-2">
                             <p className="text-xs text-white/80">Circuity Index</p>
                             <div className="group relative">
-                              <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                              <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                              <MIcon name="info" className="text-sm text-white/20 hover:text-primary transition-colors cursor-help" />
+                              <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
                                 Actual distance / Direct distance. Lower is better.
                               </div>
                             </div>
@@ -900,14 +911,14 @@ export default function EmployeeAssignments() {
                     const position = myIndex >= 0 ? myIndex + 1 : 1;
                     const total = tripEmployees.length || 1;
                     return (
-                      <div className="relative bg-dark-700/50 rounded-xl p-4 flex flex-col border border-gray/5">
-                        <Target className="absolute right-3 bottom-3 w-16 h-16 text-primary/5" />
+                      <div className="relative bg-white/[0.02] p-4 flex flex-col border border-white/10">
+                        <MIcon name="target" className="absolute right-3 bottom-3 text-6xl text-primary/5" />
                         <div className="relative z-10 flex flex-col h-full">
                           <div className="flex items-center gap-2">
                             <p className="text-xs text-white/80">Pickup Slot</p>
                             <div className="group relative">
-                              <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                              <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                              <MIcon name="info" className="text-sm text-white/20 hover:text-primary transition-colors cursor-help" />
+                              <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
                                 Your pickup sequence position in this trip route.
                               </div>
                             </div>
@@ -927,14 +938,14 @@ export default function EmployeeAssignments() {
                       duration = (dropoff[0] * 60 + dropoff[1]) - (pickup[0] * 60 + pickup[1]);
                     }
                     return (
-                      <div className="relative bg-dark-700/50 rounded-xl p-4 flex flex-col border border-gray/5">
-                        <Clock className="absolute right-3 bottom-3 w-16 h-16 text-primary/5" />
+                      <div className="relative bg-white/[0.02] p-4 flex flex-col border border-white/10">
+                        <MIcon name="schedule" className="absolute right-3 bottom-3 text-6xl text-primary/5" />
                         <div className="relative z-10 flex flex-col h-full">
                           <div className="flex items-center gap-2">
                             <p className="text-xs text-white/80">Commute Time</p>
                             <div className="group relative">
-                              <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                              <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                              <MIcon name="info" className="text-sm text-white/20 hover:text-primary transition-colors cursor-help" />
+                              <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
                                 Total time from pickup to dropoff at office.
                               </div>
                             </div>
@@ -946,14 +957,14 @@ export default function EmployeeAssignments() {
                   })()}
 
                   {/* Trip Number */}
-                  <div className="relative bg-dark-700/50 rounded-xl p-4 flex flex-col border border-gray/5">
-                    <Truck className="absolute right-3 bottom-3 w-16 h-16 text-primary/5" />
+                  <div className="relative bg-white/[0.02] p-4 flex flex-col border border-white/10">
+                    <MIcon name="local_shipping" className="absolute right-3 bottom-3 text-6xl text-primary/5" />
                     <div className="relative z-10 flex flex-col h-full">
                       <div className="flex items-center gap-2">
                         <p className="text-xs text-white/80">Trip Number</p>
                         <div className="group relative">
-                          <Info className="w-3 h-3 text-gray/40 hover:text-primary transition-colors cursor-help" />
-                          <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-dark-700 border border-gray/20 rounded-lg text-xs text-gray/90 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
+                          <MIcon name="info" className="text-sm text-white/20 hover:text-primary transition-colors cursor-help" />
+                          <div className="absolute left-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none">
                             Trip sequence number for vehicle {selectedAssignment.vehicleId}.
                           </div>
                         </div>
@@ -966,34 +977,34 @@ export default function EmployeeAssignments() {
                 {/* Trip & Location Details */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Journey Info */}
-                  <div className="bg-dark-700/40 rounded-xl p-4 space-y-3">
-                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <Navigation className="w-4 h-4" />
+                  <div className="bg-white/[0.02] p-4 border border-white/10 space-y-3">
+                    <h4 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
+                      <MIcon name="navigation" className="text-base" />
                       Journey Details
                     </h4>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray">Vehicle ID</span>
+                        <span className="text-xs font-mono text-white/30">Vehicle ID</span>
                         <span className="font-medium text-primary">{selectedAssignment.vehicleId}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray">Distance</span>
+                        <span className="text-xs font-mono text-white/30">Distance</span>
                         <span className="font-medium">{selectedTrip ? `${selectedTrip.distance.toFixed(1)} km` : 'N/A'}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray">Pickup Time</span>
+                        <span className="text-xs font-mono text-white/30">Pickup Time</span>
                         <span className="font-medium text-primary">{selectedAssignment.pickupTime}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray">Drop-off Time</span>
+                        <span className="text-xs font-mono text-white/30">Drop-off Time</span>
                         <span className="font-medium text-primary">{selectedAssignment.dropoffTime}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray">Mode</span>
+                        <span className="text-xs font-mono text-white/30">Mode</span>
                         <span className="font-medium">{selectedVehicle?.mode || 'N/A'}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray">Sharing</span>
+                        <span className="text-xs font-mono text-white/30">Sharing</span>
                         <span className="font-medium">
                           {selectedAssignment.actualSharing === 'Solo' || selectedAssignment.actualSharing === '+0' ? 'Solo Ride' :
                            selectedAssignment.actualSharing === '+1' ? 'Shared (+1)' :
@@ -1005,30 +1016,30 @@ export default function EmployeeAssignments() {
                   </div>
 
                   {/* Preference Compliance */}
-                  <div className="bg-dark-700/40 rounded-xl p-4 space-y-3">
-                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
+                  <div className="bg-white/[0.02] p-4 border border-white/10 space-y-3">
+                    <h4 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
+                      <MIcon name="check_circle" className="text-base" />
                       Preference Compliance
                     </h4>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray">Vehicle Type</span>
-                        <span className={`flex items-center gap-1 text-sm font-medium ${selectedAssignment.vehiclePreferenceMet ? 'text-primary' : 'text-gray/50'}`}>
-                          {selectedAssignment.vehiclePreferenceMet ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                        <span className="text-sm text-xs font-mono text-white/30">Vehicle Type</span>
+                        <span className={`flex items-center gap-1 text-sm font-medium ${selectedAssignment.vehiclePreferenceMet ? 'text-primary' : 'text-white/30'}`}>
+                          {selectedAssignment.vehiclePreferenceMet ? <MIcon name="check_circle" className="text-base" /> : <MIcon name="cancel" className="text-base" />}
                           {selectedAssignment.vehiclePreferenceMet ? 'Met' : 'Unmet'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray">Sharing Pref</span>
-                        <span className={`flex items-center gap-1 text-sm font-medium ${selectedAssignment.sharingPreferenceMet ? 'text-primary' : 'text-gray/50'}`}>
-                          {selectedAssignment.sharingPreferenceMet ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                        <span className="text-sm text-xs font-mono text-white/30">Sharing Pref</span>
+                        <span className={`flex items-center gap-1 text-sm font-medium ${selectedAssignment.sharingPreferenceMet ? 'text-primary' : 'text-white/30'}`}>
+                          {selectedAssignment.sharingPreferenceMet ? <MIcon name="check_circle" className="text-base" /> : <MIcon name="cancel" className="text-base" />}
                           {selectedAssignment.sharingPreferenceMet ? 'Met' : 'Unmet'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray">Time Window</span>
-                        <span className={`flex items-center gap-1 text-sm font-medium ${selectedAssignment.timeWindowMet ? 'text-primary' : 'text-gray/50'}`}>
-                          {selectedAssignment.timeWindowMet ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                        <span className="text-sm text-xs font-mono text-white/30">Time Window</span>
+                        <span className={`flex items-center gap-1 text-sm font-medium ${selectedAssignment.timeWindowMet ? 'text-primary' : 'text-white/30'}`}>
+                          {selectedAssignment.timeWindowMet ? <MIcon name="check_circle" className="text-base" /> : <MIcon name="cancel" className="text-base" />}
                           {selectedAssignment.timeWindowMet ? 'Met' : 'Unmet'}
                         </span>
                       </div>
@@ -1039,12 +1050,12 @@ export default function EmployeeAssignments() {
                       const status = getAssignmentStatus(selectedEmployee.id);
                       const allMet = selectedAssignment.vehiclePreferenceMet && selectedAssignment.sharingPreferenceMet && selectedAssignment.timeWindowMet;
                       return (
-                        <div className={`mt-3 pt-3 border-t border-gray/10`}>
+                        <div className={`mt-3 pt-3 border-t border-white/10`}>
                           <div className="flex items-center gap-2">
                             {allMet ? (
-                              <CheckCircle className="w-4 h-4 text-primary" />
+                              <MIcon name="check_circle" className="text-base text-primary" />
                             ) : (
-                              <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                              <MIcon name="warning" className="text-base text-yellow-400" />
                             )}
                             <span className={`text-sm font-medium ${allMet ? 'text-primary' : 'text-yellow-400'}`}>
                               {status.status}
@@ -1057,17 +1068,17 @@ export default function EmployeeAssignments() {
                 </div>
 
               {/* Cost Comparison */}
-              <div className="bg-dark-700/40 rounded-xl p-4">
-                <h4 className="text-sm font-semibold text-primary mb-3">Cost Analysis</h4>
+              <div className="bg-white/[0.02] p-4 border border-white/10">
+                <h4 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 mb-3">Cost Analysis</h4>
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
-                    <p className="text-xs text-primary mb-1">Baseline (Uber Rate)</p>
-                    <p className="text-lg font-bold text-primary">₹{formatNumber((selectedEmployee?.baselineCost || 150))}</p>
+                    <p className="text-[10px] font-label font-bold uppercase tracking-widest text-white/40 mb-1">Baseline (Uber Rate)</p>
+                    <p className="text-lg font-mono font-bold text-white">₹{formatNumber((selectedEmployee?.baselineCost || 150))}</p>
                   </div>
-                  <TrendingUp className="w-6 h-6 text-primary rotate-180" />
+                  <MIcon name="trending_down" className="text-2xl text-primary" />
                   <div className="flex-1 text-right">
-                    <p className="text-xs text-primary mb-1">Allocated Share</p>
-                    <p className="text-lg font-bold text-primary">
+                    <p className="text-[10px] font-label font-bold uppercase tracking-widest text-white/40 mb-1">Allocated Share</p>
+                    <p className="text-lg font-mono font-bold text-white">
                       ₹{formatNumber(selectedTrip ? Math.round(selectedTrip.cost / selectedTrip.employees.length) : 0)}
                     </p>
                   </div>
@@ -1075,11 +1086,11 @@ export default function EmployeeAssignments() {
               </div>
             </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center">
+              <div className="flex-1 flex items-center justify-center p-6">
                 <div className="text-center">
-                  <Users className="w-16 h-16 text-gray/20 mx-auto mb-4" />
-                  <p className="text-gray">Select an employee to view details</p>
-                  <p className="text-xs text-gray/50 mt-1">Click on any employee from the list</p>
+                  <MIcon name="groups" className="text-6xl text-white/10 mx-auto mb-4" />
+                  <p className="text-white/30 font-mono">Select an employee to view details</p>
+                  <p className="text-[10px] font-mono text-white/20 mt-1">Click on any employee from the list</p>
                 </div>
               </div>
             )}

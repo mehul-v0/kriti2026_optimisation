@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Loader2 } from 'lucide-react';
 import Lottie from 'lottie-react';
 import { useApp, OPTIMIZATION_STAGES } from '../context/AppContext';
 import mapSearchAnimation from '../assets/map search.json';
@@ -57,14 +56,14 @@ export default function OptimizationProcessing() {
     return (
       <div className="min-h-screen bg-dark flex items-center justify-center p-4 network-bg">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg w-full">
-          <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-6 text-center shadow-float">
+          <div className="bg-panel-dark border border-white/10 p-6 text-center">
             {complete ? (
               <>
-                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
-                  <Check className="w-8 h-8 text-primary-bright" />
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-primary text-4xl">check_circle</span>
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Optimization Complete</h2>
-                <p className="text-gray mb-6">Your last optimization run finished successfully.</p>
+                <h2 className="text-xl font-black text-white uppercase tracking-tight mb-2">Optimization Complete</h2>
+                <p className="text-xs font-mono text-white/30 mb-6">Your last optimization run finished successfully.</p>
                 <div className="flex gap-4 justify-center">
                   <button onClick={() => navigate('/results')} className="btn-primary">View Results →</button>
                   <button onClick={() => navigate('/insights')} className="btn-secondary">Re-configure</button>
@@ -72,8 +71,8 @@ export default function OptimizationProcessing() {
               </>
             ) : (
               <>
-                <h2 className="text-2xl font-bold mb-2">No Optimization Running</h2>
-                <p className="text-gray mb-6">Ready to run optimization with your current settings.</p>
+                <h2 className="text-xl font-black text-white uppercase tracking-tight mb-2">No Optimization Running</h2>
+                <p className="text-xs font-mono text-white/30 mb-6">Ready to run optimization with your current settings.</p>
                 <div className="flex gap-4 justify-center">
                   <button 
                     onClick={() => {
@@ -99,73 +98,68 @@ export default function OptimizationProcessing() {
   }
 
   return (
-    <div className="min-h-screen bg-dark flex items-center justify-center p-4 network-bg">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-2xl w-full">
-        {/* Central Progress Circle */}
-        <div className="bg-dark-800/60 backdrop-blur-xl rounded-2xl border border-gray/10 p-8 text-center">
-          {/* Lottie Animation */}
-          <div className="flex justify-center -mb-40">
-            <div className="w-96 h-96">
+    <div className="h-[calc(100vh-56px)] flex items-center justify-center p-6 network-bg overflow-hidden">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl h-full max-h-[600px]">
+        <div className="bg-panel-dark border border-white/10 h-full flex flex-col md:flex-row overflow-hidden">
+          
+          {/* Left Panel — Animation, Progress, Timer */}
+          <div className="flex-1 flex flex-col items-center justify-center p-8 border-b md:border-b-0 md:border-r border-white/5">
+            {/* Lottie Animation */}
+            <div className="w-72 h-72 -mb-16">
               <Lottie 
                 animationData={mapSearchAnimation} 
                 loop={true}
                 autoplay={true}
               />
             </div>
-          </div>
 
-          {/* Progress and Timer Display */}
-          <div className="mb-8 space-y-4">
             {/* Percentage */}
-            <div className="text-5xl font-bold text-primary">
+            <div className="text-6xl font-black font-mono text-primary mb-2">
               {Math.floor(progress)}%
             </div>
+
             {/* Stopwatch Timer */}
-            <div className="text-4xl font-bold text-white font-mono tracking-widest">
+            <div className="text-3xl font-bold text-white font-mono tracking-widest">
               {formatTime(elapsed)}
             </div>
           </div>
 
-          {/* Stage Indicators */}
-          <div className="space-y-2 max-w-md mx-auto mb-6">
-            {OPTIMIZATION_STAGES.map((stage, index) => (
-              <motion.div
-                key={stage}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="flex items-center gap-3"
-              >
-                {index < currentStage ? (
-                  <Check className="w-5 h-5 text-primary-bright flex-shrink-0" />
-                ) : index === currentStage ? (
-                  <Loader2 className="w-5 h-5 text-primary animate-spin flex-shrink-0" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-gray/30 flex-shrink-0" />
-                )}
-                <span className={index <= currentStage ? 'text-white' : 'text-gray'}>{stage}</span>
-              </motion.div>
-            ))}
+          {/* Right Panel — Stages, Info, Cancel */}
+          <div className="flex-1 flex flex-col justify-center p-8 gap-6">
+            {/* Stage Indicators */}
+            <div>
+              <h3 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 mb-4">Optimization Stages</h3>
+              <div className="space-y-3">
+                {OPTIMIZATION_STAGES.map((stage, index) => (
+                  <div
+                    key={stage}
+                    className="flex items-center gap-3 h-6"
+                  >
+                    {index < currentStage ? (
+                      <span className="material-symbols-outlined text-primary text-xl flex-shrink-0 w-5 h-5 leading-5">check_circle</span>
+                    ) : index === currentStage ? (
+                      <span className="material-symbols-outlined text-primary text-xl flex-shrink-0 w-5 h-5 leading-5 animate-spin">progress_activity</span>
+                    ) : (
+                      <div className="w-5 h-5 border-2 border-white/10 flex-shrink-0" />
+                    )}
+                    <span className={`text-xs font-mono ${index <= currentStage ? 'text-white/70' : 'text-white/20'}`}>{stage}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Cancel button */}
+            <button
+              onClick={() => {
+                cancelOptimization();
+                navigate('/insights');
+              }}
+              className="self-start px-5 py-2 border border-action/30 bg-action/5 text-action text-[11px] font-label font-bold uppercase tracking-widest hover:bg-action/15 hover:border-action/50 transition-all duration-200"
+            >
+              Cancel Optimization
+            </button>
           </div>
 
-          <div className="text-gray mb-4">
-            <p className="font-medium">Optimizing routes for {JSON.parse(sessionStorage.getItem('uploadedData') || '{}').employees?.length || 0} employees</p>
-            {progress >= 100 && (
-              <p className="text-sm mt-2 text-primary-bright">
-                Processing complete - Retrieving results...
-              </p>
-            )}
-          </div>
-
-          <button
-            onClick={() => {
-              cancelOptimization();
-              navigate('/insights');
-            }}
-            className="text-sm text-gray hover:text-white transition-colors"
-          >
-            Cancel optimization
-          </button>
         </div>
       </motion.div>
     </div>

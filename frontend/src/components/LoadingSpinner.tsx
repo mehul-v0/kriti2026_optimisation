@@ -8,32 +8,41 @@ interface LoadingSpinnerProps {
 
 export default function LoadingSpinner({ size = 'md', text, className = '' }: LoadingSpinnerProps) {
   const sizeClasses = {
-    sm: 'w-6 h-6',
-    md: 'w-8 h-8', 
-    lg: 'w-12 h-12'
+    sm: 'w-5 h-5',
+    md: 'w-7 h-7',
+    lg: 'w-10 h-10'
   };
 
-  const textSizes = {
-    sm: 'text-sm',
-    md: 'text-base',
-    lg: 'text-lg'
-  };
+  const borderWidth = { sm: '2px', md: '2px', lg: '3px' };
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className={`flex flex-col items-center gap-4 ${className}`}
+      className={`flex items-center gap-3 ${className}`}
     >
-      {/* Single clean spinner */}
-      <div className={`${sizeClasses[size]}`}>
-        <div className="animate-spin rounded-full border-4 border-gray-300 border-t-primary w-full h-full"></div>
-      </div>
+      {/* Terminal-style spinner */}
+      <div
+        className={`${sizeClasses[size]} animate-spin`}
+        style={{
+          border: `${borderWidth[size]} solid rgba(255,255,255,0.06)`,
+          borderTop: `${borderWidth[size]} solid #FFB800`,
+        }}
+      />
 
-      {/* Text */}
+      {/* Monospace label */}
       {text && (
-        <div className={`${textSizes[size]} text-gray/80 text-center`}>
-          {text}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-white/40">
+            {text}
+          </span>
+          <motion.span
+            animate={{ opacity: [1, 0.2, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            className="text-primary font-mono text-xs"
+          >
+            ...
+          </motion.span>
         </div>
       )}
     </motion.div>
