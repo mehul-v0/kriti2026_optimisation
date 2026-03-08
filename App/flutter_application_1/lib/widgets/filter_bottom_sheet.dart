@@ -3,7 +3,6 @@ import 'package:flutter_application_1/theme/theme.dart';
 
 enum SortOption { dateNewest, dateOldest, nameAsc, nameDesc }
 
-/// Bottom sheet widget for filtering and sorting test cases
 class FilterBottomSheet extends StatelessWidget {
   final SortOption currentSort;
   final Function(SortOption) onSortChanged;
@@ -16,107 +15,169 @@ class FilterBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final sheetColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: sheetColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border(
+          top: BorderSide(
+            color: AppColors.primaryBrand.withOpacity(0.35),
+            width: 1.5,
+          ),
+        ),
       ),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag Handle
+          // Drag handle
           Container(
-            margin: const EdgeInsets.only(top: 12, bottom: 8),
-            width: 40,
-            height: 4,
+            margin: const EdgeInsets.only(top: 10, bottom: 14),
+            width: 32,
+            height: 3,
             decoration: BoxDecoration(
-              color: Colors.grey[300],
+              color: theme.colorScheme.outline.withOpacity(0.35),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
 
-          // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Row(
-              children: [
-                const Icon(Icons.sort, color: AppColors.primaryBrand),
-                const SizedBox(width: 12),
-                Text(
-                  "Sort By",
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          // Header row
+          Row(
+            children: [
+              const Icon(
+                Icons.sort_rounded,
+                size: 16,
+                color: AppColors.primaryBrand,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                "SORT BY",
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.primaryBrand,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                  fontSize: 11,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
 
-          const Divider(height: 1),
+          const SizedBox(height: 10),
 
-          // Sort Options
-          _buildSortOption(
-            context,
-            icon: Icons.calendar_month,
-            title: "Date: Newest First",
-            sortOption: SortOption.dateNewest,
+          // Options grid — 2x2
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 3.2,
+            children: [
+              _buildChip(
+                context,
+                Icons.arrow_downward_rounded,
+                "Newest First",
+                SortOption.dateNewest,
+              ),
+              _buildChip(
+                context,
+                Icons.arrow_upward_rounded,
+                "Oldest First",
+                SortOption.dateOldest,
+              ),
+              _buildChip(
+                context,
+                Icons.sort_by_alpha_rounded,
+                "Name A → Z",
+                SortOption.nameAsc,
+              ),
+              _buildChip(
+                context,
+                Icons.sort_by_alpha_rounded,
+                "Name Z → A",
+                SortOption.nameDesc,
+              ),
+            ],
           ),
-          _buildSortOption(
-            context,
-            icon: Icons.calendar_month_outlined,
-            title: "Date: Oldest First",
-            sortOption: SortOption.dateOldest,
-          ),
-          _buildSortOption(
-            context,
-            icon: Icons.sort_by_alpha,
-            title: "Name: A-Z",
-            sortOption: SortOption.nameAsc,
-          ),
-          _buildSortOption(
-            context,
-            icon: Icons.sort_by_alpha,
-            title: "Name: Z-A",
-            sortOption: SortOption.nameDesc,
-          ),
-
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
         ],
       ),
     );
   }
 
-  Widget _buildSortOption(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required SortOption sortOption,
-  }) {
-    final isSelected = currentSort == sortOption;
+  Widget _buildChip(
+    BuildContext context,
+    IconData icon,
+    String label,
+    SortOption option,
+  ) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isSelected = currentSort == option;
 
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? AppColors.primaryBrand : Colors.grey[600],
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          color: isSelected ? AppColors.primaryBrand : null,
-        ),
-      ),
-      trailing: isSelected
-          ? const Icon(Icons.check_circle, color: AppColors.primaryBrand)
-          : null,
+    final selectedBg = AppColors.primaryBrand.withOpacity(isDark ? 0.18 : 0.10);
+    final unselectedBg = isDark
+        ? const Color(0xFF2A2A2A)
+        : const Color(0xFFF3F3F3);
+
+    return GestureDetector(
       onTap: () {
-        onSortChanged(sortOption);
+        onSortChanged(option);
         Navigator.pop(context);
       },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: isSelected ? selectedBg : unselectedBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primaryBrand
+                : theme.colorScheme.outline.withOpacity(0.18),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected
+                  ? AppColors.primaryBrand
+                  : theme.colorScheme.onSurface.withOpacity(0.5),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected
+                      ? AppColors.primaryBrand
+                      : theme.colorScheme.onSurface.withOpacity(0.75),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_rounded,
+                size: 13,
+                color: AppColors.primaryBrand,
+              ),
+          ],
+        ),
+      ),
     );
   }
 
-  /// Static method to show the bottom sheet
   static void show(
     BuildContext context, {
     required SortOption currentSort,

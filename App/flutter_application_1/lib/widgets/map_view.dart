@@ -30,46 +30,8 @@ class _MapViewWidgetState extends State<MapViewWidget> {
   bool _mapReady = false;
   bool _showLegend = false;
 
-  // Color Filter Matrix to invert map colors for Dark Mode
-  static const List<double> _darkModeMatrix = [
-    -1,
-    0,
-    0,
-    0,
-    255,
-    0,
-    -1,
-    0,
-    0,
-    255,
-    0,
-    0,
-    -1,
-    0,
-    255,
-    0,
-    0,
-    0,
-    1,
-    0,
-  ];
-
-  // Priority color mapping for employee markers
-  static const Map<int, Color> _priorityMarkerColors = {
-    1: Color(0xFFEF4444), // Red
-    2: Color(0xFFF59E0B), // Amber
-    3: Color(0xFF3B82F6), // Blue
-    4: Color(0xFF8B5CF6), // Violet
-    5: Color(0xFF64748B), // Slate
-  };
-
-  static const Map<int, String> _priorityLabels = {
-    1: 'Critical',
-    2: 'High',
-    3: 'Medium',
-    4: 'Low',
-    5: 'Flex',
-  };
+  // ── Dark / Light mode tile colour filters — defined in theme.dart ──
+  // Use AppThemeData.mapDarkMatrix / AppThemeData.mapLightMatrix directly.
 
   @override
   void initState() {
@@ -125,11 +87,8 @@ class _MapViewWidgetState extends State<MapViewWidget> {
           children: [
             ColorFiltered(
               colorFilter: isDarkMode
-                  ? const ColorFilter.matrix(_darkModeMatrix)
-                  : const ColorFilter.mode(
-                      Colors.transparent,
-                      BlendMode.saturation,
-                    ),
+                  ? const ColorFilter.matrix(AppThemeData.mapDarkMatrix)
+                  : const ColorFilter.matrix(AppThemeData.mapLightMatrix),
               child: TileLayer(
                 urlTemplate: MapConfig.tileUrlTemplate,
                 userAgentPackageName: MapConfig.packageName,
@@ -214,13 +173,8 @@ class _MapViewWidgetState extends State<MapViewWidget> {
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final textC = isDark ? Colors.white : AppColors.textPrimaryLight;
     final subC = isDark ? Colors.white54 : AppColors.textSecondaryLight;
-
-    // Collect which priorities exist
-    final usedPriorities = <int>{};
-    for (var emp in widget.employees) {
-      final p = int.tryParse(emp['priority']?.toString() ?? '') ?? 0;
-      if (p >= 1 && p <= 5) usedPriorities.add(p);
-    }
+    // Employee marker colour — mirrors _buildMarkers logic
+    final empColor = isDark ? AppColors.silver : const Color(0xFFA0A0A0);
 
     return Material(
       elevation: 6,
@@ -264,35 +218,27 @@ class _MapViewWidgetState extends State<MapViewWidget> {
             ),
             const SizedBox(height: 8),
 
-            // Employee priorities
-            Text(
-              'Employees (by priority)',
-              style: TextStyle(
-                color: subC,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            for (final p in [1, 2, 3, 4, 5])
-              if (usedPriorities.contains(p))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: _legendRow(
-                    context,
-                    child: Container(
-                      width: 20,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: _priorityMarkerColors[p],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    label: 'P$p — ${_priorityLabels[p]}',
-                    color: subC,
+            // Employees — single silver row
+            _legendRow(
+              context,
+              child: Container(
+                width: 20,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: empColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.person_rounded,
+                    color: isDark ? Colors.black87 : Colors.white,
+                    size: 10,
                   ),
                 ),
-
+              ),
+              label: 'Employee',
+              color: subC,
+            ),
             const SizedBox(height: 6),
 
             // Vehicles
@@ -305,6 +251,7 @@ class _MapViewWidgetState extends State<MapViewWidget> {
               ),
             ),
             const SizedBox(height: 4),
+            // Premium — Petronas teal filled car
             _legendRow(
               context,
               child: Container(
@@ -315,13 +262,10 @@ class _MapViewWidgetState extends State<MapViewWidget> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Center(
-                  child: Text(
-                    'V',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  child: Icon(
+                    Icons.directions_car_filled_rounded,
+                    color: Colors.black87,
+                    size: 10,
                   ),
                 ),
               ),
@@ -329,23 +273,21 @@ class _MapViewWidgetState extends State<MapViewWidget> {
               color: subC,
             ),
             const SizedBox(height: 4),
+            // Normal — silver outline car
             _legendRow(
               context,
               child: Container(
                 width: 20,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: AppColors.markerNormal,
+                  color: empColor,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Center(
-                  child: Text(
-                    'V',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  child: Icon(
+                    Icons.directions_car_rounded,
+                    color: Colors.black87,
+                    size: 10,
                   ),
                 ),
               ),
@@ -388,8 +330,8 @@ class _MapViewWidgetState extends State<MapViewWidget> {
       double dLat = _toDouble(emp['drop_lat']);
       double dLng = _toDouble(emp['drop_lng']);
       final priority = int.tryParse(emp['priority']?.toString() ?? '') ?? 5;
-      final color =
-          _priorityMarkerColors[priority] ?? _priorityMarkerColors[5]!;
+      // Uniform silver for all employees; lighter silver on light map tiles
+      final color = isDark ? AppColors.silver : const Color(0xFFA0A0A0);
       final shortId = (emp['employee_id']?.toString() ?? '');
       final empData = Map<String, dynamic>.from(emp as Map);
 
@@ -401,7 +343,11 @@ class _MapViewWidgetState extends State<MapViewWidget> {
             height: 36,
             child: GestureDetector(
               onTap: () => widget.onEmployeeTap?.call(empData),
-              child: _EmployeeMarker(label: shortId, color: color),
+              child: _EmployeeMarker(
+                label: shortId,
+                color: color,
+                isDark: isDark,
+              ),
             ),
           ),
         );
@@ -472,11 +418,19 @@ class _MapViewWidgetState extends State<MapViewWidget> {
 class _EmployeeMarker extends StatelessWidget {
   final String label;
   final Color color;
+  final bool isDark;
 
-  const _EmployeeMarker({required this.label, required this.color});
+  const _EmployeeMarker({
+    required this.label,
+    required this.color,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Light mode: silver (#A0A0A0) bg → white text for contrast
+    // Dark mode: silver (#C0C0C0) bg → black text for contrast
+    final textColor = isDark ? Colors.black87 : Colors.white;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -495,8 +449,8 @@ class _EmployeeMarker extends StatelessWidget {
           ),
           child: Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: textColor,
               fontSize: 9,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.3,
@@ -527,7 +481,10 @@ class _VehicleMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isPremium ? AppColors.markerPremium : AppColors.markerNormal;
+    // Premium → Petronas teal; Normal → silver (dark mode) / medium grey (light mode)
+    final color = isPremium
+        ? AppColors.markerPremium
+        : (isDark ? AppColors.markerNormal : const Color(0xFFA0A0A0));
     final bg = isDark ? AppColors.darkSurface : Colors.white;
 
     return Column(
@@ -551,7 +508,9 @@ class _VehicleMarker extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isPremium ? Icons.star_rounded : Icons.directions_car_rounded,
+                isPremium
+                    ? Icons.directions_car_filled_rounded
+                    : Icons.directions_car_rounded,
                 color: color,
                 size: 11,
               ),

@@ -14,7 +14,6 @@ import 'package:flutter_application_1/services/data_service.dart';
 import 'package:flutter_application_1/services/file_export_service.dart';
 import 'package:flutter_application_1/widgets/download_dialog.dart';
 import 'package:flutter_application_1/theme/theme.dart';
-import 'package:flutter_application_1/screen/output_details_page.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  OutputPage — Roxio Theme, Route Visualization & Animation
@@ -62,12 +61,22 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   bool _isDownloading = false; // true only during file export/download
   final TextEditingController _searchController = TextEditingController();
 
+  // ── Outer tabs (Map | Overview) ─────────────────────────
+  late TabController _outerTabController;
+  int _outerTabIndex = 0;
+
+  // ── Inner Overview tabs (Summary | Routes | Violations | Charts) ──
+  late TabController _overviewTabController;
+
   // ── Fleet Filter ────────────────────────────────────────
   bool _showFleetFilter = false;
   String? _filterVehicleId;
   bool? _sortByCost; // true = asc, false = desc
   bool? _sortByDistance; // true = asc, false = desc
   String _vehicleSearchQuery = '';
+
+  // ── Map legend overlay ──────────────────────────────────
+  bool _showLegend = false;
 
   // ── Summary Toggle ──────────────────────────────────────
   bool _summaryExpanded = true;
@@ -92,29 +101,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     Color(0xFFD97706), // Orange
   ];
 
-  // ── Dark-mode matrix for map tiles ──────────────────────
-  static const List<double> _darkModeMatrix = [
-    -1,
-    0,
-    0,
-    0,
-    255,
-    0,
-    -1,
-    0,
-    0,
-    255,
-    0,
-    0,
-    -1,
-    0,
-    255,
-    0,
-    0,
-    0,
-    1,
-    0,
-  ];
+  // ── Map tile colour-filter matrices — defined centrally in AppThemeData ──
+  // Use AppThemeData.mapDarkMatrix / AppThemeData.mapLightMatrix.
 
   // ══════════════════════════════════════════════════════════
   //  THEME HELPERS (mirror ShowInputPage)
@@ -140,9 +128,6 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   Color _borderColorThemed(BuildContext context) =>
       _isDark(context) ? AppColors.darkBorderColor : AppColors.borderColor;
 
-  Color _shadowColor(BuildContext context) =>
-      _isDark(context) ? Colors.black54 : Colors.black26;
-
   // ══════════════════════════════════════════════════════════
   //  LIFECYCLE
   // ══════════════════════════════════════════════════════════
@@ -151,6 +136,14 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     super.initState();
     _currentData = widget.resultData;
     _vehicleRoutes = _parseVehicleRoutes(_currentData);
+
+    _outerTabController = TabController(length: 3, vsync: this)
+      ..addListener(() {
+        if (!_outerTabController.indexIsChanging) {
+          setState(() => _outerTabIndex = _outerTabController.index);
+        }
+      });
+    _overviewTabController = TabController(length: 3, vsync: this);
 
     _playbackController =
         AnimationController(vsync: this, duration: const Duration(seconds: 15))
@@ -161,6 +154,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _outerTabController.dispose();
+    _overviewTabController.dispose();
     _playbackController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -188,10 +183,12 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
     for (int i = 0; i < vehicles.length; i++) {
       final veh = vehicles[i] as Map<String, dynamic>;
-      final vehicleId = veh['vehicle_id']?.toString() ?? 'V${i + 1}';
-      final totalCost = (veh['total_cost'] as num?)?.toDouble() ?? 0;
+      final vehicleId =
+          veh['vehicle_id']?.toString() ??
+          'V${(i + 1).toString().padLeft(2, '0')}';
       final totalDist = (veh['total_distance'] as num?)?.toDouble() ?? 0;
       final totalTime = (veh['total_time'] as num?)?.toInt() ?? 0;
+      final totalCost = (veh['total_cost'] as num?)?.toDouble() ?? 0.0;
       final color = _routePalette[i % _routePalette.length];
 
       final List trips = veh['trips'] ?? [];
@@ -296,7 +293,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
     for (int i = 0; i < routesList.length; i++) {
       final r = routesList[i] as Map<String, dynamic>;
-      final vehicleId = r['vehicle_id']?.toString() ?? 'V${i + 1}';
+      final vehicleId =
+          r['vehicle_id']?.toString() ??
+          'V${(i + 1).toString().padLeft(2, '0')}';
       final totalCost = (r['total_cost'] as num?)?.toDouble() ?? 0;
       final totalDist = (r['total_distance'] as num?)?.toDouble() ?? 0;
       final tripsCount = (r['trips_count'] as num?)?.toInt() ?? 1;
@@ -677,6 +676,67 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     });
   }
 
+  /// Focus a vehicle by index, start playback, and switch to Map tab.
+  void _simulatePath(int vehicleIndex) {
+    setState(() {
+      _focusedVehicleIndex = vehicleIndex;
+    });
+    _playbackController.reset();
+    setState(() {
+      _playbackProgress = 0.0;
+      _isPlaying = true;
+    });
+    _playbackController.forward();
+    _outerTabController.animateTo(2);
+    setState(() => _outerTabIndex = 2);
+  }
+
+  /// Show a long-press "Focus" popup at the marker and simulate on confirm.
+  Future<void> _showMarkerFocusMenu(
+    BuildContext context,
+    Offset globalPosition,
+    int vehicleIndex,
+    String label,
+  ) async {
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: [
+        PopupMenuItem<String>(
+          value: 'focus',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.route_rounded,
+                color: AppColors.primaryBrand,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Simulate Path — $label',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (result == 'focus') {
+      _simulatePath(vehicleIndex);
+    }
+  }
+
   // ══════════════════════════════════════════════════════════
   //  FLEET FILTER (mirrors ShowInputPage vehicle filter)
   // ══════════════════════════════════════════════════════════
@@ -781,12 +841,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   void _openDownloadDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.transparent,
       useSafeArea: true,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) =>
           DownloadDialog(onSelect: (type) => _handleDownload(type)),
     );
@@ -857,7 +914,6 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final dark = _isDark(context);
-    final solutionType = _solutionType;
 
     return AppBar(
       backgroundColor: _bgColor(context),
@@ -876,89 +932,143 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.testCaseName,
+            'Route Output',
             style: TextStyle(
-              color: _textPrimary(context),
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+              color: _textSecondary(context),
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.6,
             ),
           ),
           Text(
-            solutionType,
+            widget.testCaseName,
             style: TextStyle(
-              color: solutionType.toLowerCase().contains('optimal')
-                  ? AppColors.primaryBrand
-                  : AppColors.warning,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
+              color: _textPrimary(context),
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(48),
+        child: _buildOuterTabBar(context),
+      ),
       actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _openDownloadDialog,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.primaryBrand.withOpacity(0.5),
-                  ),
-                  color: AppColors.primaryBrand.withOpacity(0.08),
-                ),
+        IconButton(
+          icon: const Icon(Icons.download_rounded),
+          color: AppColors.primaryBrand,
+          tooltip: 'Export',
+          onPressed: _openDownloadDialog,
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  // ── Outer Tab Bar (Result | Route | Map) — mirrors show_input_page style ──
+  Widget _buildOuterTabBar(BuildContext context) {
+    final dark = _isDark(context);
+    final size = MediaQuery.of(context).size;
+    return Container(
+      color: _bgColor(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TabBar(
+            controller: _outerTabController,
+            indicator: const UnderlineTabIndicator(
+              borderSide: BorderSide(color: AppColors.primaryBrand, width: 3),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(2),
+                topRight: Radius.circular(2),
+              ),
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
+            labelColor: AppColors.primaryBrand,
+            unselectedLabelColor: dark
+                ? Colors.white54
+                : AppColors.textSecondaryLight,
+            labelStyle: TextStyle(
+              fontSize: size.width < 360 ? 12 : 14,
+              fontWeight: FontWeight.w600,
+            ),
+            unselectedLabelStyle: TextStyle(
+              fontSize: size.width < 360 ? 12 : 14,
+              fontWeight: FontWeight.w500,
+            ),
+            tabs: const [
+              Tab(
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.download_rounded,
-                      size: 18,
-                      color: AppColors.primaryBrand,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Export',
-                      style: TextStyle(
-                        color: AppColors.primaryBrand,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    Icon(Icons.analytics_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text('Result'),
                   ],
                 ),
               ),
-            ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.route_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text('Route'),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.map_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text('Map'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: _borderColorThemed(context).withOpacity(0.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  MOBILE LAYOUT: Tab-based — Map tab | Overview tab
+  // ══════════════════════════════════════════════════════════
+  Widget _buildMobileLayout(BuildContext context, Size size) {
+    return Column(
+      children: [
+        Expanded(
+          child: TabBarView(
+            controller: _outerTabController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _buildMobileResultTab(context),
+              _buildRoutesPanel(context),
+              _buildMobileMapTab(context),
+            ],
           ),
         ),
       ],
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  MOBILE LAYOUT: Full-screen map + draggable sheet (player + summary) + fixed action bar
-  // ══════════════════════════════════════════════════════════
-  Widget _buildMobileLayout(BuildContext context, Size size) {
-    final actionBarHeight = 72.0 + MediaQuery.of(context).padding.bottom;
-
+  // ── Mobile Map Tab: Fullscreen map + draggable player sheet ──
+  Widget _buildMobileMapTab(BuildContext context) {
     return Stack(
       children: [
         // ── Full-screen map ──
-        Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.only(bottom: actionBarHeight),
-            child: _buildMap(context),
-          ),
-        ),
+        Positioned.fill(child: _buildMap(context)),
 
-        // ── Map buttons (north + recenter) ──
+        // ── Map control buttons (top-right) ──
         Positioned(
           top: 12,
           right: 12,
@@ -984,105 +1094,104 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   }
                 },
               ),
+              const SizedBox(height: 8),
+              _mapButton(
+                context,
+                icon: Icons.info_outline_rounded,
+                onPressed: () => setState(() => _showLegend = !_showLegend),
+              ),
             ],
           ),
         ),
 
-        // ── Draggable sheet (player + summary move together) ──
-        Positioned.fill(
-          bottom: actionBarHeight,
-          child: DraggableScrollableSheet(
-            initialChildSize: 0.25,
-            minChildSize: 0.22,
-            maxChildSize: 0.85,
-            snap: true,
-            snapSizes: const [0.22, 0.45, 0.85],
-            builder: (context, scrollController) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: _bgColor(context),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.25),
-                      blurRadius: 12,
-                      offset: const Offset(0, -3),
-                    ),
-                  ],
-                ),
-                child: CustomScrollView(
-                  controller: scrollController,
-                  slivers: [
-                    // Drag handle
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: _textTertiary(context),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+        // ── Legend overlay ──
+        if (_showLegend)
+          Positioned(top: 112, right: 62, child: _buildLegendPanel(context)),
 
-                    // Playback controls (moves with the sheet)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                        child: _buildPlaybackControls(context),
-                      ),
-                    ),
-
-                    // Scrollable summary + filter + vehicle cards
-                    ..._buildScrollableSlivers(context),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-
-        // ── Fixed bottom action bar ──
+        // ── Simulation player (bottom, glassmorphic overlay) ──
         Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _buildActionBar(context),
+          bottom: 12,
+          left: 12,
+          right: 12,
+          child: SafeArea(top: false, child: _buildPlaybackControls(context)),
         ),
       ],
     );
   }
 
   // ══════════════════════════════════════════════════════════
-  //  DESKTOP LAYOUT: Left 60% Map, Right 40% Panel
+  //  DESKTOP LAYOUT — 3 outer tabs: Result | Route | Map
   // ══════════════════════════════════════════════════════════
   Widget _buildDesktopLayout(BuildContext context) {
+    // ── Map tab (index 2): full-screen map with simulation player ──
+    if (_outerTabIndex == 2) {
+      return Stack(
+        children: [
+          Positioned.fill(child: _buildMap(context)),
+          Positioned(
+            bottom: 16,
+            left: 16,
+            right: 16,
+            child: _buildPlaybackControls(context),
+          ),
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Column(
+              children: [
+                _mapButton(
+                  context,
+                  icon: Icons.navigation_rounded,
+                  onPressed: () {
+                    if (_mapReady) _mapController.rotate(0);
+                  },
+                ),
+                const SizedBox(height: 8),
+                _mapButton(
+                  context,
+                  icon: Icons.my_location_rounded,
+                  onPressed: () {
+                    if (_mapReady) {
+                      _mapController.move(
+                        _computeCenter(),
+                        MapConfig.defaultZoom,
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                _mapButton(
+                  context,
+                  icon: Icons.info_outline_rounded,
+                  onPressed: () => setState(() => _showLegend = !_showLegend),
+                ),
+              ],
+            ),
+          ),
+          if (_showLegend)
+            Positioned(top: 112, right: 62, child: _buildLegendPanel(context)),
+        ],
+      );
+    }
+
+    // ── Result (0) or Route (1) tab: left map + right content panel ──
     return Row(
       children: [
-        // ── Left: Map ──
+        // Left: Map with player
         Expanded(
           flex: 6,
           child: Stack(
             children: [
               Positioned.fill(child: _buildMap(context)),
-
               Positioned(
                 bottom: 16,
                 left: 16,
                 right: 16,
                 child: _buildPlaybackControls(context),
               ),
-
               Positioned(
-                top: 16,
-                right: 16,
+                top: 12,
+                right: 12,
                 child: Column(
                   children: [
                     _mapButton(
@@ -1105,22 +1214,887 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                         }
                       },
                     ),
+                    const SizedBox(height: 8),
+                    _mapButton(
+                      context,
+                      icon: Icons.info_outline_rounded,
+                      onPressed: () =>
+                          setState(() => _showLegend = !_showLegend),
+                    ),
                   ],
                 ),
               ),
+              if (_showLegend)
+                Positioned(
+                  top: 112,
+                  right: 62,
+                  child: _buildLegendPanel(context),
+                ),
             ],
           ),
         ),
 
-        // ── Right: Results Panel ──
+        // Right: Result panel (Summary|Violations|Charts) or Route panel
         Expanded(
           flex: 4,
           child: Container(
             color: _bgColor(context),
-            child: _buildResultsPanel(context),
+            child: _outerTabIndex == 0
+                ? _buildDesktopResultPanel(context)
+                : _buildDesktopRoutePanel(context),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDesktopResultPanel(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: _buildOverviewTabBar(context),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _overviewTabController,
+            children: [
+              _buildSummaryPanel(context),
+              _buildViolationsPanel(context),
+              _buildChartsPanel(context),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopRoutePanel(BuildContext context) {
+    return Column(children: [Expanded(child: _buildRoutesPanel(context))]);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  SOLUTION TYPE BADGE
+  // ══════════════════════════════════════════════════════════
+  Widget _buildSolutionTypeBadge(BuildContext context) {
+    final st = _solutionType;
+    final isOptimal = st.toLowerCase().contains('optimal');
+    final color = isOptimal ? AppColors.primaryBrand : AppColors.warning;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isOptimal ? Icons.check_circle_rounded : Icons.warning_rounded,
+            color: color,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              st,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  MAP SEARCH BAR (overlaid on map)
+  // ══════════════════════════════════════════════════════════
+  Widget _buildMapSearchBar(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: (_isDark(context) ? Colors.black : Colors.white).withOpacity(
+              0.6,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: (_isDark(context) ? Colors.white : Colors.black)
+                  .withOpacity(0.1),
+            ),
+          ),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _vehicleSearchQuery = v),
+            style: TextStyle(color: _textPrimary(context), fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Search vehicle or employee…',
+              hintStyle: TextStyle(color: _textTertiary(context), fontSize: 13),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: AppColors.primaryBrand,
+              ),
+              suffixIcon: _vehicleSearchQuery.isNotEmpty
+                  ? GestureDetector(
+                      onTap: () {
+                        _searchController.clear();
+                        setState(() => _vehicleSearchQuery = '');
+                      },
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: _textTertiary(context),
+                      ),
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                vertical: 12,
+                horizontal: 4,
+              ),
+              isDense: true,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  MAP LEGEND PANEL
+  // ══════════════════════════════════════════════════════════
+  Widget _buildLegendPanel(BuildContext context) {
+    final dark = _isDark(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          constraints: const BoxConstraints(maxWidth: 200),
+          decoration: BoxDecoration(
+            color: (dark ? Colors.black : Colors.white).withOpacity(0.75),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: (dark ? Colors.white : Colors.black).withOpacity(0.1),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.layers_rounded,
+                    size: 14,
+                    color: AppColors.primaryBrand,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Legend',
+                    style: TextStyle(
+                      color: _textPrimary(context),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => setState(() => _showLegend = false),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: _textTertiary(context),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _legendItem(
+                context,
+                color: AppColors.primaryBrand,
+                icon: Icons.business_rounded,
+                label: 'Office / Depot',
+              ),
+              const SizedBox(height: 6),
+              // Employee — silver pill (mirrors actual marker shape)
+              Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: dark ? AppColors.silver : const Color(0xFFA0A0A0),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.person_rounded,
+                        color: dark ? Colors.black87 : Colors.white,
+                        size: 10,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Employee Pickup',
+                    style: TextStyle(
+                      color: _textPrimary(context),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Divider(
+                height: 1,
+                color: _borderColorThemed(context).withOpacity(0.4),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Vehicles',
+                style: TextStyle(
+                  color: _textSecondary(context),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              // Active / Premium route vehicle — Petronas teal
+              Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBrand,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.directions_car_filled_rounded,
+                        color: Colors.black87,
+                        size: 10,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Vehicle',
+                    style: TextStyle(
+                      color: _textPrimary(context),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _legendItem(
+    BuildContext context, {
+    required Color color,
+    required IconData icon,
+    required String label,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          child: Icon(icon, size: 12, color: Colors.white),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            color: _textPrimary(context),
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  RESULT TAB (mobile) — inner tabs: Summary | Violations | Charts
+  // ══════════════════════════════════════════════════════════
+  Widget _buildMobileResultTab(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: _buildOverviewTabBar(context),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _overviewTabController,
+            children: [
+              _buildSummaryPanel(context),
+              _buildViolationsPanel(context),
+              _buildChartsPanel(context),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Result Inner Tab Bar (Summary | Violations | Charts) ──
+  Widget _buildOverviewTabBar(BuildContext context) {
+    final dark = _isDark(context);
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: _surfaceColor(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _borderColorThemed(context).withOpacity(0.3)),
+      ),
+      child: TabBar(
+        controller: _overviewTabController,
+        indicator: BoxDecoration(
+          color: AppColors.primaryBrand,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicatorPadding: const EdgeInsets.all(3),
+        dividerColor: Colors.transparent,
+        labelColor: Colors.white,
+        unselectedLabelColor: dark
+            ? Colors.white54
+            : AppColors.textSecondaryLight,
+        labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+        tabs: const [
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.analytics_outlined, size: 14),
+                SizedBox(width: 4),
+                Flexible(
+                  child: Text('Summary', overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 14),
+                SizedBox(width: 4),
+                Flexible(
+                  child: Text('Violations', overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.bar_chart_rounded, size: 14),
+                SizedBox(width: 4),
+                Flexible(
+                  child: Text('Charts', overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  SUMMARY PANEL (inner tab 1)
+  // ──────────────────────────────────────────────────────────
+  Widget _buildSummaryPanel(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: _buildCollapsibleSummary(context),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  ROUTES PANEL (inner tab 2) — search, filter, cards
+  // ──────────────────────────────────────────────────────────
+  Widget _buildRoutesPanel(BuildContext context) {
+    final routes = _filteredRoutes;
+    return Column(
+      children: [
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: _buildInlineSearchBar(context),
+        ),
+        // Filter row
+        _buildFleetFilterBar(context),
+        // Vehicle cards
+        Expanded(
+          child: routes.isEmpty
+              ? Center(
+                  child: Text(
+                    'No vehicles match filters',
+                    style: TextStyle(
+                      color: _textSecondary(context),
+                      fontSize: 13,
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  itemCount: routes.length,
+                  itemBuilder: (ctx, i) {
+                    final originalIndex = _vehicleRoutes.indexOf(routes[i]);
+                    return _buildVehicleRouteCard(context, originalIndex);
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  // ── Inline search bar for the Routes panel ──
+  Widget _buildInlineSearchBar(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: _surfaceColor(context),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _borderColorThemed(context).withOpacity(0.4)),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (v) => setState(() => _vehicleSearchQuery = v),
+        style: TextStyle(color: _textPrimary(context), fontSize: 13),
+        decoration: InputDecoration(
+          hintText: 'Search vehicle or employee…',
+          hintStyle: TextStyle(color: _textTertiary(context), fontSize: 13),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            size: 18,
+            color: _textTertiary(context),
+          ),
+          suffixIcon: _vehicleSearchQuery.isNotEmpty
+              ? GestureDetector(
+                  onTap: () {
+                    _searchController.clear();
+                    setState(() => _vehicleSearchQuery = '');
+                  },
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: _textTertiary(context),
+                  ),
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  VIOLATIONS PANEL (inner tab 3)
+  // ──────────────────────────────────────────────────────────
+  Widget _buildViolationsPanel(BuildContext context) {
+    final result = (_currentData['result'] as Map<String, dynamic>?) ?? {};
+    final stats = (_currentData['stats'] as Map<String, dynamic>?) ?? {};
+    final hard =
+        (result['hard_violations'] as num?)?.toInt() ??
+        (stats['hard_violations'] as num?)?.toInt() ??
+        0;
+    final soft =
+        (result['soft_violations'] as num?)?.toInt() ??
+        (stats['soft_violations'] as num?)?.toInt() ??
+        0;
+
+    if (hard == 0 && soft == 0) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.primaryBrand.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.verified_rounded,
+                size: 48,
+                color: AppColors.primaryBrand,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No Constraint Violations',
+              style: TextStyle(
+                color: _textPrimary(context),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'All constraints satisfied.',
+              style: TextStyle(color: _textSecondary(context), fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Hard violations
+          if (hard > 0) ...[
+            _violationSectionHeader(
+              context,
+              'Hard Violations',
+              Icons.error_rounded,
+              AppColors.error,
+              hard,
+            ),
+            const SizedBox(height: 8),
+            _violationDetailCard(
+              context,
+              label: 'Hard',
+              count: hard,
+              badge: 'HARD',
+              color: AppColors.error,
+            ),
+            const SizedBox(height: 16),
+          ],
+          // Soft violations
+          if (soft > 0) ...[
+            _violationSectionHeader(
+              context,
+              'Soft Violations',
+              Icons.warning_rounded,
+              AppColors.warning,
+              soft,
+            ),
+            const SizedBox(height: 8),
+            _violationDetailCard(
+              context,
+              label: 'Soft',
+              count: soft,
+              badge: 'SOFT',
+              color: AppColors.warning,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _violationSectionHeader(
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    int count,
+  ) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            color: _textPrimary(context),
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _violationDetailCard(
+    BuildContext context, {
+    required String label,
+    required int count,
+    required String badge,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surfaceColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              badge,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '$count $label Violation${count > 1 ? 's' : ''}',
+              style: TextStyle(
+                color: _textPrimary(context),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Icon(Icons.circle, size: 10, color: color),
+        ],
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  CHARTS PANEL (inner tab 4) — per-vehicle stat bars
+  // ──────────────────────────────────────────────────────────
+  Widget _buildChartsPanel(BuildContext context) {
+    if (_vehicleRoutes.isEmpty) {
+      return Center(
+        child: Text(
+          'No route data to chart',
+          style: TextStyle(color: _textSecondary(context), fontSize: 13),
+        ),
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _chartSectionHeader(
+            context,
+            icon: Icons.route_rounded,
+            title: 'Distance per Vehicle (km)',
+          ),
+          const SizedBox(height: 10),
+          ..._vehicleRoutes.map(
+            (r) => _buildStatBar(
+              context,
+              vehicleId: r.vehicleId,
+              color: r.color,
+              value: r.totalDistance,
+              max: _vehicleRoutes
+                  .map((x) => x.totalDistance)
+                  .fold(0.0, (a, b) => a > b ? a : b),
+              suffix: 'km',
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          _chartSectionHeader(
+            context,
+            icon: Icons.currency_rupee_rounded,
+            title: 'Cost per Vehicle',
+          ),
+          const SizedBox(height: 10),
+          ..._vehicleRoutes
+              .where((r) => r.totalCost > 0)
+              .map(
+                (r) => _buildStatBar(
+                  context,
+                  vehicleId: r.vehicleId,
+                  color: r.color,
+                  value: r.totalCost,
+                  max: _vehicleRoutes
+                      .map((x) => x.totalCost)
+                      .fold(0.0, (a, b) => a > b ? a : b),
+                  suffix: '₹',
+                  prefixSuffix: true,
+                ),
+              ),
+          if (_vehicleRoutes.every((r) => r.totalCost == 0))
+            Center(
+              child: Text(
+                'No cost data',
+                style: TextStyle(color: _textSecondary(context), fontSize: 13),
+              ),
+            ),
+
+          const SizedBox(height: 20),
+          _chartSectionHeader(
+            context,
+            icon: Icons.people_rounded,
+            title: 'Passengers per Vehicle',
+          ),
+          const SizedBox(height: 10),
+          ..._vehicleRoutes.map((r) {
+            int pax = 0;
+            for (var s in r.allStops) {
+              if (s.location.toLowerCase().contains('pickup')) pax++;
+            }
+            final maxPax = _vehicleRoutes.fold<int>(0, (m, rr) {
+              int p = 0;
+              for (var s in rr.allStops) {
+                if (s.location.toLowerCase().contains('pickup')) p++;
+              }
+              return p > m ? p : m;
+            });
+            return _buildStatBar(
+              context,
+              vehicleId: r.vehicleId,
+              color: r.color,
+              value: pax.toDouble(),
+              max: maxPax.toDouble(),
+              suffix: 'pax',
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _chartSectionHeader(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppColors.primaryBrand),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            color: _textPrimary(context),
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatBar(
+    BuildContext context, {
+    required String vehicleId,
+    required Color color,
+    required double value,
+    required double max,
+    required String suffix,
+    bool prefixSuffix = false,
+  }) {
+    final frac = (max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 60,
+            child: Text(
+              vehicleId,
+              style: TextStyle(
+                color: _textSecondary(context),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Stack(
+              children: [
+                Container(
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: _borderColorThemed(context).withOpacity(0.25),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: frac,
+                  child: Container(
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 56,
+            child: Text(
+              prefixSuffix
+                  ? '$suffix${value.toStringAsFixed(0)}'
+                  : '${value.toStringAsFixed(1)} $suffix',
+              style: TextStyle(
+                color: _textPrimary(context),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1146,11 +2120,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       children: [
         ColorFiltered(
           colorFilter: isDarkMode
-              ? const ColorFilter.matrix(_darkModeMatrix)
-              : const ColorFilter.mode(
-                  Colors.transparent,
-                  BlendMode.saturation,
-                ),
+              ? const ColorFilter.matrix(AppThemeData.mapDarkMatrix)
+              : const ColorFilter.matrix(AppThemeData.mapLightMatrix),
           child: TileLayer(
             urlTemplate: MapConfig.tileUrlTemplate,
             userAgentPackageName: MapConfig.packageName,
@@ -1207,7 +2178,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             Polyline(
               points: points.sublist(0, segmentsToDraw + 1),
               strokeWidth: 4.0,
-              color: route.color,
+              color: AppColors.routeLine,
             ),
           );
         }
@@ -1217,7 +2188,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           Polyline(
             points: points,
             strokeWidth: 2.0,
-            color: route.color.withOpacity(0.2),
+            color: AppColors.routeLine.withOpacity(0.2),
             pattern: const StrokePattern.dotted(),
           ),
         );
@@ -1322,12 +2293,21 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           ),
         );
       } else {
+        final vehicleLabel = 'V${(i + 1).toString().padLeft(2, '0')}';
         markers.add(
           Marker(
             point: stopPoints.first.value,
             width: 64,
             height: 36,
-            child: _OutputVehicleMarker(label: 'V${i + 1}', color: route.color),
+            child: GestureDetector(
+              onLongPressStart: (d) => _showMarkerFocusMenu(
+                context,
+                d.globalPosition,
+                i,
+                vehicleLabel,
+              ),
+              child: _OutputVehicleMarker(label: vehicleLabel),
+            ),
           ),
         );
       }
@@ -1352,14 +2332,19 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             ),
           );
         } else {
+          final vLabel = 'V${(i + 1).toString().padLeft(2, '0')}';
           markers.add(
             Marker(
               point: stopPoints[s].value,
               width: 64,
               height: 36,
-              child: _EmployeeMarkerWidget(
-                label: stop.employeeId ?? '',
-                color: route.color,
+              child: GestureDetector(
+                onLongPressStart: (d) =>
+                    _showMarkerFocusMenu(context, d.globalPosition, i, vLabel),
+                child: _EmployeeMarkerWidget(
+                  label: stop.employeeId ?? '',
+                  isDark: _isDark(context),
+                ),
               ),
             ),
           );
@@ -1438,12 +2423,17 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         );
       }
 
+      final animLabel = 'V${(i + 1).toString().padLeft(2, '0')}';
       markers.add(
         Marker(
           point: vehiclePos,
           width: 64,
           height: 42,
-          child: _AnimatedVehicleMarker(color: route.color, label: 'V${i + 1}'),
+          child: GestureDetector(
+            onLongPressStart: (d) =>
+                _showMarkerFocusMenu(context, d.globalPosition, i, animLabel),
+            child: _AnimatedVehicleMarker(label: animLabel),
+          ),
         ),
       );
     }
@@ -1502,6 +2492,55 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // ── Focus indicator chip (visible only when a vehicle is focused) ──
+              if (_focusedVehicleIndex != null) ...[
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => setState(() => _focusedVehicleIndex = null),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryBrand.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primaryBrand.withOpacity(0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.directions_car_rounded,
+                              size: 13,
+                              color: AppColors.primaryBrand,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _vehicleRoutes[_focusedVehicleIndex!].vehicleId,
+                              style: const TextStyle(
+                                color: AppColors.primaryBrand,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.close_rounded,
+                              size: 13,
+                              color: AppColors.primaryBrand,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
               // Time label + Play button
               Row(
                 children: [
@@ -1640,169 +2679,6 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
-  //  SCROLLABLE SLIVERS (for embedding in DraggableScrollableSheet)
-  // ══════════════════════════════════════════════════════════
-  List<Widget> _buildScrollableSlivers(BuildContext context) {
-    final routes = _filteredRoutes;
-    return [
-      // ── Summary Card (collapsible) ──
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: _buildCollapsibleSummary(context),
-        ),
-      ),
-
-      // ── Search bar (always visible) ──
-      SliverToBoxAdapter(child: _buildSearchBar(context)),
-
-      // ── Fleet Filter Bar ──
-      SliverToBoxAdapter(child: _buildFleetFilterBar(context)),
-
-      // ── Vehicle Route Cards ──
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        sliver: routes.isEmpty
-            ? SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text(
-                      'No vehicles match filters',
-                      style: TextStyle(
-                        color: _textSecondary(context),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            : SliverList.builder(
-                itemCount: routes.length,
-                itemBuilder: (ctx, i) {
-                  final originalIndex = _vehicleRoutes.indexOf(routes[i]);
-                  return _buildVehicleRouteCard(context, originalIndex);
-                },
-              ),
-      ),
-    ];
-  }
-
-  // ══════════════════════════════════════════════════════════
-  //  SCROLLABLE CONTENT (summary + filter + vehicle cards)
-  // ══════════════════════════════════════════════════════════
-  Widget _buildScrollableContent(
-    BuildContext context, {
-    ScrollController? scrollController,
-  }) {
-    final routes = _filteredRoutes;
-    return CustomScrollView(
-      controller: scrollController,
-      slivers: [
-        // ── Summary Card (collapsible) ──
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: _buildCollapsibleSummary(context),
-          ),
-        ),
-
-        // ── Search bar (always visible) ──
-        SliverToBoxAdapter(child: _buildSearchBar(context)),
-
-        // ── Fleet Filter Bar ──
-        SliverToBoxAdapter(child: _buildFleetFilterBar(context)),
-
-        // ── Vehicle Route Cards ──
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          sliver: routes.isEmpty
-              ? SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 32),
-                    child: Center(
-                      child: Text(
-                        'No vehicles match filters',
-                        style: TextStyle(
-                          color: _textSecondary(context),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              : SliverList.builder(
-                  itemCount: routes.length,
-                  itemBuilder: (ctx, i) {
-                    final originalIndex = _vehicleRoutes.indexOf(routes[i]);
-                    return _buildVehicleRouteCard(context, originalIndex);
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
-  //  RESULTS PANEL (Desktop side panel — scroll + fixed bar)
-  // ══════════════════════════════════════════════════════════
-  Widget _buildResultsPanel(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(child: _buildScrollableContent(context)),
-        _buildActionBar(context),
-      ],
-    );
-  }
-
-  // ── Search Bar Widget (shared between mobile + desktop) ─
-  Widget _buildSearchBar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Container(
-        height: 38,
-        decoration: BoxDecoration(
-          color: _surfaceColor(context),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _borderColorThemed(context).withOpacity(0.4),
-          ),
-        ),
-        child: TextField(
-          controller: _searchController,
-          onChanged: (v) => setState(() => _vehicleSearchQuery = v),
-          style: TextStyle(color: _textPrimary(context), fontSize: 12),
-          decoration: InputDecoration(
-            hintText: 'Search vehicle...',
-            hintStyle: TextStyle(color: _textTertiary(context), fontSize: 12),
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              size: 18,
-              color: _textTertiary(context),
-            ),
-            suffixIcon: _vehicleSearchQuery.isNotEmpty
-                ? GestureDetector(
-                    onTap: () {
-                      _searchController.clear();
-                      setState(() => _vehicleSearchQuery = '');
-                    },
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: 18,
-                      color: _textTertiary(context),
-                    ),
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-            isDense: true,
           ),
         ),
       ),
@@ -2361,14 +3237,14 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isFocused
-              ? route.color.withOpacity(0.6)
-              : route.color.withOpacity(0.2),
+              ? AppColors.primaryBrand.withOpacity(0.6)
+              : AppColors.primaryBrand.withOpacity(0.2),
           width: isFocused ? 2 : 1,
         ),
         boxShadow: isFocused
             ? [
                 BoxShadow(
-                  color: route.color.withOpacity(0.15),
+                  color: AppColors.primaryBrand.withOpacity(0.15),
                   blurRadius: 12,
                   spreadRadius: 1,
                 ),
@@ -2393,18 +3269,17 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
               padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
-                  // Vehicle color indicator
+                  // Vehicle icon
                   Container(
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: route.color.withOpacity(0.15),
-                      border: Border.all(color: route.color.withOpacity(0.4)),
+                      color: AppColors.primaryBrand.withOpacity(0.15),
                     ),
-                    child: Icon(
-                      Icons.directions_car_rounded,
-                      color: route.color,
+                    child: const Icon(
+                      Icons.directions_car_filled_rounded,
+                      color: AppColors.primaryBrand,
                       size: 22,
                     ),
                   ),
@@ -2451,7 +3326,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                             _miniStat(
                               Icons.business_rounded,
                               'Office: $dropOffTime',
-                              const Color(0xFFEF4444),
+                              AppColors.officeAccent,
                             ),
                           ],
                         ),
@@ -2466,13 +3341,13 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: route.color.withOpacity(0.12),
+                      color: AppColors.primaryBrand.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${route.trips.length} trip${route.trips.length > 1 ? 's' : ''}',
-                      style: TextStyle(
-                        color: route.color,
+                      style: const TextStyle(
+                        color: AppColors.primaryBrand,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
@@ -2498,26 +3373,16 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: Row(
               children: [
-                // Focus on map button
                 _actionMiniButton(
                   context,
-                  icon: isFocused
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  label: isFocused ? 'Show All' : 'Focus',
-                  color: route.color,
-                  onTap: () => _focusVehicle(index),
-                ),
-                const SizedBox(width: 8),
-                // Play single vehicle
-                _actionMiniButton(
-                  context,
-                  icon: Icons.play_circle_rounded,
-                  label: 'Animate',
-                  color: route.color,
+                  icon: Icons.route_rounded,
+                  label: 'Simulate Path',
+                  color: AppColors.primaryBrand,
                   onTap: () {
                     _focusVehicle(index);
                     if (!_isPlaying) _togglePlayback();
+                    _outerTabController.animateTo(2);
+                    setState(() => _outerTabIndex = 2);
                   },
                 ),
               ],
@@ -2613,13 +3478,13 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
+                  color: AppColors.tripAccent.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   'Trip ${trip.tripNumber}',
-                  style: TextStyle(
-                    color: color,
+                  style: const TextStyle(
+                    color: AppColors.tripAccent,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
@@ -2662,10 +3527,12 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         (locLower.contains('drop') || locLower.contains('office'));
     final isDepot = locLower.contains('depot');
 
-    final dotColor = isDepot || isDeparture
+    final dotColor = isDepot
         ? color
+        : isDeparture
+        ? AppColors.silver
         : isDropoff
-        ? AppColors.error
+        ? AppColors.officeAccent
         : AppColors.primaryBrand;
 
     return IntrinsicHeight(
@@ -2799,81 +3666,43 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            // ── Details ──
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => OutputDetailsPage(
-                        testCaseId: widget.testCaseId,
-                        testCaseName: widget.testCaseName,
-                        resultData: _currentData,
-                      ),
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isLoading ? null : _handleRetry,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
                     ),
-                  );
-                },
-                icon: const Icon(Icons.info_outline_rounded, size: 18),
-                label: const Text(
-                  'DETAILS',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primaryBrand,
-                  side: const BorderSide(color: AppColors.primaryBrand),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  minimumSize: const Size(0, 50),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-
-            // ── Re-Run ──
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _handleRetry,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.rocket_launch_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                label: const Text(
-                  'RE-RUN',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                  )
+                : const Icon(
+                    Icons.rocket_launch_rounded,
+                    size: 18,
                     color: Colors.white,
                   ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBrand,
-                  disabledBackgroundColor: AppColors.primaryBrand.withOpacity(
-                    0.5,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  minimumSize: const Size(0, 50),
-                  elevation: 4,
-                  shadowColor: AppColors.primaryBrand.withOpacity(0.4),
-                ),
+            label: const Text(
+              'RE-RUN',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
-          ],
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryBrand,
+              disabledBackgroundColor: AppColors.primaryBrand.withOpacity(0.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              minimumSize: const Size(0, 50),
+              elevation: 4,
+              shadowColor: AppColors.primaryBrand.withOpacity(0.4),
+            ),
+          ),
         ),
       ),
     );
@@ -2946,15 +3775,17 @@ class _StopInfo {
 //  CUSTOM MAP MARKERS (matching show_input_page / map_view style)
 // ═══════════════════════════════════════════════════════════════
 
-/// Employee pickup marker — colored pill with label + triangle pointer.
+/// Employee pickup marker — silver pill with label + triangle pointer (mirrors map_view.dart).
 class _EmployeeMarkerWidget extends StatelessWidget {
   final String label;
-  final Color color;
+  final bool isDark;
 
-  const _EmployeeMarkerWidget({required this.label, required this.color});
+  const _EmployeeMarkerWidget({required this.label, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
+    final color = isDark ? AppColors.silver : const Color(0xFFA0A0A0);
+    final textColor = isDark ? Colors.black87 : Colors.white;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2973,8 +3804,8 @@ class _EmployeeMarkerWidget extends StatelessWidget {
           ),
           child: Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: textColor,
               fontSize: 9,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.3,
@@ -3014,16 +3845,16 @@ class _OfficeMarkerWidget extends StatelessWidget {
   }
 }
 
-/// Static vehicle marker — bordered pill with car icon + V-label + triangle.
+/// Static vehicle marker — Premium-teal bordered pill, car icon + V-label + triangle.
 class _OutputVehicleMarker extends StatelessWidget {
   final String label;
-  final Color color;
 
-  const _OutputVehicleMarker({required this.label, required this.color});
+  const _OutputVehicleMarker({required this.label});
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = AppColors.primaryBrand;
     final bg = isDark ? AppColors.darkSurface : Colors.white;
 
     return Column(
@@ -3046,7 +3877,7 @@ class _OutputVehicleMarker extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.directions_car_rounded, color: color, size: 11),
+              Icon(Icons.directions_car_filled_rounded, color: color, size: 11),
               const SizedBox(width: 2),
               Text(
                 label,
@@ -3070,12 +3901,11 @@ class _OutputVehicleMarker extends StatelessWidget {
   }
 }
 
-/// Animated vehicle marker — pill style with pulsing effect.
+/// Animated vehicle marker — Petronas-teal pulsing pill (Premium style).
 class _AnimatedVehicleMarker extends StatefulWidget {
-  final Color color;
   final String label;
 
-  const _AnimatedVehicleMarker({required this.color, required this.label});
+  const _AnimatedVehicleMarker({required this.label});
 
   @override
   State<_AnimatedVehicleMarker> createState() => _AnimatedVehicleMarkerState();
@@ -3106,6 +3936,7 @@ class _AnimatedVehicleMarkerState extends State<_AnimatedVehicleMarker>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = AppColors.primaryBrand;
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final scale = 1.0 + _pulseController.value * 0.12;
 
@@ -3119,10 +3950,10 @@ class _AnimatedVehicleMarkerState extends State<_AnimatedVehicleMarker>
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: widget.color, width: 2),
+              border: Border.all(color: color, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: widget.color.withOpacity(0.5),
+                  color: color.withOpacity(0.5),
                   blurRadius: 8,
                   spreadRadius: 2,
                 ),
@@ -3132,15 +3963,15 @@ class _AnimatedVehicleMarkerState extends State<_AnimatedVehicleMarker>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.directions_car_rounded,
-                  color: widget.color,
+                  Icons.directions_car_filled_rounded,
+                  color: color,
                   size: 12,
                 ),
                 const SizedBox(width: 2),
                 Text(
                   widget.label,
                   style: TextStyle(
-                    color: widget.color,
+                    color: color,
                     fontSize: 9,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3,
@@ -3152,7 +3983,7 @@ class _AnimatedVehicleMarkerState extends State<_AnimatedVehicleMarker>
           ),
           CustomPaint(
             size: const Size(8, 5),
-            painter: _TrianglePainter(color: widget.color),
+            painter: _TrianglePainter(color: AppColors.primaryBrand),
           ),
         ],
       ),

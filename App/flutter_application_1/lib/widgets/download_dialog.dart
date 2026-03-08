@@ -8,80 +8,121 @@ class DownloadDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          24,
-          24,
-          24,
-          40,
-        ), // Extra bottom padding (40)
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle Bar for visual cue
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final sheetColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: sheetColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border(
+          top: BorderSide(
+            color: AppColors.primaryBrand.withOpacity(0.35),
+            width: 1.5,
+          ),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 14),
+            width: 32,
+            height: 3,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.outline.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Header row
+          Row(
+            children: [
+              const Icon(
+                Icons.download_rounded,
+                size: 16,
+                color: AppColors.primaryBrand,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'EXPORT AS',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.primaryBrand,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                  fontSize: 11,
                 ),
               ),
-            ),
-            Text(
-              "Download Report",
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Select a format to save to your device storage.",
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            _buildOption(context, "JSON", Icons.code, "json"),
-            const SizedBox(height: 12),
-            _buildOption(context, "Excel (.xlsx)", Icons.table_chart, "excel"),
-            const SizedBox(height: 12),
-            _buildOption(context, "PDF Report", Icons.picture_as_pdf, "pdf"),
-          ],
-        ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Options — 3 equal chips in a single column
+          _buildChip(context, Icons.code_rounded, 'JSON', 'json', isDark),
+          const SizedBox(height: 8),
+          _buildChip(
+            context,
+            Icons.table_chart_rounded,
+            'Excel (.xlsx)',
+            'excel',
+            isDark,
+          ),
+          const SizedBox(height: 8),
+          _buildChip(
+            context,
+            Icons.picture_as_pdf_rounded,
+            'PDF Report',
+            'pdf',
+            isDark,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildOption(
+  Widget _buildChip(
     BuildContext context,
-    String title,
     IconData icon,
+    String label,
     String type,
+    bool isDark,
   ) {
-    return InkWell(
+    final theme = Theme.of(context);
+    final bg = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF3F3F3);
+
+    return GestureDetector(
       onTap: () {
-        Navigator.pop(context); // Close dialog
-        onSelect(type); // Trigger download
+        Navigator.pop(context);
+        onSelect(type);
       },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: double.infinity,
         decoration: BoxDecoration(
-          border: Border.all(color: AppColors.borderColor),
-          borderRadius: BorderRadius.circular(12),
-          color: Theme.of(context).cardColor,
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: theme.colorScheme.outline.withOpacity(0.18),
+          ),
         ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(
           children: [
-            Icon(icon, color: AppColors.primaryBrand),
-            const SizedBox(width: 16),
+            Icon(icon, size: 16, color: AppColors.primaryBrand),
+            const SizedBox(width: 10),
             Text(
-              title,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface.withOpacity(0.85),
+              ),
             ),
-            const Spacer(),
-            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
           ],
         ),
       ),

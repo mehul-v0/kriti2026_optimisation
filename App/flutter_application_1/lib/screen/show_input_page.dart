@@ -32,7 +32,7 @@ class ShowInputPage extends StatefulWidget {
 }
 
 class _ShowInputPageState extends State<ShowInputPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // ── Controllers & Services ──────────────────────────────
   final ScrollController _scrollController = ScrollController();
   final DraggableScrollableController _sheetController =
@@ -40,6 +40,7 @@ class _ShowInputPageState extends State<ShowInputPage>
   final OptimizationService _optimizationService = OptimizationService();
   final DataService _dataService = DataService();
   late TabController _tabController;
+  late TabController _outerTabController; // Data | Map
 
   // ── State ───────────────────────────────────────────────
   bool _showBackToTop = false;
@@ -48,6 +49,9 @@ class _ShowInputPageState extends State<ShowInputPage>
   int _mobileTabIndex = 0;
   String _optimizationMode = 'standard'; // quick | standard | advanced
   String? _highlightedId; // employee/vehicle ID to highlight on marker tap
+
+  // ── Card keys for scroll-to ─────────────────────────────
+  final Map<String, GlobalKey> _cardKeys = {};
 
   // ── Filter state — Employee ─────────────────────────────
   int? _filterPriority;
@@ -72,18 +76,9 @@ class _ShowInputPageState extends State<ShowInputPage>
   late final Set<int> _availablePriorities;
 
   // ── Priority colour helper ──────────────────────────────
-  static const Map<int, Color> _priorityColors = {
-    1: Color(0xFFEF4444), // Red  — Critical
-    2: Color(0xFFF59E0B), // Amber
-    3: Color(0xFF3B82F6), // Blue
-    4: Color(0xFF8B5CF6), // Violet
-    5: Color(0xFF64748B), // Slate — Lowest
-  };
-
-  Color _priorityColor(dynamic p) {
-    final v = int.tryParse(p?.toString() ?? '') ?? 5;
-    return _priorityColors[v] ?? _priorityColors[5]!;
-  }
+  // All employees share the same silver accent (no per-priority colour)
+  Color _priorityColor(BuildContext context, dynamic p) =>
+      _isDark(context) ? AppColors.silver : const Color(0xFFCCCCCC);
 
   String _priorityLabel(dynamic p) {
     final v = int.tryParse(p?.toString() ?? '') ?? 0;
@@ -125,14 +120,15 @@ class _ShowInputPageState extends State<ShowInputPage>
   Color _borderColorThemed(BuildContext context) =>
       _isDark(context) ? AppColors.darkBorderColor : AppColors.borderColor;
 
-  Color _shadowColor(BuildContext context) =>
-      _isDark(context) ? Colors.black54 : Colors.black26;
-
   // ── Lifecycle ───────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _outerTabController = TabController(length: 2, vsync: this);
+
+    // Rebuild on outer tab change (show/hide FAB etc.)
+    _outerTabController.addListener(() => setState(() {}));
 
     // Sync tab controller with mobile sliver tab index
     _tabController.addListener(() {
@@ -192,11 +188,60 @@ class _ShowInputPageState extends State<ShowInputPage>
     }).toList();
   }
 
+  /// Resolve city name for display.
+  /// Priority: metadata.city → first employee's drop_city field →
+  /// city inferred from drop coordinates → 'Bengaluru' fallback.
+  String _resolveCity() {
+    // 1. metadata.city
+    final metaCity = _metadata['city']?.toString().trim() ?? '';
+    if (metaCity.isNotEmpty && metaCity.toLowerCase() != 'null') {
+      return metaCity;
+    }
+
+    // 2. Any employee with an explicit `city` / `drop_city` field
+    for (final emp in _employees) {
+      for (final key in ['city', 'drop_city', 'location_city']) {
+        final v = emp[key]?.toString().trim() ?? '';
+        if (v.isNotEmpty && v.toLowerCase() != 'null') return v;
+      }
+    }
+
+    // 3. Infer from common drop coordinates (bounding-box check)
+    if (_employees.isNotEmpty) {
+      final lat = ((_employees.first['drop_lat']) as num?)?.toDouble();
+      final lng = ((_employees.first['drop_lng']) as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        if (lat >= 12.8 && lat <= 13.2 && lng >= 77.4 && lng <= 77.8) {
+          return 'Bengaluru';
+        }
+        if (lat >= 28.4 && lat <= 28.9 && lng >= 76.8 && lng <= 77.4) {
+          return 'Delhi';
+        }
+        if (lat >= 19.0 && lat <= 19.3 && lng >= 72.7 && lng <= 73.1) {
+          return 'Mumbai';
+        }
+        if (lat >= 17.3 && lat <= 17.6 && lng >= 78.3 && lng <= 78.7) {
+          return 'Hyderabad';
+        }
+        if (lat >= 12.8 && lat <= 13.2 && lng >= 80.1 && lng <= 80.4) {
+          return 'Chennai';
+        }
+        if (lat >= 22.4 && lat <= 22.7 && lng >= 88.2 && lng <= 88.5) {
+          return 'Kolkata';
+        }
+      }
+    }
+
+    // 4. Final fallback
+    return 'Bengaluru';
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
     _sheetController.dispose();
     _tabController.dispose();
+    _outerTabController.dispose();
     super.dispose();
   }
 
@@ -208,6 +253,24 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
+  /// Scroll the list so the card for [id] is visible.
+  void _scrollToId(String id) {
+    if (!_scrollController.hasClients) return;
+    final key = _cardKeys[id];
+    if (key?.currentContext == null) return;
+    final renderObj = key!.currentContext!.findRenderObject();
+    if (renderObj == null) return;
+    // Use ScrollPosition.ensureVisible directly — this only scrolls THIS
+    // specific position and never walks up to ancestor scrollables (PageView).
+    _scrollController.position.ensureVisible(
+      renderObj,
+      alignment: 0.15,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+    );
+  }
+
   // ── Marker tap handlers ─────────────────────────────────
   void _onEmployeeMarkerTap(Map<String, dynamic> emp) {
     final empId = emp['employee_id']?.toString() ?? '';
@@ -216,14 +279,16 @@ class _ShowInputPageState extends State<ShowInputPage>
       _tabController.animateTo(0);
       _highlightedId = empId;
     });
-    // Expand sheet to show cards
-    if (_sheetController.isAttached) {
-      _sheetController.animateTo(
-        0.85,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
-    }
+    // Switch to Data tab so the card is visible
+    _outerTabController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+    // Scroll to the card after tab + list rebuild
+    Future.delayed(const Duration(milliseconds: 420), () {
+      if (mounted) _scrollToId(empId);
+    });
     // Clear highlight after a few seconds
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && _highlightedId == empId) {
@@ -239,14 +304,16 @@ class _ShowInputPageState extends State<ShowInputPage>
       _tabController.animateTo(1);
       _highlightedId = vehId;
     });
-    // Expand sheet to show cards
-    if (_sheetController.isAttached) {
-      _sheetController.animateTo(
-        0.85,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
-    }
+    // Switch to Data tab so the card is visible
+    _outerTabController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+    // Scroll to the card after tab + list rebuild
+    Future.delayed(const Duration(milliseconds: 420), () {
+      if (mounted) _scrollToId(vehId);
+    });
     // Clear highlight after a few seconds
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && _highlightedId == vehId) {
@@ -415,7 +482,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     return Scaffold(
       backgroundColor: _bgColor(context),
       appBar: _buildAppBar(context),
-      floatingActionButton: _showBackToTop
+      floatingActionButton: (isDesktop && _showBackToTop)
           ? GestureDetector(
               onTap: _scrollToTop,
               child: ClipRRect(
@@ -472,16 +539,21 @@ class _ShowInputPageState extends State<ShowInputPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.testCaseName,
+            'Input Preview',
             style: TextStyle(
-              color: _textPrimary(context),
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+              color: _textSecondary(context),
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.6,
             ),
           ),
           Text(
-            '${_metadata['city'] ?? 'Unknown City'} · ${_employees.length} employees · ${_vehicles.length} vehicles',
-            style: TextStyle(color: _textSecondary(context), fontSize: 12),
+            widget.testCaseName,
+            style: TextStyle(
+              color: _textPrimary(context),
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -500,111 +572,22 @@ class _ShowInputPageState extends State<ShowInputPage>
   }
 
   // ══════════════════════════════════════════════════════════
-  //  MOBILE LAYOUT  — Action bar OUTSIDE the sheet
+  //  MOBILE LAYOUT  — Data / Map top-level tabs
   // ══════════════════════════════════════════════════════════
   Widget _buildMobileLayout(BuildContext context, Size size) {
     return Column(
       children: [
-        // ── Map + draggable sheet ──
+        // ── Top-level Data | Map tab bar ──
+        _buildOuterTabBar(context),
+
+        // ── Tab content ──
         Expanded(
-          child: Stack(
+          child: TabBarView(
+            controller: _outerTabController,
+            physics: const NeverScrollableScrollPhysics(),
             children: [
-              Positioned.fill(
-                child: MapViewWidget(
-                  employees: _employees,
-                  vehicles: _vehicles,
-                  onEmployeeTap: _onEmployeeMarkerTap,
-                  onVehicleTap: _onVehicleMarkerTap,
-                ),
-              ),
-
-              DraggableScrollableSheet(
-                controller: _sheetController,
-                initialChildSize: 0.45,
-                minChildSize: 0.15,
-                maxChildSize: 0.85,
-                snap: true,
-                snapSizes: const [0.18, 0.45, 0.85],
-                builder: (ctx, scrollController) {
-                  final isEmpTab = _mobileTabIndex == 0;
-                  final items = isEmpTab
-                      ? _filteredEmployees
-                      : _filteredVehicles;
-
-                  return Container(
-                    clipBehavior: Clip.hardEdge,
-                    decoration: BoxDecoration(
-                      color: _bgColor(context),
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(24),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _shadowColor(context),
-                          blurRadius: 20,
-                          offset: const Offset(0, -4),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: CustomScrollView(
-                        controller: scrollController,
-                        slivers: [
-                          SliverToBoxAdapter(child: _buildDragHandle(context)),
-
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              child: _buildMetadataStrip(context),
-                            ),
-                          ),
-                          const SliverToBoxAdapter(child: SizedBox(height: 8)),
-
-                          SliverToBoxAdapter(
-                            child: _buildSegmentedTabs(context, isMobile: true),
-                          ),
-                          const SliverToBoxAdapter(child: SizedBox(height: 4)),
-
-                          // Filter bar
-                          SliverToBoxAdapter(
-                            child: isEmpTab
-                                ? _buildEmployeeFilterBar(context)
-                                : _buildVehicleFilterBar(context),
-                          ),
-                          const SliverToBoxAdapter(child: SizedBox(height: 4)),
-
-                          // Items
-                          if (items.isEmpty)
-                            SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: _emptyState(
-                                context,
-                                isEmpTab
-                                    ? 'No employees match filters'
-                                    : 'No vehicles match filters',
-                              ),
-                            )
-                          else
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
-                              sliver: SliverList.builder(
-                                itemCount: items.length,
-                                itemBuilder: (ctx, i) {
-                                  return isEmpTab
-                                      ? _buildEmployeeCard(context, items[i])
-                                      : _buildVehicleCard(context, items[i]);
-                                },
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+              _buildMobileDataTab(context, size),
+              _buildMobileMapTab(context),
             ],
           ),
         ),
@@ -612,6 +595,169 @@ class _ShowInputPageState extends State<ShowInputPage>
         // ── Persistent action bar ──
         _buildActionBar(context),
       ],
+    );
+  }
+
+  // ── Outer tab bar (Data | Map) ─────────────────────────
+  Widget _buildOuterTabBar(BuildContext context) {
+    final dark = _isDark(context);
+    final size = MediaQuery.of(context).size;
+    return Container(
+      color: _bgColor(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TabBar(
+            controller: _outerTabController,
+            indicator: UnderlineTabIndicator(
+              borderSide: const BorderSide(
+                color: AppColors.primaryBrand,
+                width: 3,
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(2),
+                topRight: Radius.circular(2),
+              ),
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
+            labelColor: AppColors.primaryBrand,
+            unselectedLabelColor: dark
+                ? Colors.white54
+                : AppColors.textSecondaryLight,
+            labelStyle: TextStyle(
+              fontSize: size.width < 360 ? 12 : 14,
+              fontWeight: FontWeight.w600,
+            ),
+            unselectedLabelStyle: TextStyle(
+              fontSize: size.width < 360 ? 12 : 14,
+              fontWeight: FontWeight.w500,
+            ),
+            tabs: const [
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.list_alt_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text('Data'),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.map_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text('Map'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: _borderColorThemed(context).withOpacity(0.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Mobile Data tab ────────────────────────────────────
+  Widget _buildMobileDataTab(BuildContext context, Size size) {
+    final isEmpTab = _mobileTabIndex == 0;
+    final items = isEmpTab ? _filteredEmployees : _filteredVehicles;
+    final hPad = size.width < 360 ? 8.0 : 12.0;
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            // Metadata strip
+            Padding(
+              padding: EdgeInsets.fromLTRB(hPad, 10, hPad, 0),
+              child: _buildMetadataStrip(context),
+            ),
+            const SizedBox(height: 8),
+
+            // Employees / Vehicles segmented tabs
+            _buildSegmentedTabs(context, isMobile: true),
+            const SizedBox(height: 4),
+
+            // Filter bar
+            isEmpTab
+                ? _buildEmployeeFilterBar(context)
+                : _buildVehicleFilterBar(context),
+            const SizedBox(height: 4),
+
+            // List
+            Expanded(
+              child: items.isEmpty
+                  ? _emptyState(
+                      context,
+                      isEmpTab
+                          ? 'No employees match filters'
+                          : 'No vehicles match filters',
+                    )
+                  : ListView(
+                      controller: _scrollController,
+                      padding: EdgeInsets.fromLTRB(hPad, 4, hPad, 16),
+                      children: [
+                        for (final item in items)
+                          isEmpTab
+                              ? _buildEmployeeCard(context, item)
+                              : _buildVehicleCard(context, item),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+
+        // ── Back-to-top FAB inside the data tab ──
+        if (_showBackToTop)
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: GestureDetector(
+              onTap: _scrollToTop,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBrand.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.primaryBrand.withOpacity(0.6),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_upward_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Mobile Map tab ─────────────────────────────────────
+  Widget _buildMobileMapTab(BuildContext context) {
+    return MapViewWidget(
+      employees: _employees,
+      vehicles: _vehicles,
+      onEmployeeTap: _onEmployeeMarkerTap,
+      onVehicleTap: _onVehicleMarkerTap,
     );
   }
 
@@ -674,23 +820,6 @@ class _ShowInputPageState extends State<ShowInputPage>
   //  SHARED BUILDING BLOCKS
   // ══════════════════════════════════════════════════════════
 
-  // ── Drag handle (mobile sheet) ─────────────────────────
-  Widget _buildDragHandle(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: _isDark(context) ? Colors.white24 : Colors.black12,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── Metadata strip (city, counts) ──────────────────────
   Widget _buildMetadataStrip(BuildContext context) {
     return Container(
@@ -719,7 +848,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  _metadata['city'] ?? 'City',
+                  _resolveCity(),
                   style: const TextStyle(
                     color: AppColors.primaryBrand,
                     fontWeight: FontWeight.w600,
@@ -983,7 +1112,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                       context,
                       label: _priorityLabel(p),
                       isActive: _filterPriority == p,
-                      activeColor: _priorityColors[p]!,
+                      activeColor: _priorityColor(context, p),
                       onTap: () => setState(
                         () => _filterPriority = _filterPriority == p ? null : p,
                       ),
@@ -1168,7 +1297,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                   icon: Icons.arrow_upward_rounded,
                   tooltip: 'Earliest first',
                   isActive: _sortVehByTime == true,
-                  activeColor: Colors.deepPurple,
+                  activeColor: AppColors.primaryBrand,
                   onTap: () => setState(
                     () => _sortVehByTime = _sortVehByTime == true ? null : true,
                   ),
@@ -1180,7 +1309,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                   icon: Icons.arrow_downward_rounded,
                   tooltip: 'Latest first',
                   isActive: _sortVehByTime == false,
-                  activeColor: Colors.deepPurple,
+                  activeColor: AppColors.primaryBrand,
                   onTap: () => setState(
                     () =>
                         _sortVehByTime = _sortVehByTime == false ? null : false,
@@ -1325,7 +1454,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     final id = emp['employee_id']?.toString() ?? '';
     final shortId = id.length > 1 ? id.substring(1) : id;
     final priority = emp['priority'];
-    final pColor = _priorityColor(priority);
+    final pColor = _priorityColor(context, priority);
     final pickup = emp['earliest_pickup']?.toString() ?? '--';
     final drop = emp['latest_drop']?.toString() ?? '--';
     final vPref = emp['vehicle_preference']?.toString() ?? 'any';
@@ -1340,6 +1469,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     final baselineCost = bl['baseline_cost'];
 
     return AnimatedContainer(
+      key: _cardKeys.putIfAbsent(id, () => GlobalKey()),
       duration: const Duration(milliseconds: 400),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -1367,17 +1497,14 @@ class _ShowInputPageState extends State<ShowInputPage>
                   height: 42,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [pColor, pColor.withOpacity(0.5)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: pColor,
                   ),
                   child: Center(
                     child: Text(
                       shortId,
                       style: const TextStyle(
-                        color: Colors.white,
+                        // Black text is legible on both silver shades
+                        color: Colors.black87,
                         fontWeight: FontWeight.w800,
                         fontSize: 15,
                       ),
@@ -1534,10 +1661,14 @@ class _ShowInputPageState extends State<ShowInputPage>
     final isHighlighted = _highlightedId == id;
 
     final accentColor = isPremium
-        ? AppColors.markerPremium
-        : AppColors.primaryBrand;
+        ? AppColors
+              .markerPremium // Petronas teal for premium
+        : (_isDark(context)
+              ? AppColors.markerNormal
+              : const Color(0xFF6E6E6E)); // Silver / grey for normal
 
     return AnimatedContainer(
+      key: _cardKeys.putIfAbsent(id, () => GlobalKey()),
       duration: const Duration(milliseconds: 400),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -1568,7 +1699,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                   ),
                   child: Icon(
                     isPremium
-                        ? Icons.star_rounded
+                        ? Icons.directions_car_filled_rounded
                         : Icons.directions_car_rounded,
                     color: accentColor,
                     size: 22,
@@ -1701,10 +1832,109 @@ class _ShowInputPageState extends State<ShowInputPage>
   }
 
   // ── Action bar ─────────────────────────────────────────
-  Widget _buildActionBar(BuildContext context) {
+  static const Map<String, String> _modeLabels = {
+    'quick': 'Quick (~15s)',
+    'standard': 'Standard (~1m)',
+    'advanced': 'Advanced (~5m)',
+  };
+
+  static const Map<String, IconData> _modeIcons = {
+    'quick': Icons.bolt_rounded,
+    'standard': Icons.balance_rounded,
+    'advanced': Icons.science_rounded,
+  };
+
+  void _showModePicker(BuildContext context) {
     final dark = _isDark(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surfaceColor(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: dark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Optimization Mode',
+                  style: TextStyle(
+                    color: _textPrimary(context),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final entry in _modeLabels.entries)
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    leading: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: _optimizationMode == entry.key
+                            ? AppColors.primaryBrand.withOpacity(0.15)
+                            : (dark ? Colors.white10 : Colors.black12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        _modeIcons[entry.key]!,
+                        color: _optimizationMode == entry.key
+                            ? AppColors.primaryBrand
+                            : _textSecondary(context),
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      entry.value,
+                      style: TextStyle(
+                        color: _optimizationMode == entry.key
+                            ? AppColors.primaryBrand
+                            : _textPrimary(context),
+                        fontWeight: _optimizationMode == entry.key
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                    trailing: _optimizationMode == entry.key
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: AppColors.primaryBrand,
+                          )
+                        : null,
+                    onTap: () {
+                      setState(() => _optimizationMode = entry.key);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                const SizedBox(height: 4),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActionBar(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
       decoration: BoxDecoration(
         color: _bgColor(context),
         border: Border(
@@ -1716,109 +1946,79 @@ class _ShowInputPageState extends State<ShowInputPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Mode selector row ──
+            // ── Dropdown + Buttons in one row ──
             Row(
               children: [
-                Icon(
-                  Icons.tune_rounded,
-                  color: _textSecondary(context),
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Mode',
-                  style: TextStyle(
-                    color: _textSecondary(context),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                // ── Compact mode dropdown ──
+                GestureDetector(
+                  onTap: () => _showModePicker(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: _surfaceColor(context),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _borderColorThemed(context).withOpacity(0.5),
+                      ),
+                    ),
+                    child: Icon(
+                      _modeIcons[_optimizationMode] ?? Icons.balance_rounded,
+                      color: AppColors.primaryBrand,
+                      size: 22,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Row(
-                    children: [
-                      _modeChip(
-                        context,
-                        value: 'quick',
-                        icon: Icons.bolt_rounded,
-                        label: 'Quick',
-                        desc: '~30s',
-                      ),
-                      const SizedBox(width: 6),
-                      _modeChip(
-                        context,
-                        value: 'standard',
-                        icon: Icons.balance_rounded,
-                        label: 'Standard',
-                        desc: '~2m',
-                      ),
-                      const SizedBox(width: 6),
-                      _modeChip(
-                        context,
-                        value: 'advanced',
-                        icon: Icons.science_rounded,
-                        label: 'Advanced',
-                        desc: '~5m',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            // ── Buttons row ──
-            Row(
-              children: [
+                const SizedBox(width: 8),
+
                 // ── View Existing Results (only if solution exists) ──
-                if (_hasExistingSolution)
+                if (_hasExistingSolution) ...[
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _isLoading
                           ? null
                           : () => _handleOptimizationAction(forceRun: false),
-                      icon: const Icon(Icons.visibility_rounded, size: 18),
-                      label: const Text(
-                        'VIEW RESULTS',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      icon: const Icon(Icons.visibility_rounded, size: 15),
+                      label: const Text('View'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primaryBrand,
                         side: const BorderSide(color: AppColors.primaryBrand),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        minimumSize: const Size(0, 48),
+                        minimumSize: const Size(0, 40),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        textStyle: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
-                if (_hasExistingSolution) const SizedBox(width: 12),
+                  const SizedBox(width: 6),
+                ],
 
                 // ── Run Optimization (primary CTA) ──
                 Expanded(
-                  flex: _hasExistingSolution ? 1 : 2,
                   child: ElevatedButton.icon(
                     onPressed: _isLoading
                         ? null
                         : () => _handleOptimizationAction(forceRun: true),
                     icon: _isLoading
                         ? const SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 14,
+                            height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
                             ),
                           )
                         : const Icon(
-                            Icons.rocket_launch_rounded,
-                            size: 18,
+                            Icons.route_rounded,
+                            size: 16,
                             color: Colors.white,
                           ),
                     label: Text(
-                      _hasExistingSolution ? 'RUN AGAIN' : 'RUN OPTIMIZATION',
+                      _hasExistingSolution ? 'Run Again' : 'Run Optimization',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -1832,8 +2032,9 @@ class _ShowInputPageState extends State<ShowInputPage>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      minimumSize: const Size(0, 48),
-                      elevation: 4,
+                      minimumSize: const Size(0, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      elevation: 3,
                       shadowColor: AppColors.primaryBrand.withOpacity(0.4),
                     ),
                   ),
@@ -1841,61 +2042,6 @@ class _ShowInputPageState extends State<ShowInputPage>
               ],
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _modeChip(
-    BuildContext context, {
-    required String value,
-    required IconData icon,
-    required String label,
-    required String desc,
-  }) {
-    final isActive = _optimizationMode == value;
-    final color = isActive ? AppColors.primaryBrand : _textSecondary(context);
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _optimizationMode = value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            color: isActive
-                ? AppColors.primaryBrand.withOpacity(0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isActive
-                  ? AppColors.primaryBrand.withOpacity(0.5)
-                  : _borderColorThemed(context),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 16),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-              Text(
-                desc,
-                style: TextStyle(
-                  color: isActive
-                      ? color.withOpacity(0.7)
-                      : _textTertiary(context),
-                  fontSize: 8,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

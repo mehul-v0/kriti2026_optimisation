@@ -2,57 +2,131 @@ import 'package:flutter/material.dart';
 
 // 1. Define your raw colors here (Centralized Control)
 class AppColors {
-  // --- BRAND COLORS (Extracted from "Roxio" UI) ---
-  // The vibrant green seen on the car, buttons, and logo.
-  static const Color primaryBrand = Color(0xFF00C569);
+  // --- BRAND COLORS (Mercedes-AMG F1 x Petronas) ---
+  // Iconic Petronas teal — the signature colour of the W-series livery
+  static const Color primaryBrand = Color(0xFF00D2BE);
   static const Color darkBrand = Color(
-    0xFF00964F,
-  ); // A darker shade for gradients/press states
+    0xFF00A19C,
+  ); // Deeper teal for gradients / press states
 
   // --- BACKGROUNDS ---
-  // The deep midnight blue/black seen on the Splash screen and Dark cards
-  static const Color darkBackground = Color(0xFF10151C);
+  // Carbon-black cockpit feel
+  static const Color darkBackground = Color(0xFF090909);
   static const Color darkSurface = Color(
-    0xFF1A212B,
-  ); // Slightly lighter for cards in dark mode
+    0xFF1A1A1A,
+  ); // Slightly lighter for cards / panels
 
-  static const Color lightBackground = Color(0xFFF5F7FA); // Light greyish-white
-  static const Color lightSurface = Colors.white;
+  // Silver livery-inspired light mode
+  static const Color lightBackground = Color(0xFFEAEAEA); // Brushed silver
+  static const Color lightSurface = Color(0xFFF5F5F5); // Near-white silver
 
   // --- STATE COLORS ---
-  static const Color success = Color(0xFF00C569); // Matches Brand Green
-  static const Color error = Color(0xFFEF4444); // Modern Red
-  static const Color warning = Color(0xFFF59E0B); // Amber
+  static const Color success = Color(0xFF00D2BE); // Petronas teal
+  static const Color error = Color(0xFFEF4444); // Red flag
+  static const Color warning = Color(0xFFF59E0B); // Safety-car amber
 
   // --- BORDERS & NEUTRALS ---
-  static const Color borderColor = Color(0xFFE2E8F0);
-  static const Color darkBorderColor = Color(0xFF2D3748);
+  static const Color borderColor = Color(0xFFB0B0B0); // Silver trim
+  static const Color darkBorderColor = Color(0xFF2E2E2E); // Dark carbon border
 
-  static const Color textPrimaryLight = Color(0xFF111827); // Nearly black
-  static const Color textSecondaryLight = Color(0xFF6B7280); // Grey text
+  static const Color textPrimaryLight = Color(
+    0xFF0A0A0A,
+  ); // Near-black on silver
+  static const Color textSecondaryLight = Color(0xFF5A5A5A); // Mid-grey
+
+  // Silver accents
+  static const Color silver = Color(0xFFC0C0C0);
+  static const Color chromeSilver = Color(0xFFE8E8E8);
 
   // --- MAP COLORS ---
-  // Specific colors for your map implementation
-  static const Color routeLine = primaryBrand; // The green line in the image
-  static const Color markerEmployee = Color(0xFF3B82F6); // Blue
-  static const Color markerPremium = Color(0xFFF59E0B); // Gold
-  static const Color markerNormal = Color(0xFF64748B); // Slate Grey
-  static const Color markerCompany = primaryBrand; // Green for brand
+  static const Color routeLine = primaryBrand; // Petronas teal route line
+  static const Color markerEmployee =
+      silver; // Whitish silver for all employees
+  static const Color markerPremium =
+      primaryBrand; // Petronas teal for premium vehicles
+  static const Color markerNormal =
+      silver; // Whitish silver for normal vehicles
+  static const Color markerCompany = primaryBrand; // Teal for HQ
+
+  // --- ROUTE / TRIP SECTION COLORS ---
+  // Neutral grey accents for trip labels and office indicators in route cards
+  static const Color tripAccent = Color(
+    0xFF9E9E9E,
+  ); // Grey for trip header badges
+  static const Color officeAccent = Color(
+    0xFF9E9E9E,
+  ); // Grey for office stop indicators
+}
+
+class AppThemeData {
+  // ── Map tile color-filter matrices ───────────────────────────────────────
+  // Centralised here so changing the map style only requires editing one place.
+  //
+  // Dark mode: luminance-invert → steel-silver base with light teal cast
+  //   R: 0.55 × invLum  (high silver → dark steel-grey)
+  //   G: 0.72 × invLum  (slightly higher → gentle teal tint)
+  //   B: 0.66 × invLum  (slightly higher → gentle teal tint)
+  static const List<double> mapDarkMatrix = [
+    -0.164,
+    -0.323,
+    -0.063,
+    0,
+    140,
+    -0.215,
+    -0.423,
+    -0.082,
+    0,
+    184,
+    -0.197,
+    -0.387,
+    -0.075,
+    0,
+    168,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+
+  // Light mode: partial desaturation → brushed-silver / cool-grey cast
+  static const List<double> mapLightMatrix = [
+    0.68,
+    0.22,
+    0.06,
+    0,
+    0,
+    0.14,
+    0.78,
+    0.08,
+    0,
+    0,
+    0.14,
+    0.22,
+    0.64,
+    0,
+    12,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
 }
 
 class AppTheme {
-  // ================= LIGHT THEME =================
+  // ================= LIGHT THEME (Silver / Petronas) =================
   static final ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
     primaryColor: AppColors.primaryBrand,
     scaffoldBackgroundColor: AppColors.lightBackground,
 
-    // Color Scheme defines the palette for standard widgets (Fab, SnackBar, etc.)
+    // Color Scheme — silver livery, Petronas teal accents
     colorScheme: const ColorScheme.light(
       primary: AppColors.primaryBrand,
-      onPrimary: Colors.white, // Text on green buttons
-      secondary: AppColors.darkBackground, // Used for dark buttons/accents
+      onPrimary: Colors.black, // Black text on Petronas teal
+      secondary: AppColors.darkBackground, // Carbon-black accent
       onSecondary: Colors.white,
       error: AppColors.error,
       surface: AppColors.lightSurface,
@@ -60,70 +134,66 @@ class AppTheme {
       outline: AppColors.borderColor,
     ),
 
-    // Typography matching the clean, geometric sans-serif style
+    // Typography — bold, tight spacing like Mercedes race graphics
     textTheme: const TextTheme(
       headlineLarge: TextStyle(
         color: AppColors.textPrimaryLight,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         fontSize: 32,
-        letterSpacing: -0.5,
+        letterSpacing: -1.0,
       ),
       headlineSmall: TextStyle(
         color: AppColors.textPrimaryLight,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
         fontSize: 20,
+        letterSpacing: -0.3,
       ),
       bodyMedium: TextStyle(color: AppColors.textSecondaryLight, fontSize: 16),
       labelLarge: TextStyle(
-        // Button text
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.5,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.2, // Wide tracking for race-style labels
       ),
     ),
 
-    // Button Styling (Pill/Rounded shapes as seen in "Get Started")
+    // Buttons — carbon-black with silver text
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors
-            .darkBackground, // Dark buttons on light mode (Common in this UI)
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.darkBackground,
+        foregroundColor: AppColors.chromeSilver,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ), // High radius for pill shape
+          borderRadius: BorderRadius.circular(4), // Sharp, race-car geometry
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        minimumSize: const Size(
-          double.infinity,
-          54,
-        ), // Tall, full-width buttons
+        minimumSize: const Size(double.infinity, 54),
       ),
     ),
 
-    // Input Fields (Clean, minimal borders)
+    // Input Fields
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: AppColors.lightSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none, // Cleaner look
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.borderColor),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.transparent),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.borderColor),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primaryBrand, width: 1.5),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.primaryBrand, width: 2),
       ),
-      hintStyle: TextStyle(color: Colors.grey.shade400),
+      hintStyle: const TextStyle(color: AppColors.textSecondaryLight),
     ),
 
     // Icon Theme
     iconTheme: const IconThemeData(color: AppColors.darkBackground),
   );
 
-  // ================= DARK THEME =================
+  // ================= DARK THEME (Carbon-Black / Petronas) =================
   static final ThemeData darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
@@ -131,41 +201,43 @@ class AppTheme {
     scaffoldBackgroundColor: AppColors.darkBackground,
 
     colorScheme: const ColorScheme.dark(
-      primary: AppColors.primaryBrand,
-      onPrimary: Colors.black, // Green is bright, so black text looks better
-      secondary: Colors.white,
+      primary: AppColors.primaryBrand, // Petronas teal
+      onPrimary: Colors.black, // Black on teal — looks sharp
+      secondary: AppColors.silver, // Silver as dark-mode secondary
       onSecondary: Colors.black,
       error: AppColors.error,
       surface: AppColors.darkSurface,
-      onSurface: Colors.white,
+      onSurface: AppColors.chromeSilver, // Silver text on dark surfaces
       outline: AppColors.darkBorderColor,
     ),
 
     textTheme: const TextTheme(
       headlineLarge: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.w700,
+        color: AppColors.chromeSilver,
+        fontWeight: FontWeight.w800,
         fontSize: 32,
-        letterSpacing: -0.5,
+        letterSpacing: -1.0,
       ),
       headlineSmall: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.w600,
+        color: AppColors.chromeSilver,
+        fontWeight: FontWeight.w700,
         fontSize: 20,
+        letterSpacing: -0.3,
       ),
       bodyMedium: TextStyle(
-        color: Color(0xFF9CA3AF), // Lighter grey for dark mode
+        color: AppColors.silver, // Muted silver body text
         fontSize: 16,
       ),
+      labelLarge: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.2),
     ),
 
+    // Buttons — Petronas teal with black text
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor:
-            AppColors.primaryBrand, // Green buttons pop in dark mode
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.primaryBrand,
+        foregroundColor: Colors.black,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         minimumSize: const Size(double.infinity, 54),
       ),
@@ -176,20 +248,20 @@ class AppTheme {
       fillColor: AppColors.darkSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.darkBorderColor),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.transparent),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.darkBorderColor),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primaryBrand, width: 1.5),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.primaryBrand, width: 2),
       ),
-      hintStyle: TextStyle(color: Colors.grey.shade600),
+      hintStyle: const TextStyle(color: AppColors.silver),
     ),
 
-    iconTheme: const IconThemeData(color: Colors.white),
+    iconTheme: const IconThemeData(color: AppColors.primaryBrand),
   );
 }

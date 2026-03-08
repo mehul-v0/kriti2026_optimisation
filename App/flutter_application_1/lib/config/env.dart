@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 
 class Env {
   // CHANGE THIS when deploying to Render/Supabase
-  static const String _liveUrl = "https://your-render-app-name.onrender.com";
+  static const String _liveUrl =
+      "https://i80owo0o8wo0swkkcw888ws4.65.21.154.72.sslip.io/";
 
   // Localhost setup
   // NOTE: For Physical Device via USB, you MUST run: adb reverse tcp:5000 tcp:5000
@@ -11,7 +12,7 @@ class Env {
   static const String _webLocal = "http://127.0.0.1:5000";
 
   // Set this to true to force using the live URL
-  static const bool useLiveServer = false;
+  static const bool useLiveServer = true;
 
   static String get baseUrl {
     if (useLiveServer) return _liveUrl;
