@@ -105,14 +105,16 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
         backendResponse = await _uploadService.uploadGoogleSheet(spreadsheetId);
       }
 
-      // Backend /api/upload returns: employees, vehicles, digest, baseline_cost
-      // It does NOT return metadata or baseline list � use safe defaults.
+      // Backend /api/upload returns: employees, vehicles, digest, baseline_cost,
+      // and metadata (parsed from the Excel Metadata sheet).
+      // baseline list is NOT returned; only baseline_cost (a scalar) is provided.
       final inputJson = {
         "employees": backendResponse["employees"] ?? [],
         "vehicles": backendResponse["vehicles"] ?? [],
-        // metadata is not returned by backend; use empty map � optimizer
-        // fills it in from request params (costWeight, timeWeight etc.)
-        "metadata": <String, dynamic>{},
+        // Preserve metadata returned by backend (cost/time weights, priority delays, etc.)
+        "metadata":
+            (backendResponse["metadata"] as Map<String, dynamic>?) ??
+            <String, dynamic>{},
         // baseline list is not returned by backend; use empty list
         "baseline": <dynamic>[],
       };

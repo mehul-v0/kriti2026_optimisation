@@ -396,11 +396,43 @@ class _ShowInputPageState extends State<ShowInputPage>
           );
         }
 
+        // Extract optimization parameters from stored metadata so that
+        // cost/time weights and priority delays from the Excel file are sent
+        // explicitly in the request body (the backend uses body values when
+        // present, falling back to server-side state as defaults).
+        final meta = (inputData['metadata'] as Map<String, dynamic>?) ?? {};
+        final costWeight = (meta['objective_cost_weight'] as num?)?.toDouble();
+        final timeWeight = (meta['objective_time_weight'] as num?)?.toDouble();
+        Map<int, int>? priorityDelays;
+        final delayKeys = {
+          1: 'priority_1_max_delay_min',
+          2: 'priority_2_max_delay_min',
+          3: 'priority_3_max_delay_min',
+          4: 'priority_4_max_delay_min',
+          5: 'priority_5_max_delay_min',
+        };
+        final hasDelays = delayKeys.values.any((k) => meta[k] != null);
+        if (hasDelays) {
+          priorityDelays = {
+            for (final e in delayKeys.entries)
+              e.key:
+                  (meta[e.value] as num?)?.toInt() ??
+                  (e.key <= 2
+                      ? 5
+                      : e.key == 3
+                      ? 10
+                      : 15),
+          };
+        }
+
         // Pass the solver time limit that matches the selected mode
         resultData = await _optimizationService.runOptimization(
           inputData,
           mode: _optimizationMode,
           solverDurationSeconds: _kModeDurations[_optimizationMode],
+          costWeight: costWeight,
+          timeWeight: timeWeight,
+          priorityDelays: priorityDelays,
         );
 
         await _dataService.saveSolution(widget.testCaseId, resultData);
@@ -430,7 +462,13 @@ class _ShowInputPageState extends State<ShowInputPage>
       );
     } catch (e) {
       if (mounted) {
-        AppSnackbar.show(context, message: e.toString(), isError: true);
+        final raw = e.toString();
+        final msg = raw.contains('No data uploaded yet')
+            ? 'Server session expired. Please re-upload the test case to the server.'
+            : raw.startsWith('Exception: ')
+            ? raw.substring(11)
+            : raw;
+        AppSnackbar.show(context, message: msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
