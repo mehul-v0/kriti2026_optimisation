@@ -25,9 +25,15 @@ output/solution_*.json
 output/*_30s*.json
 output/solsol_*.json
 
+<<<<<<< Updated upstream
 # Track empty directory markers
 !output/.gitkeep
 !uploads/.gitkeep
+=======
+# Output and uploads directories
+output/
+uploads/
+>>>>>>> Stashed changes
 
 # Python
 __pycache__/
