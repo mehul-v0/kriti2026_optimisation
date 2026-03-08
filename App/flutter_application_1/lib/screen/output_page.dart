@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -8,16 +8,15 @@ import 'package:latlong2/latlong.dart';
 
 import 'package:flutter_application_1/config/info.dart';
 import 'package:flutter_application_1/elements/spinner.dart';
-import 'package:flutter_application_1/elements/snackbar.dart';
-import 'package:flutter_application_1/services/optimization_service.dart';
-import 'package:flutter_application_1/services/data_service.dart';
 import 'package:flutter_application_1/services/file_export_service.dart';
-import 'package:flutter_application_1/widgets/download_dialog.dart';
+import 'package:flutter_application_1/widgets/output_summary_panel.dart';
+import 'package:flutter_application_1/widgets/output_violations_panel.dart';
+import 'package:flutter_application_1/widgets/output_charts_panel.dart';
 import 'package:flutter_application_1/theme/theme.dart';
 
-// ─────────────────────────────────────────────────────────────
-//  OutputPage — Roxio Theme, Route Visualization & Animation
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
+//  OutputPage � Roxio Theme, Route Visualization & Animation
+// -------------------------------------------------------------
 
 class OutputPage extends StatefulWidget {
   final String testCaseId;
@@ -36,60 +35,52 @@ class OutputPage extends StatefulWidget {
 }
 
 class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
-  // ── Data ────────────────────────────────────────────────
+  // -- Data ------------------------------------------------
   late Map<String, dynamic> _currentData;
   late List<_VehicleRoute> _vehicleRoutes;
 
-  // ── Services ────────────────────────────────────────────
-  final OptimizationService _optimizationService = OptimizationService();
-  final DataService _dataService = DataService();
+  // -- Services --------------------------------------------
   final FileExportService _fileExportService = FileExportService();
 
-  // ── Map ─────────────────────────────────────────────────
+  // -- Map -------------------------------------------------
   final MapController _mapController = MapController();
   bool _mapReady = false;
 
-  // ── Animation ───────────────────────────────────────────
+  // -- Animation -------------------------------------------
   late AnimationController _playbackController;
   bool _isPlaying = false;
-  double _playbackProgress = 0.0; // 0.0 → 1.0
+  double _playbackProgress = 0.0; // 0.0 ? 1.0
   int? _focusedVehicleIndex; // null = show all
   final Set<int> _expandedCards = {};
 
-  // ── UI State ────────────────────────────────────────────
+  // -- UI State --------------------------------------------
   bool _isLoading = false;
   bool _isDownloading = false; // true only during file export/download
   final TextEditingController _searchController = TextEditingController();
 
-  // ── Outer tabs (Map | Overview) ─────────────────────────
+  // -- Outer tabs (Map | Overview) -------------------------
   late TabController _outerTabController;
   int _outerTabIndex = 0;
 
-  // ── Inner Overview tabs (Summary | Routes | Violations | Charts) ──
+  // -- Inner Overview tabs (Summary | Routes | Violations | Charts) --
   late TabController _overviewTabController;
 
-  // ── Fleet Filter ────────────────────────────────────────
+  // -- Fleet Filter ----------------------------------------
   bool _showFleetFilter = false;
   String? _filterVehicleId;
   bool? _sortByCost; // true = asc, false = desc
   bool? _sortByDistance; // true = asc, false = desc
   String _vehicleSearchQuery = '';
 
-  // ── Map legend overlay ──────────────────────────────────
+  // -- Map legend overlay ----------------------------------
   bool _showLegend = false;
 
-  // ── Summary Toggle ──────────────────────────────────────
-  bool _summaryExpanded = true;
-
-  // ── Draggable Summary Panel (mobile) ────────────────────
-  double _summarySheetExtent = 0.5;
-
-  // ── Playback Speed ─────────────────────────────────────
+  // -- Playback Speed -------------------------------------
   static const List<double> _speedOptions = [0.5, 1.0, 2.0, 4.0];
   int _speedIndex = 1; // default x1
   double get _playbackSpeed => _speedOptions[_speedIndex];
 
-  // ── Route Colors ────────────────────────────────────────
+  // -- Route Colors ----------------------------------------
   static const List<Color> _routePalette = [
     Color(0xFF00C569), // Brand green
     Color(0xFF3B82F6), // Blue
@@ -101,12 +92,12 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     Color(0xFFD97706), // Orange
   ];
 
-  // ── Map tile colour-filter matrices — defined centrally in AppThemeData ──
+  // -- Map tile colour-filter matrices � defined centrally in AppThemeData --
   // Use AppThemeData.mapDarkMatrix / AppThemeData.mapLightMatrix.
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  THEME HELPERS (mirror ShowInputPage)
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   bool _isDark(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark;
 
@@ -128,9 +119,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   Color _borderColorThemed(BuildContext context) =>
       _isDark(context) ? AppColors.darkBorderColor : AppColors.borderColor;
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  LIFECYCLE
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   @override
   void initState() {
     super.initState();
@@ -161,11 +152,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  DATA PARSING — handles BOTH formats:
+  // ----------------------------------------------------------
+  //  DATA PARSING � handles BOTH formats:
   //  Format A (raw solver): { vehicles: [{ trips: [{ stops: [...] }] }] }
   //  Format B (backend API): { result: {...}, routes: [...], assignments: [...] }
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   List<_VehicleRoute> _parseVehicleRoutes(Map<String, dynamic> data) {
     // Detect which format we have
     if (data.containsKey('vehicles') && data['vehicles'] is List) {
@@ -176,7 +167,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return [];
   }
 
-  /// Parse Format A: raw solver output with vehicles → trips → stops.
+  /// Parse Format A: raw solver output with vehicles ? trips ? stops.
   List<_VehicleRoute> _parseFromSolverFormat(Map<String, dynamic> data) {
     final List vehicles = data['vehicles'] ?? [];
     final List<_VehicleRoute> routes = [];
@@ -228,7 +219,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         }
 
         // Skip phantom trips: a trip whose every stop is office/depot and
-        // which has 0 distance — these are solver artefacts where the vehicle
+        // which has 0 distance � these are solver artefacts where the vehicle
         // just sits at the office between runs.
         final isPhantom =
             tripDist == 0 &&
@@ -286,7 +277,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
   /// Parse Format B: backend API response with routes + assignments.
   /// route_points already carry arrival_time, departure_time, distance_from_prev
-  /// and lat/lng directly — use them instead of secondary lookups.
+  /// and lat/lng directly � use them instead of secondary lookups.
   List<_VehicleRoute> _parseFromBackendFormat(Map<String, dynamic> data) {
     final List routesList = data['routes'] ?? [];
     final List<_VehicleRoute> routes = [];
@@ -298,7 +289,6 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           'V${(i + 1).toString().padLeft(2, '0')}';
       final totalCost = (r['total_cost'] as num?)?.toDouble() ?? 0;
       final totalDist = (r['total_distance'] as num?)?.toDouble() ?? 0;
-      final tripsCount = (r['trips_count'] as num?)?.toInt() ?? 1;
       final color = _routePalette[i % _routePalette.length];
 
       // Build stops from route_points using data already embedded in each point
@@ -320,7 +310,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           location = type.isNotEmpty ? type : 'Stop';
         }
 
-        // Use times and distance directly from route_point — they are correct
+        // Use times and distance directly from route_point � they are correct
         final arrTime = pt['arrival_time']?.toString() ?? '';
         final depTime = pt['departure_time']?.toString() ?? '';
         final distPrev = (pt['distance_from_prev'] as num?)?.toDouble() ?? 0.0;
@@ -435,7 +425,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
 
   /// Prepends the office/depot departure from the previous trip as the
   /// first stop of every subsequent trip, so each trip reads:
-  ///   Office (Departure) → Pickup(s) → Office (Drop-off)
+  ///   Office (Departure) ? Pickup(s) ? Office (Drop-off)
   List<_TripInfo> _addOfficeCarryOvers(List<_TripInfo> trips) {
     for (int t = 1; t < trips.length; t++) {
       final prevStops = trips[t - 1].stops;
@@ -471,7 +461,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return trips;
   }
 
-  /// Parse time string "HH:MM" → minutes since midnight.
+  /// Parse time string "HH:MM" ? minutes since midnight.
   int _timeToMinutes(String t) {
     final parts = t.split(':');
     if (parts.length != 2) return 0;
@@ -528,9 +518,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return '$h:$min';
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  TIME-BASED ANIMATION HELPERS
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
 
   /// Returns the list of stops aligned with route points.
   /// For real-coord routes, only stops that have lat/lng are included.
@@ -546,7 +536,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return route.allStops;
   }
 
-  /// Computes how far (0.0–1.0) through the route the vehicle is at
+  /// Computes how far (0.0�1.0) through the route the vehicle is at
   /// [currentTimeMin], using per-stop arrival/departure times.
   /// Falls back to global [_playbackProgress] when time data is absent.
   double _routeProgressAtTime(double currentTimeMin, List<_StopInfo> stops) {
@@ -628,9 +618,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return points.last;
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  PLAYBACK
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   void _togglePlayback() {
     if (_isPlaying) {
       _playbackController.stop();
@@ -714,14 +704,10 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.route_rounded,
-                color: AppColors.primaryBrand,
-                size: 18,
-              ),
+              Icon(Icons.route_rounded, color: context.primary, size: 18),
               const SizedBox(width: 10),
               Text(
-                'Simulate Path — $label',
+                'Simulate Path � $label',
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
@@ -737,9 +723,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     }
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  FLEET FILTER (mirrors ShowInputPage vehicle filter)
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   List<_VehicleRoute> get _filteredRoutes {
     var list = List<_VehicleRoute>.from(_vehicleRoutes);
 
@@ -799,45 +785,6 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return '--:--';
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  BUSINESS LOGIC
-  // ══════════════════════════════════════════════════════════
-  Future<void> _handleRetry() async {
-    setState(() => _isLoading = true);
-    try {
-      // Fetch the input JSON data from Supabase
-      final inputData = await _dataService.fetchInputData(widget.testCaseId);
-
-      if (inputData == null) {
-        throw Exception(
-          "Input data not found. Please re-upload the test case.",
-        );
-      }
-
-      // Run optimization by sending JSON directly to backend
-      final newData = await _optimizationService.runOptimization(inputData);
-      await _dataService.saveSolution(widget.testCaseId, newData);
-
-      if (mounted) {
-        setState(() {
-          _currentData = newData;
-          _vehicleRoutes = _parseVehicleRoutes(newData);
-          _playbackController.reset();
-          _isPlaying = false;
-          _playbackProgress = 0.0;
-          _focusedVehicleIndex = null;
-        });
-        AppSnackbar.show(context, message: "Result Updated Successfully!");
-      }
-    } catch (e) {
-      if (mounted) {
-        AppSnackbar.show(context, message: e.toString(), isError: true);
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   void _openDownloadDialog() {
     showModalBottomSheet(
       context: context,
@@ -871,9 +818,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     }
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  BUILD
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -894,24 +841,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── AppBar ─────────────────────────────────────────────
-  /// Derive a human-readable solution type from the stored data.
-  /// Format B (backend) has no top-level solution_type — derive from violations.
-  String get _solutionType {
-    // Format B: result.hard_violations / soft_violations
-    final result = _currentData['result'] as Map<String, dynamic>?;
-    if (result != null) {
-      final hard = (result['hard_violations'] as num?)?.toInt() ?? 0;
-      final soft = (result['soft_violations'] as num?)?.toInt() ?? 0;
-      if (hard == 0 && soft == 0) return 'OPTIMAL - No violations';
-      if (hard == 0)
-        return 'Feasible - $soft soft violation${soft > 1 ? 's' : ''}';
-      return 'Infeasible - $hard hard violation${hard > 1 ? 's' : ''}';
-    }
-    // Format A: top-level solution_type
-    return _currentData['solution_type']?.toString() ?? 'Completed';
-  }
-
+  // -- AppBar ---------------------------------------------
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final dark = _isDark(context);
 
@@ -957,7 +887,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       actions: [
         IconButton(
           icon: const Icon(Icons.download_rounded),
-          color: AppColors.primaryBrand,
+          color: context.primary,
           tooltip: 'Export',
           onPressed: _openDownloadDialog,
         ),
@@ -966,7 +896,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── Outer Tab Bar (Result | Route | Map) — mirrors show_input_page style ──
+  // -- Outer Tab Bar (Result | Route | Map) � mirrors show_input_page style --
   Widget _buildOuterTabBar(BuildContext context) {
     final dark = _isDark(context);
     final size = MediaQuery.of(context).size;
@@ -977,15 +907,15 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         children: [
           TabBar(
             controller: _outerTabController,
-            indicator: const UnderlineTabIndicator(
-              borderSide: BorderSide(color: AppColors.primaryBrand, width: 3),
+            indicator: UnderlineTabIndicator(
+              borderSide: BorderSide(color: context.primary, width: 3),
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(2),
                 topRight: Radius.circular(2),
               ),
             ),
             indicatorSize: TabBarIndicatorSize.tab,
-            labelColor: AppColors.primaryBrand,
+            labelColor: context.primary,
             unselectedLabelColor: dark
                 ? Colors.white54
                 : AppColors.textSecondaryLight,
@@ -1040,9 +970,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  MOBILE LAYOUT: Tab-based — Map tab | Overview tab
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
+  //  MOBILE LAYOUT: Tab-based � Map tab | Overview tab
+  // ----------------------------------------------------------
   Widget _buildMobileLayout(BuildContext context, Size size) {
     return Column(
       children: [
@@ -1061,14 +991,14 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── Mobile Map Tab: Fullscreen map + draggable player sheet ──
+  // -- Mobile Map Tab: Fullscreen map + draggable player sheet --
   Widget _buildMobileMapTab(BuildContext context) {
     return Stack(
       children: [
-        // ── Full-screen map ──
+        // -- Full-screen map --
         Positioned.fill(child: _buildMap(context)),
 
-        // ── Map control buttons (top-right) ──
+        // -- Map control buttons (top-right) --
         Positioned(
           top: 12,
           right: 12,
@@ -1104,11 +1034,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           ),
         ),
 
-        // ── Legend overlay ──
+        // -- Legend overlay --
         if (_showLegend)
           Positioned(top: 112, right: 62, child: _buildLegendPanel(context)),
 
-        // ── Simulation player (bottom, glassmorphic overlay) ──
+        // -- Simulation player (bottom, glassmorphic overlay) --
         Positioned(
           bottom: 12,
           left: 12,
@@ -1119,11 +1049,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  DESKTOP LAYOUT — 3 outer tabs: Result | Route | Map
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
+  //  DESKTOP LAYOUT � 3 outer tabs: Result | Route | Map
+  // ----------------------------------------------------------
   Widget _buildDesktopLayout(BuildContext context) {
-    // ── Map tab (index 2): full-screen map with simulation player ──
+    // -- Map tab (index 2): full-screen map with simulation player --
     if (_outerTabIndex == 2) {
       return Stack(
         children: [
@@ -1174,7 +1104,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       );
     }
 
-    // ── Result (0) or Route (1) tab: left map + right content panel ──
+    // -- Result (0) or Route (1) tab: left map + right content panel --
     return Row(
       children: [
         // Left: Map with player
@@ -1273,106 +1203,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     return Column(children: [Expanded(child: _buildRoutesPanel(context))]);
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  SOLUTION TYPE BADGE
-  // ══════════════════════════════════════════════════════════
-  Widget _buildSolutionTypeBadge(BuildContext context) {
-    final st = _solutionType;
-    final isOptimal = st.toLowerCase().contains('optimal');
-    final color = isOptimal ? AppColors.primaryBrand : AppColors.warning;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isOptimal ? Icons.check_circle_rounded : Icons.warning_rounded,
-            color: color,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              st,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
-  //  MAP SEARCH BAR (overlaid on map)
-  // ══════════════════════════════════════════════════════════
-  Widget _buildMapSearchBar(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          height: 42,
-          decoration: BoxDecoration(
-            color: (_isDark(context) ? Colors.black : Colors.white).withOpacity(
-              0.6,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: (_isDark(context) ? Colors.white : Colors.black)
-                  .withOpacity(0.1),
-            ),
-          ),
-          child: TextField(
-            controller: _searchController,
-            onChanged: (v) => setState(() => _vehicleSearchQuery = v),
-            style: TextStyle(color: _textPrimary(context), fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'Search vehicle or employee…',
-              hintStyle: TextStyle(color: _textTertiary(context), fontSize: 13),
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                size: 18,
-                color: AppColors.primaryBrand,
-              ),
-              suffixIcon: _vehicleSearchQuery.isNotEmpty
-                  ? GestureDetector(
-                      onTap: () {
-                        _searchController.clear();
-                        setState(() => _vehicleSearchQuery = '');
-                      },
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 18,
-                        color: _textTertiary(context),
-                      ),
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 12,
-                horizontal: 4,
-              ),
-              isDense: true,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  MAP LEGEND PANEL
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   Widget _buildLegendPanel(BuildContext context) {
     final dark = _isDark(context);
     return ClipRRect(
@@ -1395,11 +1228,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             children: [
               Row(
                 children: [
-                  const Icon(
-                    Icons.layers_rounded,
-                    size: 14,
-                    color: AppColors.primaryBrand,
-                  ),
+                  Icon(Icons.layers_rounded, size: 14, color: context.primary),
                   const SizedBox(width: 6),
                   Text(
                     'Legend',
@@ -1420,15 +1249,15 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: 10),
               _legendItem(
                 context,
-                color: AppColors.primaryBrand,
+                color: context.primary,
                 icon: Icons.business_rounded,
                 label: 'Office / Depot',
               ),
               const SizedBox(height: 6),
-              // Employee — silver pill (mirrors actual marker shape)
+              // Employee � silver pill (mirrors actual marker shape)
               Row(
                 children: [
                   Container(
@@ -1473,14 +1302,14 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                 ),
               ),
               const SizedBox(height: 6),
-              // Active / Premium route vehicle — Petronas teal
+              // Active / Premium route vehicle � Petronas teal
               Row(
                 children: [
                   Container(
                     width: 24,
                     height: 16,
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBrand,
+                      color: context.primary,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Center(
@@ -1536,31 +1365,34 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  RESULT TAB (mobile) — inner tabs: Summary | Violations | Charts
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
+  //  RESULT TAB (mobile) � inner tabs: Summary | Violations | Charts
+  // ----------------------------------------------------------
   Widget _buildMobileResultTab(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: _buildOverviewTabBar(context),
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _overviewTabController,
-            children: [
-              _buildSummaryPanel(context),
-              _buildViolationsPanel(context),
-              _buildChartsPanel(context),
-            ],
+    return SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: _buildOverviewTabBar(context),
           ),
-        ),
-      ],
+          Expanded(
+            child: TabBarView(
+              controller: _overviewTabController,
+              children: [
+                _buildSummaryPanel(context),
+                _buildViolationsPanel(context),
+                _buildChartsPanel(context),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // ── Result Inner Tab Bar (Summary | Violations | Charts) ──
+  // -- Result Inner Tab Bar (Summary | Violations | Charts) --
   Widget _buildOverviewTabBar(BuildContext context) {
     final dark = _isDark(context);
     return Container(
@@ -1573,7 +1405,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       child: TabBar(
         controller: _overviewTabController,
         indicator: BoxDecoration(
-          color: AppColors.primaryBrand,
+          color: context.primary,
           borderRadius: BorderRadius.circular(10),
         ),
         indicatorSize: TabBarIndicatorSize.tab,
@@ -1630,19 +1462,16 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ──────────────────────────────────────────────────────────
+  // ----------------------------------------------------------
   //  SUMMARY PANEL (inner tab 1)
-  // ──────────────────────────────────────────────────────────
+  // ----------------------------------------------------------
   Widget _buildSummaryPanel(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: _buildCollapsibleSummary(context),
-    );
+    return OutputSummaryPanel(data: _currentData);
   }
 
-  // ──────────────────────────────────────────────────────────
-  //  ROUTES PANEL (inner tab 2) — search, filter, cards
-  // ──────────────────────────────────────────────────────────
+  // ----------------------------------------------------------
+  //  ROUTES PANEL (inner tab 2) � search, filter, cards
+  // ----------------------------------------------------------
   Widget _buildRoutesPanel(BuildContext context) {
     final routes = _filteredRoutes;
     return Column(
@@ -1667,7 +1496,12 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    4,
+                    16,
+                    16 + MediaQuery.viewPaddingOf(context).bottom,
+                  ),
                   itemCount: routes.length,
                   itemBuilder: (ctx, i) {
                     final originalIndex = _vehicleRoutes.indexOf(routes[i]);
@@ -1679,7 +1513,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── Inline search bar for the Routes panel ──
+  // -- Inline search bar for the Routes panel --
   Widget _buildInlineSearchBar(BuildContext context) {
     return Container(
       height: 40,
@@ -1693,7 +1527,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         onChanged: (v) => setState(() => _vehicleSearchQuery = v),
         style: TextStyle(color: _textPrimary(context), fontSize: 13),
         decoration: InputDecoration(
-          hintText: 'Search vehicle or employee…',
+          hintText: 'Search vehicle or employee�',
           hintStyle: TextStyle(color: _textTertiary(context), fontSize: 13),
           prefixIcon: Icon(
             Icons.search_rounded,
@@ -1721,391 +1555,28 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ──────────────────────────────────────────────────────────
+  // ----------------------------------------------------------
   //  VIOLATIONS PANEL (inner tab 3)
-  // ──────────────────────────────────────────────────────────
+  // ----------------------------------------------------------
   Widget _buildViolationsPanel(BuildContext context) {
-    final result = (_currentData['result'] as Map<String, dynamic>?) ?? {};
-    final stats = (_currentData['stats'] as Map<String, dynamic>?) ?? {};
-    final hard =
-        (result['hard_violations'] as num?)?.toInt() ??
-        (stats['hard_violations'] as num?)?.toInt() ??
-        0;
-    final soft =
-        (result['soft_violations'] as num?)?.toInt() ??
-        (stats['soft_violations'] as num?)?.toInt() ??
-        0;
-
-    if (hard == 0 && soft == 0) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.primaryBrand.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.verified_rounded,
-                size: 48,
-                color: AppColors.primaryBrand,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No Constraint Violations',
-              style: TextStyle(
-                color: _textPrimary(context),
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'All constraints satisfied.',
-              style: TextStyle(color: _textSecondary(context), fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Hard violations
-          if (hard > 0) ...[
-            _violationSectionHeader(
-              context,
-              'Hard Violations',
-              Icons.error_rounded,
-              AppColors.error,
-              hard,
-            ),
-            const SizedBox(height: 8),
-            _violationDetailCard(
-              context,
-              label: 'Hard',
-              count: hard,
-              badge: 'HARD',
-              color: AppColors.error,
-            ),
-            const SizedBox(height: 16),
-          ],
-          // Soft violations
-          if (soft > 0) ...[
-            _violationSectionHeader(
-              context,
-              'Soft Violations',
-              Icons.warning_rounded,
-              AppColors.warning,
-              soft,
-            ),
-            const SizedBox(height: 8),
-            _violationDetailCard(
-              context,
-              label: 'Soft',
-              count: soft,
-              badge: 'SOFT',
-              color: AppColors.warning,
-            ),
-          ],
-        ],
-      ),
-    );
+    return OutputViolationsPanel(data: _currentData);
   }
 
-  Widget _violationSectionHeader(
-    BuildContext context,
-    String title,
-    IconData icon,
-    Color color,
-    int count,
-  ) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            color: _textPrimary(context),
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _violationDetailCard(
-    BuildContext context, {
-    required String label,
-    required int count,
-    required String badge,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _surfaceColor(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              badge,
-              style: TextStyle(
-                color: color,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '$count $label Violation${count > 1 ? 's' : ''}',
-              style: TextStyle(
-                color: _textPrimary(context),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Icon(Icons.circle, size: 10, color: color),
-        ],
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────
-  //  CHARTS PANEL (inner tab 4) — per-vehicle stat bars
-  // ──────────────────────────────────────────────────────────
+  // ----------------------------------------------------------
+  //  CHARTS PANEL (inner tab 4) � per-vehicle stat bars
+  // ----------------------------------------------------------
   Widget _buildChartsPanel(BuildContext context) {
-    if (_vehicleRoutes.isEmpty) {
-      return Center(
-        child: Text(
-          'No route data to chart',
-          style: TextStyle(color: _textSecondary(context), fontSize: 13),
-        ),
-      );
-    }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _chartSectionHeader(
-            context,
-            icon: Icons.route_rounded,
-            title: 'Distance per Vehicle (km)',
-          ),
-          const SizedBox(height: 10),
-          ..._vehicleRoutes.map(
-            (r) => _buildStatBar(
-              context,
-              vehicleId: r.vehicleId,
-              color: r.color,
-              value: r.totalDistance,
-              max: _vehicleRoutes
-                  .map((x) => x.totalDistance)
-                  .fold(0.0, (a, b) => a > b ? a : b),
-              suffix: 'km',
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          _chartSectionHeader(
-            context,
-            icon: Icons.currency_rupee_rounded,
-            title: 'Cost per Vehicle',
-          ),
-          const SizedBox(height: 10),
-          ..._vehicleRoutes
-              .where((r) => r.totalCost > 0)
-              .map(
-                (r) => _buildStatBar(
-                  context,
-                  vehicleId: r.vehicleId,
-                  color: r.color,
-                  value: r.totalCost,
-                  max: _vehicleRoutes
-                      .map((x) => x.totalCost)
-                      .fold(0.0, (a, b) => a > b ? a : b),
-                  suffix: '₹',
-                  prefixSuffix: true,
-                ),
-              ),
-          if (_vehicleRoutes.every((r) => r.totalCost == 0))
-            Center(
-              child: Text(
-                'No cost data',
-                style: TextStyle(color: _textSecondary(context), fontSize: 13),
-              ),
-            ),
-
-          const SizedBox(height: 20),
-          _chartSectionHeader(
-            context,
-            icon: Icons.people_rounded,
-            title: 'Passengers per Vehicle',
-          ),
-          const SizedBox(height: 10),
-          ..._vehicleRoutes.map((r) {
-            int pax = 0;
-            for (var s in r.allStops) {
-              if (s.location.toLowerCase().contains('pickup')) pax++;
-            }
-            final maxPax = _vehicleRoutes.fold<int>(0, (m, rr) {
-              int p = 0;
-              for (var s in rr.allStops) {
-                if (s.location.toLowerCase().contains('pickup')) p++;
-              }
-              return p > m ? p : m;
-            });
-            return _buildStatBar(
-              context,
-              vehicleId: r.vehicleId,
-              color: r.color,
-              value: pax.toDouble(),
-              max: maxPax.toDouble(),
-              suffix: 'pax',
-            );
-          }),
-        ],
-      ),
-    );
+    return OutputChartsPanel(data: _currentData);
   }
 
-  Widget _chartSectionHeader(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: AppColors.primaryBrand),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            color: _textPrimary(context),
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatBar(
-    BuildContext context, {
-    required String vehicleId,
-    required Color color,
-    required double value,
-    required double max,
-    required String suffix,
-    bool prefixSuffix = false,
-  }) {
-    final frac = (max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 60,
-            child: Text(
-              vehicleId,
-              style: TextStyle(
-                color: _textSecondary(context),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Stack(
-              children: [
-                Container(
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: _borderColorThemed(context).withOpacity(0.25),
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                ),
-                FractionallySizedBox(
-                  widthFactor: frac,
-                  child: Container(
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 56,
-            child: Text(
-              prefixSuffix
-                  ? '$suffix${value.toStringAsFixed(0)}'
-                  : '${value.toStringAsFixed(1)} $suffix',
-              style: TextStyle(
-                color: _textPrimary(context),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  MAP WIDGET
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   Widget _buildMap(BuildContext context) {
     final isDarkMode = _isDark(context);
     final staticMarkers = _buildStaticMarkers(context);
     final vehicleMarkers = _buildAnimatedVehicleMarkers();
-    final polylines = _buildPolylines();
+    final polylines = _buildPolylines(context.primary);
 
     return FlutterMap(
       mapController: _mapController,
@@ -2120,7 +1591,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       children: [
         ColorFiltered(
           colorFilter: isDarkMode
-              ? const ColorFilter.matrix(AppThemeData.mapDarkMatrix)
+              ? ColorFilter.matrix(
+                  context.primary == const Color(0xFF00D2BE)
+                      ? AppThemeData.mapDarkMatrix
+                      : AppThemeData.mapDarkNeutralMatrix,
+                )
               : const ColorFilter.matrix(AppThemeData.mapLightMatrix),
           child: TileLayer(
             urlTemplate: MapConfig.tileUrlTemplate,
@@ -2128,9 +1603,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           ),
         ),
         PolylineLayer(polylines: polylines),
-        // Static stop/office markers — rendered first (below)
+        // Static stop/office markers � rendered first (below)
         MarkerLayer(markers: staticMarkers),
-        // Animated vehicle icons — always on top
+        // Animated vehicle icons � always on top
         MarkerLayer(markers: vehicleMarkers),
       ],
     );
@@ -2139,7 +1614,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   /// Build polylines visualizing each vehicle's route path.
   /// Uses simulated waypoints radiating from center since solution
   /// data contains stop names but not lat/lng coordinates.
-  List<Polyline> _buildPolylines() {
+  List<Polyline> _buildPolylines(Color lineColor) {
     final List<Polyline> polylines = [];
     final center = _computeCenter();
     final timeRange = _globalTimeRange();
@@ -2178,7 +1653,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             Polyline(
               points: points.sublist(0, segmentsToDraw + 1),
               strokeWidth: 4.0,
-              color: AppColors.routeLine,
+              color: lineColor,
             ),
           );
         }
@@ -2188,7 +1663,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           Polyline(
             points: points,
             strokeWidth: 2.0,
-            color: AppColors.routeLine.withOpacity(0.2),
+            color: lineColor.withOpacity(0.2),
             pattern: const StrokePattern.dotted(),
           ),
         );
@@ -2457,15 +1932,15 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         child: SizedBox(
           width: 42,
           height: 42,
-          child: Icon(icon, color: AppColors.primaryBrand, size: 20),
+          child: Icon(icon, color: context.primary, size: 20),
         ),
       ),
     );
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  GLASSMORPHISM PLAYBACK CONTROLS
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   Widget _buildPlaybackControls(BuildContext context) {
     final timeRange = _globalTimeRange();
     final currentMin =
@@ -2492,7 +1967,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ── Focus indicator chip (visible only when a vehicle is focused) ──
+              // -- Focus indicator chip (visible only when a vehicle is focused) --
               if (_focusedVehicleIndex != null) ...[
                 Row(
                   children: [
@@ -2504,34 +1979,34 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.primaryBrand.withOpacity(0.12),
+                          color: context.primary.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: AppColors.primaryBrand.withOpacity(0.4),
+                            color: context.primary.withOpacity(0.4),
                           ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.directions_car_rounded,
                               size: 13,
-                              color: AppColors.primaryBrand,
+                              color: context.primary,
                             ),
-                            const SizedBox(width: 5),
+                            SizedBox(width: 5),
                             Text(
                               _vehicleRoutes[_focusedVehicleIndex!].vehicleId,
-                              style: const TextStyle(
-                                color: AppColors.primaryBrand,
+                              style: TextStyle(
+                                color: context.primary,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            const Icon(
+                            SizedBox(width: 6),
+                            Icon(
                               Icons.close_rounded,
                               size: 13,
-                              color: AppColors.primaryBrand,
+                              color: context.primary,
                             ),
                           ],
                         ),
@@ -2551,13 +2026,13 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBrand.withOpacity(0.15),
+                      color: context.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       _minutesToTime(currentMin),
-                      style: const TextStyle(
-                        color: AppColors.primaryBrand,
+                      style: TextStyle(
+                        color: context.primary,
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                         fontFamily: 'Courier',
@@ -2567,7 +2042,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   const Spacer(),
                   // Play/Pause
                   Material(
-                    color: AppColors.primaryBrand,
+                    color: context.primary,
                     borderRadius: BorderRadius.circular(24),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(24),
@@ -2610,10 +2085,10 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  SizedBox(width: 4),
                   // Speed button
                   Material(
-                    color: AppColors.primaryBrand.withOpacity(0.12),
+                    color: context.primary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(20),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
@@ -2625,8 +2100,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                         ),
                         child: Text(
                           'x${_playbackSpeed == _playbackSpeed.roundToDouble() ? _playbackSpeed.toInt().toString() : _playbackSpeed.toString()}',
-                          style: const TextStyle(
-                            color: AppColors.primaryBrand,
+                          style: TextStyle(
+                            color: context.primary,
                             fontWeight: FontWeight.w800,
                             fontSize: 12,
                           ),
@@ -2650,11 +2125,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   Expanded(
                     child: SliderTheme(
                       data: SliderThemeData(
-                        activeTrackColor: AppColors.primaryBrand,
-                        inactiveTrackColor: AppColors.primaryBrand.withOpacity(
-                          0.2,
-                        ),
-                        thumbColor: AppColors.primaryBrand,
+                        activeTrackColor: context.primary,
+                        inactiveTrackColor: context.primary.withOpacity(0.2),
+                        thumbColor: context.primary,
                         thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 6,
                         ),
@@ -2685,7 +2158,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── Fleet Filter Bar (mirrors ShowInputPage) ───────────
+  // -- Fleet Filter Bar (mirrors ShowInputPage) -----------
   Widget _buildFleetFilterBar(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2703,7 +2176,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                     Icons.filter_list_rounded,
                     size: 16,
                     color: _hasActiveFleetFilters
-                        ? AppColors.primaryBrand
+                        ? context.primary
                         : _textSecondary(context),
                   ),
                   const SizedBox(width: 6),
@@ -2713,17 +2186,17 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: _hasActiveFleetFilters
-                          ? AppColors.primaryBrand
+                          ? context.primary
                           : _textSecondary(context),
                     ),
                   ),
                   if (_hasActiveFleetFilters) ...[
-                    const SizedBox(width: 6),
+                    SizedBox(width: 6),
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryBrand,
+                      decoration: BoxDecoration(
+                        color: context.primary,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -2777,9 +2250,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   context,
                   label: 'Cost',
                   icon: Icons.arrow_upward_rounded,
-                  tooltip: 'Low → High',
+                  tooltip: 'Low ? High',
                   isActive: _sortByCost == true,
-                  activeColor: AppColors.primaryBrand,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortByCost = _sortByCost == true ? null : true,
                   ),
@@ -2789,9 +2262,9 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   context,
                   label: 'Cost',
                   icon: Icons.arrow_downward_rounded,
-                  tooltip: 'High → Low',
+                  tooltip: 'High ? Low',
                   isActive: _sortByCost == false,
-                  activeColor: AppColors.primaryBrand,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortByCost = _sortByCost == false ? null : false,
                   ),
@@ -2801,7 +2274,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   context,
                   label: 'Distance',
                   icon: Icons.arrow_upward_rounded,
-                  tooltip: 'Short → Long',
+                  tooltip: 'Short ? Long',
                   isActive: _sortByDistance == true,
                   activeColor: const Color(0xFF3B82F6),
                   onTap: () => setState(
@@ -2814,7 +2287,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   context,
                   label: 'Distance',
                   icon: Icons.arrow_downward_rounded,
-                  tooltip: 'Long → Short',
+                  tooltip: 'Long ? Short',
                   isActive: _sortByDistance == false,
                   activeColor: const Color(0xFF3B82F6),
                   onTap: () => setState(
@@ -2916,307 +2389,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── Collapsible Summary Wrapper ─────────────────────────
-  Widget _buildCollapsibleSummary(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Toggle header
-        InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => setState(() => _summaryExpanded = !_summaryExpanded),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primaryBrand.withOpacity(0.12),
-                  AppColors.primaryBrand.withOpacity(0.04),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: _summaryExpanded
-                  ? const BorderRadius.vertical(top: Radius.circular(16))
-                  : BorderRadius.circular(16),
-              border: Border.all(
-                color: AppColors.primaryBrand.withOpacity(0.2),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryBrand.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.analytics_rounded,
-                    color: AppColors.primaryBrand,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Optimization Summary',
-                  style: TextStyle(
-                    color: _textPrimary(context),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const Spacer(),
-                AnimatedRotation(
-                  turns: _summaryExpanded ? 0.5 : 0.0,
-                  duration: const Duration(milliseconds: 250),
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: _textTertiary(context),
-                    size: 22,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        // Animated body
-        AnimatedCrossFade(
-          firstChild: _buildSummaryCard(context),
-          secondChild: const SizedBox.shrink(),
-          crossFadeState: _summaryExpanded
-              ? CrossFadeState.showFirst
-              : CrossFadeState.showSecond,
-          duration: const Duration(milliseconds: 300),
-          sizeCurve: Curves.easeInOut,
-        ),
-      ],
-    );
-  }
-
-  // ── Summary Card ───────────────────────────────────────
-  Widget _buildSummaryCard(BuildContext context) {
-    // Handle both data formats:
-    // Format A (raw solver): { cost, total_time, stats: { hard_violations, ... } }
-    // Format B (backend API): { result: { total_cost, total_time, hard_violations, ... } }
-    final result = (_currentData['result'] as Map<String, dynamic>?) ?? {};
-    final stats = (_currentData['stats'] as Map<String, dynamic>?) ?? {};
-
-    final cost =
-        (result['total_cost'] as num?)?.toDouble() ??
-        (_currentData['cost'] as num?)?.toDouble() ??
-        0;
-    final totalTime =
-        (result['total_time'] as num?)?.toDouble() ??
-        (_currentData['total_time'] as num?)?.toDouble() ??
-        0;
-    final hardViolations =
-        (result['hard_violations'] as num?)?.toInt() ??
-        (stats['hard_violations'] as num?)?.toInt() ??
-        0;
-    final softViolations =
-        (result['soft_violations'] as num?)?.toInt() ??
-        (stats['soft_violations'] as num?)?.toInt() ??
-        0;
-
-    // Total distance: prefer result, else sum from routes
-    double totalDist = (result['total_distance'] as num?)?.toDouble() ?? 0;
-    if (totalDist == 0) {
-      for (var r in _vehicleRoutes) {
-        totalDist += r.totalDistance;
-      }
-    }
-
-    // Cost savings (Format B only)
-    final costSavings = (result['cost_savings'] as num?)?.toDouble();
-    final costSavingsPct = (result['cost_savings_percent'] as num?)?.toDouble();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.primaryBrand.withOpacity(0.12),
-            AppColors.primaryBrand.withOpacity(0.04),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-        border: Border.all(color: AppColors.primaryBrand.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Stat grid
-          Row(
-            children: [
-              Expanded(
-                child: _summaryStatTile(
-                  context,
-                  icon: Icons.currency_rupee_rounded,
-                  label: 'Total Cost',
-                  value: cost.toStringAsFixed(1),
-                  color: AppColors.primaryBrand,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _summaryStatTile(
-                  context,
-                  icon: Icons.route_rounded,
-                  label: 'Total Km',
-                  value: totalDist.toStringAsFixed(1),
-                  color: const Color(0xFF3B82F6),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _summaryStatTile(
-                  context,
-                  icon: Icons.timer_rounded,
-                  label: 'Total Time',
-                  value: '${totalTime.toStringAsFixed(0)} min',
-                  color: const Color(0xFFF59E0B),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _summaryStatTile(
-                  context,
-                  icon: Icons.local_shipping_rounded,
-                  label: 'Vehicles Used',
-                  value:
-                      '${(result['vehicles_used'] as num?)?.toInt() ?? _vehicleRoutes.length}',
-                  color: const Color(0xFF8B5CF6),
-                ),
-              ),
-            ],
-          ),
-
-          // Violations
-          if (hardViolations > 0 || softViolations > 0) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                if (hardViolations > 0)
-                  _violationChip('Hard: $hardViolations', AppColors.error),
-                if (hardViolations > 0 && softViolations > 0)
-                  const SizedBox(width: 8),
-                if (softViolations > 0)
-                  _violationChip('Soft: $softViolations', AppColors.warning),
-              ],
-            ),
-          ],
-
-          // Cost savings (Format B only)
-          if (costSavings != null && costSavings > 0) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.primaryBrand.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.primaryBrand.withOpacity(0.25),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.trending_down_rounded,
-                    color: AppColors.primaryBrand,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Saved ₹${costSavings.toStringAsFixed(0)}'
-                    '${costSavingsPct != null ? ' (${costSavingsPct.toStringAsFixed(1)}%)' : ''}'
-                    ' vs baseline',
-                    style: const TextStyle(
-                      color: AppColors.primaryBrand,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _summaryStatTile(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _surfaceColor(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColorThemed(context).withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              color: _textPrimary(context),
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(color: _textSecondary(context), fontSize: 11),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _violationChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.warning_rounded, color: color, size: 13),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Vehicle Route Card ─────────────────────────────────
+  // -- Vehicle Route Card ---------------------------------
   Widget _buildVehicleRouteCard(BuildContext context, int index) {
     final route = _vehicleRoutes[index];
     final isExpanded = _expandedCards.contains(index);
@@ -3237,14 +2410,14 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isFocused
-              ? AppColors.primaryBrand.withOpacity(0.6)
-              : AppColors.primaryBrand.withOpacity(0.2),
+              ? context.primary.withOpacity(0.6)
+              : context.primary.withOpacity(0.2),
           width: isFocused ? 2 : 1,
         ),
         boxShadow: isFocused
             ? [
                 BoxShadow(
-                  color: AppColors.primaryBrand.withOpacity(0.15),
+                  color: context.primary.withOpacity(0.15),
                   blurRadius: 12,
                   spreadRadius: 1,
                 ),
@@ -3253,7 +2426,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       ),
       child: Column(
         children: [
-          // ── Header ──
+          // -- Header --
           InkWell(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
             onTap: () {
@@ -3275,11 +2448,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                     height: 42,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.primaryBrand.withOpacity(0.15),
+                      color: context.primary.withOpacity(0.15),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.directions_car_filled_rounded,
-                      color: AppColors.primaryBrand,
+                      color: context.primary,
                       size: 22,
                     ),
                   ),
@@ -3312,11 +2485,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                               '${route.totalDistance.toStringAsFixed(1)} km',
                               _textSecondary(context),
                             ),
-                            const SizedBox(width: 12),
+                            SizedBox(width: 12),
                             _miniStat(
                               Icons.currency_rupee_rounded,
                               route.totalCost.toStringAsFixed(0),
-                              AppColors.primaryBrand,
+                              context.primary,
                             ),
                           ],
                         ),
@@ -3341,13 +2514,13 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBrand.withOpacity(0.12),
+                      color: context.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${route.trips.length} trip${route.trips.length > 1 ? 's' : ''}',
-                      style: const TextStyle(
-                        color: AppColors.primaryBrand,
+                      style: TextStyle(
+                        color: context.primary,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
@@ -3368,7 +2541,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             ),
           ),
 
-          // ── Action Row (always visible) ──
+          // -- Action Row (always visible) --
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: Row(
@@ -3377,7 +2550,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                   context,
                   icon: Icons.route_rounded,
                   label: 'Simulate Path',
-                  color: AppColors.primaryBrand,
+                  color: context.primary,
                   onTap: () {
                     _focusVehicle(index);
                     if (!_isPlaying) _togglePlayback();
@@ -3389,7 +2562,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
             ),
           ),
 
-          // ── Expanded: Trip Timeline ──
+          // -- Expanded: Trip Timeline --
           if (isExpanded)
             Container(
               decoration: BoxDecoration(
@@ -3465,7 +2638,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
     );
   }
 
-  // ── Trip Timeline ──────────────────────────────────────
+  // -- Trip Timeline --------------------------------------
   Widget _buildTripTimeline(BuildContext context, _TripInfo trip, Color color) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -3492,7 +2665,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
               ),
               const SizedBox(width: 8),
               Text(
-                '${trip.totalDistance.toStringAsFixed(1)} km · ${trip.totalTime} min · ₹${trip.totalCost.toStringAsFixed(0)}',
+                '${trip.totalDistance.toStringAsFixed(1)} km � ${trip.totalTime} min � ?${trip.totalCost.toStringAsFixed(0)}',
                 style: TextStyle(color: _textTertiary(context), fontSize: 10),
               ),
             ],
@@ -3533,7 +2706,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         ? AppColors.silver
         : isDropoff
         ? AppColors.officeAccent
-        : AppColors.primaryBrand;
+        : context.primary;
 
     return IntrinsicHeight(
       child: Row(
@@ -3604,7 +2777,7 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
                       ),
                       if (stop.arrivalTime != stop.departureTime) ...[
                         Text(
-                          '  →  Dep: ${stop.departureTime}',
+                          '  ?  Dep: ${stop.departureTime}',
                           style: TextStyle(
                             color: _textSecondary(context),
                             fontSize: 10,
@@ -3653,65 +2826,11 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       ),
     );
   }
-
-  // ── Action Bar ─────────────────────────────────────────
-  Widget _buildActionBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: BoxDecoration(
-        color: _bgColor(context),
-        border: Border(
-          top: BorderSide(color: _borderColorThemed(context).withOpacity(0.4)),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _isLoading ? null : _handleRetry,
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(
-                    Icons.rocket_launch_rounded,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-            label: const Text(
-              'RE-RUN',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryBrand,
-              disabledBackgroundColor: AppColors.primaryBrand.withOpacity(0.5),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-              minimumSize: const Size(0, 50),
-              elevation: 4,
-              shadowColor: AppColors.primaryBrand.withOpacity(0.4),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 //  DATA MODELS
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 
 class _VehicleRoute {
   final String vehicleId;
@@ -3771,11 +2890,11 @@ class _StopInfo {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 //  CUSTOM MAP MARKERS (matching show_input_page / map_view style)
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 
-/// Employee pickup marker — silver pill with label + triangle pointer (mirrors map_view.dart).
+/// Employee pickup marker � silver pill with label + triangle pointer (mirrors map_view.dart).
 class _EmployeeMarkerWidget extends StatelessWidget {
   final String label;
   final bool isDark;
@@ -3822,7 +2941,7 @@ class _EmployeeMarkerWidget extends StatelessWidget {
   }
 }
 
-/// Office / drop-off marker — green circle with building icon.
+/// Office / drop-off marker � green circle with building icon.
 class _OfficeMarkerWidget extends StatelessWidget {
   const _OfficeMarkerWidget();
 
@@ -3830,11 +2949,11 @@ class _OfficeMarkerWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.primaryBrand,
+        color: context.primary,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryBrand.withOpacity(0.4),
+            color: context.primary.withOpacity(0.4),
             blurRadius: 8,
             spreadRadius: 2,
           ),
@@ -3845,7 +2964,7 @@ class _OfficeMarkerWidget extends StatelessWidget {
   }
 }
 
-/// Static vehicle marker — Premium-teal bordered pill, car icon + V-label + triangle.
+/// Static vehicle marker � Premium-teal bordered pill, car icon + V-label + triangle.
 class _OutputVehicleMarker extends StatelessWidget {
   final String label;
 
@@ -3854,7 +2973,7 @@ class _OutputVehicleMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = AppColors.primaryBrand;
+    final color = context.primary;
     final bg = isDark ? AppColors.darkSurface : Colors.white;
 
     return Column(
@@ -3901,7 +3020,7 @@ class _OutputVehicleMarker extends StatelessWidget {
   }
 }
 
-/// Animated vehicle marker — Petronas-teal pulsing pill (Premium style).
+/// Animated vehicle marker � Petronas-teal pulsing pill (Premium style).
 class _AnimatedVehicleMarker extends StatefulWidget {
   final String label;
 
@@ -3936,7 +3055,7 @@ class _AnimatedVehicleMarkerState extends State<_AnimatedVehicleMarker>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = AppColors.primaryBrand;
+    final color = context.primary;
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final scale = 1.0 + _pulseController.value * 0.12;
 
@@ -3983,7 +3102,7 @@ class _AnimatedVehicleMarkerState extends State<_AnimatedVehicleMarker>
           ),
           CustomPaint(
             size: const Size(8, 5),
-            painter: _TrianglePainter(color: AppColors.primaryBrand),
+            painter: _TrianglePainter(color: context.primary),
           ),
         ],
       ),
@@ -4009,4 +3128,105 @@ class _TrianglePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ---------------------------------------------------------------
+//  DOWNLOAD DIALOG (bottom sheet for export format selection)
+// ---------------------------------------------------------------
+class DownloadDialog extends StatelessWidget {
+  final Function(String type) onSelect;
+
+  const DownloadDialog({super.key, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final sheetColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: sheetColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border(
+          top: BorderSide(
+            color: context.primary.withOpacity(0.35),
+            width: 1.5,
+          ),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 14),
+            width: 32,
+            height: 3,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.outline.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Row(
+            children: [
+              Icon(Icons.download_rounded, size: 16, color: context.primary),
+              const SizedBox(width: 8),
+              Text(
+                'EXPORT AS',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: context.primary,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildChip(context, Icons.code_rounded, 'JSON', 'json', isDark),
+          const SizedBox(height: 8),
+          _buildChip(context, Icons.table_chart_rounded, 'Excel (.xlsx)', 'excel', isDark),
+          const SizedBox(height: 8),
+          _buildChip(context, Icons.picture_as_pdf_rounded, 'PDF Report', 'pdf', isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChip(BuildContext context, IconData icon, String label, String type, bool isDark) {
+    final theme = Theme.of(context);
+    final bg = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF3F3F3);
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        onSelect(type);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.18)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: context.primary),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface.withOpacity(0.85),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

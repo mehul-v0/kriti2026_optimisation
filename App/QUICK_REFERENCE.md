@@ -1,154 +1,244 @@
-# Quick Reference: Upload & Optimize Flows
+# Quick Reference — VRP Optimisation App
 
-## 📤 Upload Flow (Excel/Google Sheets → Supabase)
+> For full docs see [overview.md](overview.md) | For architecture rules see [ARCHITECTURE_GUIDE.md](ARCHITECTURE_GUIDE.md)
+
+---
+
+## 🚀 Common Tasks
+
+### Run the App
+
+```bash
+cd App/flutter_application_1
+flutter pub get
+flutter run                      # debug build on connected device/emulator
+flutter run --release            # release build
+flutter build apk --release      # produce APK
+```
+
+### Local Server (USB + ADB)
+
+```cmd
+cd C:\Users\<You>\AppData\Local\Android\sdk\platform-tools
+.\adb reverse tcp:5000 tcp:5000
+```
+
+Then in `lib/config/env.dart`:
+```dart
+static const bool useLiveServer = false;   // use localhost
+```
+
+### Switch to Live Server
 
 ```dart
-// 1. Get file bytes (Excel or exported Google Sheet)
-final bytes = await FilePicker.platform.pickFiles(...);
+// lib/config/env.dart
+static const bool useLiveServer = true;    // points to _liveUrl
+```
 
-// 2. Send to backend via multipart/form-data
-final response = await UploadService().uploadExcelFile(bytes, fileName);
-// Backend returns: { employees: [...], vehicles: [...], metadata: {...}, baseline: [...] }
+---
 
-// 3. Store JSON in Supabase (no file bytes!)
+## 📤 Upload Flow (Dart code summary)
+
+```dart
+// 1. Pick file bytes
+final result = await FilePicker.platform.pickFiles(
+  type: FileType.custom, allowedExtensions: ['xlsx','xls'], withData: true);
+final bytes = result!.files.single.bytes!;
+
+// 2. Upload to backend → get JSON
+final backendResponse = await UploadService().uploadExcelFile(bytes, 'file.xlsx');
+// { "success": true, "employees": [...], "vehicles": [...] }
+
+// 3. Store JSON in Supabase
 final inputJson = {
-  "employees": response["employees"] ?? [],
-  "vehicles": response["vehicles"] ?? [],
-  "metadata": response["metadata"] ?? {},
-  "baseline": response["baseline"] ?? [],
+  "employees": backendResponse["employees"] ?? [],
+  "vehicles": backendResponse["vehicles"] ?? [],
+  "metadata": <String, dynamic>{},   // backend fills at optimise time
+  "baseline": <dynamic>[],
 };
 await DataService().uploadTestCase(caseName, inputJson);
 ```
 
-**Key Points:**
-- ✅ Send file to `/api/upload` with `multipart/form-data`
-- ✅ Backend converts Excel → JSON
-- ✅ Store only JSON in `input_data` column
-- ❌ Do NOT store file bytes
-- ❌ Do NOT modify returned JSON
-
 ---
 
-## ⚡ Optimize Flow (Supabase → Backend → Supabase)
+## ⚡ Optimise Flow (Dart code summary)
 
 ```dart
-// 1. Fetch input JSON from Supabase
+// 1. Fetch JSON from Supabase
 final inputData = await DataService().fetchInputData(testCaseId);
-// Returns: { employees: [...], vehicles: [...], metadata: {...}, baseline: [...] }
 
-// 2. Send JSON to backend optimization endpoint
-final result = await OptimizationService().runOptimization(inputData);
-// Backend returns: { routes: [...], result: {...}, assignments: [...] }
+// 2. Run solver
+final result = await OptimizationService().runOptimization(
+  inputData!,
+  mode: 'standard',       // 'quick' | 'standard' | 'advanced'
+  costWeight: 0.6,
+  timeWeight: 0.4,
+);
+// result = { routes: [...], result: {...}, violation_details: {...} }
 
-// 3. Store results in Supabase
+// 3. Save result
 await DataService().saveSolution(testCaseId, result);
 ```
 
-**Key Points:**
-- ✅ Fetch JSON from `input_data` column
-- ✅ Send exact JSON to `/api/optimize`
-- ✅ Use `Content-Type: application/json` header
-- ❌ Do NOT re-upload Excel file
-- ❌ Do NOT modify input JSON
-- ❌ Do NOT send test_case_id instead of JSON
-
 ---
 
-## 🔧 Troubleshooting: 400 Bad Request Errors
+## 📊 Supabase Table Quick View
 
-### Error: Backend returns 400 during optimization
+| Column | Type | Content |
+|---|---|---|
+| `id` | uuid | Auto-generated primary key |
+| `created_at` | timestamptz | Auto now() |
+| `user_id` | uuid | `auth.uid()` — RLS scoped |
+| `case_name` | text | User-provided name |
+| `input_data` | jsonb | employees, vehicles, metadata, baseline |
+| `output_json` | jsonb | routes, result stats, violations |
 
-**Possible Causes:**
+**DataService methods:**
 
-1. **Missing Content-Type header**
-   ```dart
-   // Wrong
-   headers: {}
-   
-   // Correct
-   headers: {"Content-Type": "application/json"}
-   ```
-
-2. **Sending test_case_id instead of JSON**
-   ```dart
-   // Wrong
-   body: jsonEncode({"test_case_id": id})
-   
-   // Correct
-   body: jsonEncode(inputData)
-   ```
-
-3. **Modified JSON structure**
-   ```dart
-   // Wrong - wrapping in extra layer
-   final json = {"data": backendResponse};
-   
-   // Correct - exact backend format
-   final json = {
-     "employees": backendResponse["employees"],
-     "vehicles": backendResponse["vehicles"],
-     // ...
-   };
-   ```
-
-4. **Re-uploading file before optimization**
-   ```dart
-   // Wrong workflow
-   await uploadFile(bytes);
-   await optimize();
-   
-   // Correct workflow
-   await optimize(inputData);
-   ```
-
----
-
-## 📊 Data Flow Summary
-
-```
-Excel/Sheet → Backend /api/upload → JSON → Supabase input_data
-                                              ↓
-Supabase input_data → JSON → Backend /api/optimize → Results → Supabase output_json
+```dart
+fetchTestCases()               // SELECT all for current user, newest first
+uploadTestCase(name, json)     // INSERT input_data
+fetchInputData(id)             // SELECT input_data WHERE id = ?
+fetchSolution(id)              // SELECT output_json WHERE id = ?
+saveSolution(id, solution)     // UPDATE output_json WHERE id = ?
+deleteTestCase(id)             // DELETE WHERE id = ?
+renameTestCase(id, name)       // UPDATE case_name WHERE id = ?
 ```
 
-**Critical:** JSON never leaves Supabase except to go to backend `/api/optimize`
+---
+
+## 🔗 Backend Endpoints
+
+| Endpoint | Method | Content-Type | Purpose |
+|---|---|---|---|
+| `/api/upload` | POST | `multipart/form-data` | Excel → JSON conversion |
+| `/api/optimize` | POST | `application/json` | Run VRP solver |
+
+**Optimise request body:**
+```json
+{
+  "employees": [...],
+  "vehicles": [...],
+  "metadata": {...},
+  "baseline": [...],
+  "mode": "standard",
+  "solverDurationSeconds": 30,
+  "costWeight": 0.6,
+  "timeWeight": 0.4,
+  "distanceMethod": "haversine"
+}
+```
 
 ---
 
-## 🎯 File Responsibilities
+## 🗺️ Screen Navigation
 
-| File | Responsibility |
-|------|----------------|
-| `upload_service.dart` | Upload files to backend `/api/upload` |
-| `optimization_service.dart` | Send JSON to backend `/api/optimize` |
-| `data_service.dart` | Store/fetch JSON from Supabase |
-| `add_test_case_dialog.dart` | Handle upload UI and flow |
-| `show_input_page.dart` | Trigger optimization |
-| `output_page.dart` | Display results, retry optimization |
-
----
-
-## ⚠️ What NOT to Do
-
-1. ❌ Do NOT add `file_base64` or `file_name` columns
-2. ❌ Do NOT store file bytes in database
-3. ❌ Do NOT modify backend code
-4. ❌ Do NOT change Supabase schema
-5. ❌ Do NOT re-upload files during optimization
-6. ❌ Do NOT modify JSON from backend
-7. ❌ Do NOT send test_case_id to `/api/optimize`
+```
+AuthGate
+  ├─ (no session) → AuthPage
+  │     └─ sign in / register → AuthGate re-routes to HomePage
+  └─ (session)   → HomePage
+        └─ tap card → ShowInputPage
+              └─ OPTIMISE → OutputPage
+                    └─ RE-OPTIMISE → re-fetches input, re-runs solver
+```
 
 ---
 
-## ✅ What TO Do
+## 🎨 Theme / Appearance
 
-1. ✅ Use existing `input_data` and `output_json` columns
-2. ✅ Send files to `/api/upload` during upload only
-3. ✅ Send JSON to `/api/optimize` during optimization
-4. ✅ Store backend JSON exactly as-is
-5. ✅ Use correct headers (`Content-Type: application/json`)
-6. ✅ Let backend be the source of truth for schema
+Changing theme from the side drawer:
+- **Colour Theme:** 0 = Petronas (teal `#00D2BE`), 1 = Orange, 2 = Yellow
+- **Dark / Light mode:** toggle in drawer
+
+Programmatically from anywhere with access to the notifiers:
+```dart
+themeIndexNotifier.value = 1;           // switch to Orange
+themeNotifier.value = ThemeMode.light;  // switch to light mode
+```
 
 ---
 
-**Remember:** Frontend is a **pass-through layer**. Backend owns the schema.
+## 📦 Export Output
+
+```dart
+// From OutputPage, user taps download FAB
+FileExportService().exportFile(
+  context,
+  'json',    // or 'excel' or 'pdf'
+  'my_result',
+  resultData,
+);
+// Saved to: /storage/emulated/0/Download/optimization_output_YYYYMMDD_HHmmss.{ext}
+```
+
+---
+
+## 🔍 Key File Locations
+
+| What | File |
+|---|---|
+| Backend URL config | `lib/config/env.dart` |
+| Map tile URL | `lib/config/info.dart` |
+| Supabase init + auth | `lib/services/auth_service.dart` |
+| Supabase CRUD | `lib/services/data_service.dart` |
+| Excel upload | `lib/services/upload_service.dart` |
+| Optimisation call | `lib/services/optimization_service.dart` |
+| Export (JSON/Excel/PDF) | `lib/services/file_export_service.dart` |
+| Auth form | `lib/screen/auth_page.dart` |
+| Home (test case list) | `lib/screen/home_page.dart` |
+| Input viewer + optimise | `lib/screen/show_input_page.dart` |
+| Results + map | `lib/screen/output_page.dart` |
+| Colour + dark/light theme | `lib/theme/theme.dart` |
+
+---
+
+## ⚠️ Never Do
+
+| ❌ Don't | Reason |
+|---|---|
+| Store file bytes in DB | Schema only allows `input_data` jsonb |
+| Add columns to `test_cases` | Breaks RLS and migration contracts |
+| Wrap JSON in extra envelope before posting | Backend reads top-level keys directly |
+| Omit `Content-Type: application/json` | Flask's `request.get_json()` returns `None` |
+| Call `/api/optimize` with a test case ID | Backend expects the actual JSON, not an ID |
+| Modify backend JSON structure | Backend owns the schema |
+
+---
+
+## ✅ Input Excel Sheet Names (Required)
+
+| Sheet Name | Purpose |
+|---|---|
+| `employees` | Employee pickup/drop coordinates, priorities, preferences |
+| `vehicles` | Vehicle specs, depot locations, costs |
+| `metadata` | Key-value config (city, office coords, shift start) |
+| `baseline` | Per-employee baseline cost and time for comparison |
+
+---
+
+## 🧑‍💻 Quick Debugging
+
+**App cannot connect to backend:**
+- Check `useLiveServer` in `env.dart`
+- For USB local: run `adb reverse tcp:5000 tcp:5000`
+- Verify Flask is running on port 5000
+
+**400 error from `/api/optimize`:**
+- Confirm `Content-Type: application/json` header is set
+- Confirm body contains actual JSON (not `{"test_case_id": ...}`)
+- Confirm `input_data` in Supabase is not null
+
+**Upload fails with "file type not allowed":**
+- Ensure filename ends in `.xlsx` (enforced in `add_test_case_dialog.dart`)
+
+**Google Sheets upload fails:**
+- Sheet must be **publicly accessible** (Anyone with link → Viewer)
+- URL must contain `/spreadsheets/d/{ID}/`
+
+**Auth error: "Wrong password or email not found":**
+- User's email may not be confirmed — check Supabase Auth dashboard
+
+---
+
+*Last Updated: March 2026*

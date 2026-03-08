@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/theme/theme.dart';
 import 'package:flutter_application_1/elements/snackbar.dart';
 import 'package:flutter_application_1/elements/spinner.dart';
 import 'package:flutter_application_1/services/auth_service.dart';

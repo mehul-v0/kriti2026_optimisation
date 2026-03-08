@@ -19,25 +19,33 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  // Global theme notifier
   final ValueNotifier<ThemeMode> _themeNotifier = ValueNotifier(ThemeMode.dark);
+  final ValueNotifier<int> _themeIndexNotifier = ValueNotifier(0);
 
-  // Cache the child widget so theme changes don't recreate the subtree
-  late final Widget _cachedAuthGate = AuthGate(themeNotifier: _themeNotifier);
+  // Cached to avoid recreating the subtree on theme changes
+  late final Widget _cachedAuthGate = AuthGate(
+    themeNotifier: _themeNotifier,
+    themeIndexNotifier: _themeIndexNotifier,
+  );
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: _themeNotifier,
-      // Pass cached child so it's NOT rebuilt on theme toggle
       child: _cachedAuthGate,
       builder: (context, themeMode, child) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: themeMode,
-          home: child,
+        return ValueListenableBuilder<int>(
+          valueListenable: _themeIndexNotifier,
+          child: child,
+          builder: (context, themeIndex, innerChild) {
+            return MaterialApp(
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.lightThemeAt(themeIndex),
+              darkTheme: AppTheme.darkThemeAt(themeIndex),
+              themeMode: themeMode,
+              home: innerChild,
+            );
+          },
         );
       },
     );
@@ -46,6 +54,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _themeNotifier.dispose();
+    _themeIndexNotifier.dispose();
     super.dispose();
   }
 }

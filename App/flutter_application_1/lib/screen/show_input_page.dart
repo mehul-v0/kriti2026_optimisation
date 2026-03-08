@@ -8,12 +8,12 @@ import 'package:flutter_application_1/theme/theme.dart';
 import 'package:flutter_application_1/services/optimization_service.dart';
 import 'package:flutter_application_1/services/data_service.dart';
 
-// ─────────────────────────────────────────────────────────────
-//  ShowInputPage — Roxio Theme-Aware Redesign (v3)
-//  • Filters for Employees & Vehicles
-//  • Persistent action bar (outside scroll)
-//  • Full-width tab titles
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
+//  ShowInputPage � Roxio Theme-Aware Redesign (v3)
+//  � Filters for Employees & Vehicles
+//  � Persistent action bar (outside scroll)
+//  � Full-width tab titles
+// -------------------------------------------------------------
 
 class ShowInputPage extends StatefulWidget {
   final String testCaseId;
@@ -33,7 +33,7 @@ class ShowInputPage extends StatefulWidget {
 
 class _ShowInputPageState extends State<ShowInputPage>
     with TickerProviderStateMixin {
-  // ── Controllers & Services ──────────────────────────────
+  // -- Controllers & Services ------------------------------
   final ScrollController _scrollController = ScrollController();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
@@ -42,7 +42,7 @@ class _ShowInputPageState extends State<ShowInputPage>
   late TabController _tabController;
   late TabController _outerTabController; // Data | Map
 
-  // ── State ───────────────────────────────────────────────
+  // -- State -----------------------------------------------
   bool _showBackToTop = false;
   bool _isLoading = false;
   bool _hasExistingSolution = false;
@@ -50,14 +50,14 @@ class _ShowInputPageState extends State<ShowInputPage>
   String _optimizationMode = 'standard'; // quick | standard | advanced
   String? _highlightedId; // employee/vehicle ID to highlight on marker tap
 
-  // ── Card keys for scroll-to ─────────────────────────────
+  // -- Card keys for scroll-to -----------------------------
   final Map<String, GlobalKey> _cardKeys = {};
 
-  // ── Filter state — Employee ─────────────────────────────
+  // -- Filter state � Employee -----------------------------
   int? _filterPriority;
   bool? _sortEmpByCost; // true = asc, false = desc, null = none
 
-  // ── Filter state — Vehicle ──────────────────────────────
+  // -- Filter state � Vehicle ------------------------------
   int? _filterMinSeats;
   bool? _sortVehByCostPerKm; // true = asc, false = desc, null = none
   bool? _sortVehByTime; // true = asc, false = desc, null = none
@@ -65,17 +65,17 @@ class _ShowInputPageState extends State<ShowInputPage>
   bool _showEmpFilters = false;
   bool _showVehFilters = false;
 
-  // ── Parsed data (set once in initState) ─────────────────
+  // -- Parsed data (set once in initState) -----------------
   late final List<Map<String, dynamic>> _employees;
   late final List<Map<String, dynamic>> _vehicles;
   late final Map<String, dynamic> _metadata;
   late final List<Map<String, dynamic>> _baseline;
 
-  // ── Dynamic filter breakpoints (computed from data) ─────
+  // -- Dynamic filter breakpoints (computed from data) -----
   late final List<int> _seatBreakpoints;
   late final Set<int> _availablePriorities;
 
-  // ── Priority colour helper ──────────────────────────────
+  // -- Priority colour helper ------------------------------
   // All employees share the same silver accent (no per-priority colour)
   Color _priorityColor(BuildContext context, dynamic p) =>
       _isDark(context) ? AppColors.silver : const Color(0xFFCCCCCC);
@@ -98,7 +98,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     }
   }
 
-  // ── Theme-aware color helpers ───────────────────────────
+  // -- Theme-aware color helpers ---------------------------
   bool _isDark(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark;
 
@@ -120,7 +120,7 @@ class _ShowInputPageState extends State<ShowInputPage>
   Color _borderColorThemed(BuildContext context) =>
       _isDark(context) ? AppColors.darkBorderColor : AppColors.borderColor;
 
-  // ── Lifecycle ───────────────────────────────────────────
+  // -- Lifecycle -------------------------------------------
   @override
   void initState() {
     super.initState();
@@ -137,7 +137,7 @@ class _ShowInputPageState extends State<ShowInputPage>
       }
     });
 
-    // Safe parsing — filter null / empty IDs
+    // Safe parsing � filter null / empty IDs
     _employees = _filterList(widget.data['employees'], 'employee_id');
     _vehicles = _filterList(widget.data['vehicles'], 'vehicle_id');
     _metadata = (widget.data['metadata'] as Map<String, dynamic>?) ?? {};
@@ -155,7 +155,7 @@ class _ShowInputPageState extends State<ShowInputPage>
   }
 
   void _computeFilterBreakpoints() {
-    // ── Vehicle seats ──
+    // -- Vehicle seats --
     final seats =
         _vehicles
             .map((v) => int.tryParse(v['capacity']?.toString() ?? '') ?? 0)
@@ -165,7 +165,7 @@ class _ShowInputPageState extends State<ShowInputPage>
           ..sort();
     _seatBreakpoints = _pickBreakpoints(seats);
 
-    // ── Available priorities ──
+    // -- Available priorities --
     _availablePriorities = _employees
         .map((e) => int.tryParse(e['priority']?.toString() ?? '') ?? 0)
         .where((p) => p >= 1 && p <= 5)
@@ -189,8 +189,8 @@ class _ShowInputPageState extends State<ShowInputPage>
   }
 
   /// Resolve city name for display.
-  /// Priority: metadata.city → first employee's drop_city field →
-  /// city inferred from drop coordinates → 'Bengaluru' fallback.
+  /// Priority: metadata.city ? first employee's drop_city field ?
+  /// city inferred from drop coordinates ? 'Bengaluru' fallback.
   String _resolveCity() {
     // 1. metadata.city
     final metaCity = _metadata['city']?.toString().trim() ?? '';
@@ -260,7 +260,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     if (key?.currentContext == null) return;
     final renderObj = key!.currentContext!.findRenderObject();
     if (renderObj == null) return;
-    // Use ScrollPosition.ensureVisible directly — this only scrolls THIS
+    // Use ScrollPosition.ensureVisible directly � this only scrolls THIS
     // specific position and never walks up to ancestor scrollables (PageView).
     _scrollController.position.ensureVisible(
       renderObj,
@@ -271,7 +271,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Marker tap handlers ─────────────────────────────────
+  // -- Marker tap handlers ---------------------------------
   void _onEmployeeMarkerTap(Map<String, dynamic> emp) {
     final empId = emp['employee_id']?.toString() ?? '';
     setState(() {
@@ -322,7 +322,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     });
   }
 
-  // ── Filtered lists (computed) ───────────────────────────
+  // -- Filtered lists (computed) ---------------------------
   List<Map<String, dynamic>> get _filteredEmployees {
     var list = List<Map<String, dynamic>>.from(_employees);
     if (_filterPriority != null) {
@@ -407,7 +407,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     });
   }
 
-  // ── Business logic (unchanged) ──────────────────────────
+  // -- Business logic (unchanged) --------------------------
   Future<void> _checkExistingSolution() async {
     final sol = await _dataService.fetchSolution(widget.testCaseId);
     if (sol != null && mounted) {
@@ -420,6 +420,7 @@ class _ShowInputPageState extends State<ShowInputPage>
 
     try {
       Map<String, dynamic>? resultData;
+      Map<String, dynamic>? inputData;
 
       if (!forceRun && _hasExistingSolution) {
         resultData = await _dataService.fetchSolution(widget.testCaseId);
@@ -430,7 +431,7 @@ class _ShowInputPageState extends State<ShowInputPage>
 
       if (resultData == null || forceRun) {
         // Fetch the input JSON data from Supabase
-        final inputData = await _dataService.fetchInputData(widget.testCaseId);
+        inputData = await _dataService.fetchInputData(widget.testCaseId);
 
         if (inputData == null) {
           throw Exception(
@@ -448,6 +449,12 @@ class _ShowInputPageState extends State<ShowInputPage>
           AppSnackbar.show(context, message: "Optimization Completed & Saved!");
           setState(() => _hasExistingSolution = true);
         }
+      }
+
+      // Enrich resultData with input vehicle attributes (fuel_type/category) for charts
+      inputData ??= await _dataService.fetchInputData(widget.testCaseId);
+      if (inputData != null && inputData['vehicles'] != null) {
+        resultData['input_vehicles'] = inputData['vehicles'];
       }
 
       if (!mounted) return;
@@ -471,9 +478,9 @@ class _ShowInputPageState extends State<ShowInputPage>
     }
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  BUILD
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -493,10 +500,10 @@ class _ShowInputPageState extends State<ShowInputPage>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBrand.withOpacity(0.25),
+                      color: context.primary.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: AppColors.primaryBrand.withOpacity(0.6),
+                        color: context.primary.withOpacity(0.6),
                         width: 1.2,
                       ),
                     ),
@@ -519,7 +526,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── AppBar ─────────────────────────────────────────────
+  // -- AppBar ---------------------------------------------
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final dark = _isDark(context);
     return AppBar(
@@ -563,7 +570,7 @@ class _ShowInputPageState extends State<ShowInputPage>
             padding: const EdgeInsets.only(right: 8),
             child: _GlowChip(
               label: 'Solution Available',
-              color: AppColors.primaryBrand,
+              color: context.primary,
               icon: Icons.check_circle_outline_rounded,
             ),
           ),
@@ -571,16 +578,16 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  MOBILE LAYOUT  — Data / Map top-level tabs
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
+  //  MOBILE LAYOUT  � Data / Map top-level tabs
+  // ----------------------------------------------------------
   Widget _buildMobileLayout(BuildContext context, Size size) {
     return Column(
       children: [
-        // ── Top-level Data | Map tab bar ──
+        // -- Top-level Data | Map tab bar --
         _buildOuterTabBar(context),
 
-        // ── Tab content ──
+        // -- Tab content --
         Expanded(
           child: TabBarView(
             controller: _outerTabController,
@@ -592,13 +599,13 @@ class _ShowInputPageState extends State<ShowInputPage>
           ),
         ),
 
-        // ── Persistent action bar ──
+        // -- Persistent action bar --
         _buildActionBar(context),
       ],
     );
   }
 
-  // ── Outer tab bar (Data | Map) ─────────────────────────
+  // -- Outer tab bar (Data | Map) -------------------------
   Widget _buildOuterTabBar(BuildContext context) {
     final dark = _isDark(context);
     final size = MediaQuery.of(context).size;
@@ -610,17 +617,14 @@ class _ShowInputPageState extends State<ShowInputPage>
           TabBar(
             controller: _outerTabController,
             indicator: UnderlineTabIndicator(
-              borderSide: const BorderSide(
-                color: AppColors.primaryBrand,
-                width: 3,
-              ),
+              borderSide: BorderSide(color: context.primary, width: 3),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(2),
                 topRight: Radius.circular(2),
               ),
             ),
             indicatorSize: TabBarIndicatorSize.tab,
-            labelColor: AppColors.primaryBrand,
+            labelColor: context.primary,
             unselectedLabelColor: dark
                 ? Colors.white54
                 : AppColors.textSecondaryLight,
@@ -665,7 +669,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Mobile Data tab ────────────────────────────────────
+  // -- Mobile Data tab ------------------------------------
   Widget _buildMobileDataTab(BuildContext context, Size size) {
     final isEmpTab = _mobileTabIndex == 0;
     final items = isEmpTab ? _filteredEmployees : _filteredVehicles;
@@ -715,7 +719,7 @@ class _ShowInputPageState extends State<ShowInputPage>
           ],
         ),
 
-        // ── Back-to-top FAB inside the data tab ──
+        // -- Back-to-top FAB inside the data tab --
         if (_showBackToTop)
           Positioned(
             right: 12,
@@ -730,10 +734,10 @@ class _ShowInputPageState extends State<ShowInputPage>
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBrand.withOpacity(0.25),
+                      color: context.primary.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: AppColors.primaryBrand.withOpacity(0.6),
+                        color: context.primary.withOpacity(0.6),
                         width: 1.2,
                       ),
                     ),
@@ -751,7 +755,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Mobile Map tab ─────────────────────────────────────
+  // -- Mobile Map tab -------------------------------------
   Widget _buildMobileMapTab(BuildContext context) {
     return MapViewWidget(
       employees: _employees,
@@ -761,13 +765,13 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  DESKTOP LAYOUT
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   Widget _buildDesktopLayout(BuildContext context) {
     return Row(
       children: [
-        // ── Left 60 %: Map ──
+        // -- Left 60 %: Map --
         Expanded(
           flex: 6,
           child: MapViewWidget(
@@ -778,7 +782,7 @@ class _ShowInputPageState extends State<ShowInputPage>
           ),
         ),
 
-        // ── Right 40 %: Data panel ──
+        // -- Right 40 %: Data panel --
         Expanded(
           flex: 4,
           child: Container(
@@ -816,11 +820,11 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  SHARED BUILDING BLOCKS
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
 
-  // ── Metadata strip (city, counts) ──────────────────────
+  // -- Metadata strip (city, counts) ----------------------
   Widget _buildMetadataStrip(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -835,22 +839,22 @@ class _ShowInputPageState extends State<ShowInputPage>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.primaryBrand.withOpacity(0.12),
+              color: context.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.location_city_rounded,
-                  color: AppColors.primaryBrand,
+                  color: context.primary,
                   size: 16,
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: 6),
                 Text(
                   _resolveCity(),
-                  style: const TextStyle(
-                    color: AppColors.primaryBrand,
+                  style: TextStyle(
+                    color: context.primary,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
@@ -868,7 +872,7 @@ class _ShowInputPageState extends State<ShowInputPage>
           _miniStat(
             Icons.directions_car_rounded,
             '${_vehicles.length}',
-            AppColors.markerPremium,
+            context.primary,
           ),
         ],
       ),
@@ -893,7 +897,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Segmented tab bar — full width ─────────────────────
+  // -- Segmented tab bar � full width ---------------------
   Widget _buildSegmentedTabs(BuildContext context, {bool isMobile = false}) {
     final dark = _isDark(context);
     return Padding(
@@ -927,7 +931,7 @@ class _ShowInputPageState extends State<ShowInputPage>
             : TabBar(
                 controller: _tabController,
                 indicator: BoxDecoration(
-                  color: AppColors.primaryBrand,
+                  color: context.primary,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
@@ -994,7 +998,7 @@ class _ShowInputPageState extends State<ShowInputPage>
         child: Container(
           margin: const EdgeInsets.all(3),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primaryBrand : Colors.transparent,
+            color: isSelected ? context.primary : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Center(
@@ -1028,9 +1032,9 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
   //  FILTER BARS
-  // ══════════════════════════════════════════════════════════
+  // ----------------------------------------------------------
 
   Widget _buildEmployeeFilterBar(BuildContext context) {
     return Padding(
@@ -1049,7 +1053,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                     Icons.filter_list_rounded,
                     size: 16,
                     color: _hasActiveEmpFilters
-                        ? AppColors.primaryBrand
+                        ? context.primary
                         : _textSecondary(context),
                   ),
                   const SizedBox(width: 6),
@@ -1059,17 +1063,17 @@ class _ShowInputPageState extends State<ShowInputPage>
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: _hasActiveEmpFilters
-                          ? AppColors.primaryBrand
+                          ? context.primary
                           : _textSecondary(context),
                     ),
                   ),
                   if (_hasActiveEmpFilters) ...[
-                    const SizedBox(width: 6),
+                    SizedBox(width: 6),
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryBrand,
+                      decoration: BoxDecoration(
+                        color: context.primary,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -1105,7 +1109,7 @@ class _ShowInputPageState extends State<ShowInputPage>
               spacing: 8,
               runSpacing: 6,
               children: [
-                // Priority chips — only priorities present in data
+                // Priority chips � only priorities present in data
                 for (int p in [1, 2, 3, 4, 5])
                   if (_availablePriorities.contains(p))
                     _filterChip(
@@ -1117,26 +1121,26 @@ class _ShowInputPageState extends State<ShowInputPage>
                         () => _filterPriority = _filterPriority == p ? null : p,
                       ),
                     ),
-                // Sort by baseline cost — ascending
+                // Sort by baseline cost � ascending
                 _sortChip(
                   context,
                   label: 'Cost',
                   icon: Icons.arrow_upward_rounded,
-                  tooltip: 'Low → High',
+                  tooltip: 'Low ? High',
                   isActive: _sortEmpByCost == true,
-                  activeColor: AppColors.primaryBrand,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortEmpByCost = _sortEmpByCost == true ? null : true,
                   ),
                 ),
-                // Sort by baseline cost — descending
+                // Sort by baseline cost � descending
                 _sortChip(
                   context,
                   label: 'Cost',
                   icon: Icons.arrow_downward_rounded,
-                  tooltip: 'High → Low',
+                  tooltip: 'High ? Low',
                   isActive: _sortEmpByCost == false,
-                  activeColor: AppColors.primaryBrand,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () =>
                         _sortEmpByCost = _sortEmpByCost == false ? null : false,
@@ -1168,7 +1172,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                     Icons.filter_list_rounded,
                     size: 16,
                     color: _hasActiveVehFilters
-                        ? AppColors.primaryBrand
+                        ? context.primary
                         : _textSecondary(context),
                   ),
                   const SizedBox(width: 6),
@@ -1178,17 +1182,17 @@ class _ShowInputPageState extends State<ShowInputPage>
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: _hasActiveVehFilters
-                          ? AppColors.primaryBrand
+                          ? context.primary
                           : _textSecondary(context),
                     ),
                   ),
                   if (_hasActiveVehFilters) ...[
-                    const SizedBox(width: 6),
+                    SizedBox(width: 6),
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryBrand,
+                      decoration: BoxDecoration(
+                        color: context.primary,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -1224,13 +1228,13 @@ class _ShowInputPageState extends State<ShowInputPage>
               spacing: 8,
               runSpacing: 6,
               children: [
-                // Seat chips — data-driven
+                // Seat chips � data-driven
                 for (final s in _seatBreakpoints)
                   _filterChip(
                     context,
-                    label: '≥ $s Seats',
+                    label: '= $s Seats',
                     isActive: _filterMinSeats == s,
-                    activeColor: AppColors.primaryBrand,
+                    activeColor: context.primary,
                     onTap: () => setState(
                       () => _filterMinSeats = _filterMinSeats == s ? null : s,
                     ),
@@ -1238,11 +1242,11 @@ class _ShowInputPageState extends State<ShowInputPage>
                 // Sort by cost/km — ascending
                 _sortChip(
                   context,
-                  label: '₹/km',
+                  label: '?/km',
                   icon: Icons.arrow_upward_rounded,
-                  tooltip: 'Low → High',
+                  tooltip: 'Low ? High',
                   isActive: _sortVehByCostPerKm == true,
-                  activeColor: AppColors.markerPremium,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortVehByCostPerKm = _sortVehByCostPerKm == true
                         ? null
@@ -1252,25 +1256,25 @@ class _ShowInputPageState extends State<ShowInputPage>
                 // Sort by cost/km — descending
                 _sortChip(
                   context,
-                  label: '₹/km',
+                  label: '?/km',
                   icon: Icons.arrow_downward_rounded,
-                  tooltip: 'High → Low',
+                  tooltip: 'High ? Low',
                   isActive: _sortVehByCostPerKm == false,
-                  activeColor: AppColors.markerPremium,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortVehByCostPerKm = _sortVehByCostPerKm == false
                         ? null
                         : false,
                   ),
                 ),
-                // Sort by speed — ascending
+                // Sort by speed � ascending
                 _sortChip(
                   context,
                   label: 'Speed',
                   icon: Icons.arrow_upward_rounded,
-                  tooltip: 'Slow → Fast',
+                  tooltip: 'Slow ? Fast',
                   isActive: _sortVehBySpeed == true,
-                  activeColor: AppColors.markerEmployee,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () =>
                         _sortVehBySpeed = _sortVehBySpeed == true ? null : true,
@@ -1281,35 +1285,35 @@ class _ShowInputPageState extends State<ShowInputPage>
                   context,
                   label: 'Speed',
                   icon: Icons.arrow_downward_rounded,
-                  tooltip: 'Fast → Slow',
+                  tooltip: 'Fast ? Slow',
                   isActive: _sortVehBySpeed == false,
-                  activeColor: AppColors.markerEmployee,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortVehBySpeed = _sortVehBySpeed == false
                         ? null
                         : false,
                   ),
                 ),
-                // Sort by availability time — ascending
+                // Sort by availability time � ascending
                 _sortChip(
                   context,
                   label: 'Time',
                   icon: Icons.arrow_upward_rounded,
                   tooltip: 'Earliest first',
                   isActive: _sortVehByTime == true,
-                  activeColor: AppColors.primaryBrand,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () => _sortVehByTime = _sortVehByTime == true ? null : true,
                   ),
                 ),
-                // Sort by availability time — descending
+                // Sort by availability time � descending
                 _sortChip(
                   context,
                   label: 'Time',
                   icon: Icons.arrow_downward_rounded,
                   tooltip: 'Latest first',
                   isActive: _sortVehByTime == false,
-                  activeColor: AppColors.primaryBrand,
+                  activeColor: context.primary,
                   onTap: () => setState(
                     () =>
                         _sortVehByTime = _sortVehByTime == false ? null : false,
@@ -1408,7 +1412,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Desktop Employee list (with filter) ────────────────
+  // -- Desktop Employee list (with filter) ----------------
   Widget _buildEmployeeListDesktop(BuildContext context) {
     final items = _filteredEmployees;
     return Column(
@@ -1429,7 +1433,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Desktop Vehicle list (with filter) ─────────────────
+  // -- Desktop Vehicle list (with filter) -----------------
   Widget _buildVehicleListDesktop(BuildContext context) {
     final items = _filteredVehicles;
     return Column(
@@ -1449,7 +1453,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Employee card ──────────────────────────────────────
+  // -- Employee card --------------------------------------
   Widget _buildEmployeeCard(BuildContext context, Map<String, dynamic> emp) {
     final id = emp['employee_id']?.toString() ?? '';
     final shortId = id.length > 1 ? id.substring(1) : id;
@@ -1474,13 +1478,11 @@ class _ShowInputPageState extends State<ShowInputPage>
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: isHighlighted
-            ? AppColors.primaryBrand.withOpacity(0.08)
+            ? context.primary.withOpacity(0.08)
             : _surfaceColor(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isHighlighted
-              ? AppColors.primaryBrand
-              : pColor.withOpacity(0.25),
+          color: isHighlighted ? context.primary : pColor.withOpacity(0.25),
           width: isHighlighted ? 2 : 1,
         ),
       ),
@@ -1488,7 +1490,7 @@ class _ShowInputPageState extends State<ShowInputPage>
         padding: const EdgeInsets.all(14),
         child: Column(
           children: [
-            // ── Row 1: Avatar + ID + Priority badge ──
+            // -- Row 1: Avatar + ID + Priority badge --
             Row(
               children: [
                 // Circular avatar with priority ring
@@ -1535,7 +1537,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '$pickup  →  $drop',
+                            '$pickup  ?  $drop',
                             style: TextStyle(
                               color: _textSecondary(context),
                               fontSize: 12,
@@ -1571,7 +1573,7 @@ class _ShowInputPageState extends State<ShowInputPage>
             ),
             const SizedBox(height: 10),
 
-            // ── Row 2: Chips for preferences ──
+            // -- Row 2: Chips for preferences --
             Row(
               children: [
                 _infoChip(
@@ -1579,7 +1581,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                   Icons.directions_car_outlined,
                   vPref.toUpperCase(),
                   vPref == 'premium'
-                      ? AppColors.markerPremium
+                      ? context.primary
                       : _textSecondary(context),
                 ),
                 const SizedBox(width: 8),
@@ -1594,15 +1596,15 @@ class _ShowInputPageState extends State<ShowInputPage>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.currency_rupee_rounded,
-                        color: AppColors.primaryBrand,
+                        color: context.primary,
                         size: 14,
                       ),
                       Text(
                         '${(baselineCost as num).toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: AppColors.primaryBrand,
+                        style: TextStyle(
+                          color: context.primary,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                         ),
@@ -1649,7 +1651,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Vehicle card ───────────────────────────────────────
+  // -- Vehicle card ---------------------------------------
   Widget _buildVehicleCard(BuildContext context, Map<String, dynamic> veh) {
     final id = veh['vehicle_id']?.toString() ?? '';
     final category = veh['category']?.toString() ?? 'normal';
@@ -1661,8 +1663,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     final isHighlighted = _highlightedId == id;
 
     final accentColor = isPremium
-        ? AppColors
-              .markerPremium // Petronas teal for premium
+        ? context.primary
         : (_isDark(context)
               ? AppColors.markerNormal
               : const Color(0xFF6E6E6E)); // Silver / grey for normal
@@ -1673,12 +1674,12 @@ class _ShowInputPageState extends State<ShowInputPage>
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: isHighlighted
-            ? AppColors.primaryBrand.withOpacity(0.08)
+            ? context.primary.withOpacity(0.08)
             : _surfaceColor(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isHighlighted
-              ? AppColors.primaryBrand
+              ? context.primary
               : accentColor.withOpacity(0.25),
           width: isHighlighted ? 2 : 1,
         ),
@@ -1771,12 +1772,12 @@ class _ShowInputPageState extends State<ShowInputPage>
                   '$capacity Seats',
                   _isDark(context) ? Colors.white70 : Colors.black54,
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: 16),
                 if (costKm != null)
                   _vehicleStat(
                     Icons.currency_rupee_rounded,
                     '${(costKm as num).toStringAsFixed(1)}/km',
-                    AppColors.primaryBrand,
+                    context.primary,
                   ),
                 const Spacer(),
                 if (speed != null)
@@ -1811,7 +1812,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Empty state ────────────────────────────────────────
+  // -- Empty state ----------------------------------------
   Widget _emptyState(BuildContext context, String msg) {
     return Center(
       child: Padding(
@@ -1831,7 +1832,7 @@ class _ShowInputPageState extends State<ShowInputPage>
     );
   }
 
-  // ── Action bar ─────────────────────────────────────────
+  // -- Action bar -----------------------------------------
   static const Map<String, String> _modeLabels = {
     'quick': 'Quick (~15s)',
     'standard': 'Standard (~1m)',
@@ -1888,14 +1889,14 @@ class _ShowInputPageState extends State<ShowInputPage>
                       height: 38,
                       decoration: BoxDecoration(
                         color: _optimizationMode == entry.key
-                            ? AppColors.primaryBrand.withOpacity(0.15)
+                            ? context.primary.withOpacity(0.15)
                             : (dark ? Colors.white10 : Colors.black12),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
                         _modeIcons[entry.key]!,
                         color: _optimizationMode == entry.key
-                            ? AppColors.primaryBrand
+                            ? context.primary
                             : _textSecondary(context),
                         size: 20,
                       ),
@@ -1904,7 +1905,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                       entry.value,
                       style: TextStyle(
                         color: _optimizationMode == entry.key
-                            ? AppColors.primaryBrand
+                            ? context.primary
                             : _textPrimary(context),
                         fontWeight: _optimizationMode == entry.key
                             ? FontWeight.w700
@@ -1913,10 +1914,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                       ),
                     ),
                     trailing: _optimizationMode == entry.key
-                        ? const Icon(
-                            Icons.check_rounded,
-                            color: AppColors.primaryBrand,
-                          )
+                        ? Icon(Icons.check_rounded, color: context.primary)
                         : null,
                     onTap: () {
                       setState(() => _optimizationMode = entry.key);
@@ -1946,10 +1944,10 @@ class _ShowInputPageState extends State<ShowInputPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Dropdown + Buttons in one row ──
+            // -- Dropdown + Buttons in one row --
             Row(
               children: [
-                // ── Compact mode dropdown ──
+                // -- Compact mode dropdown --
                 GestureDetector(
                   onTap: () => _showModePicker(context),
                   child: Container(
@@ -1963,14 +1961,14 @@ class _ShowInputPageState extends State<ShowInputPage>
                     ),
                     child: Icon(
                       _modeIcons[_optimizationMode] ?? Icons.balance_rounded,
-                      color: AppColors.primaryBrand,
+                      color: context.primary,
                       size: 22,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
 
-                // ── View Existing Results (only if solution exists) ──
+                // -- View Existing Results (only if solution exists) --
                 if (_hasExistingSolution) ...[
                   Expanded(
                     child: OutlinedButton.icon(
@@ -1980,8 +1978,8 @@ class _ShowInputPageState extends State<ShowInputPage>
                       icon: const Icon(Icons.visibility_rounded, size: 15),
                       label: const Text('View'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primaryBrand,
-                        side: const BorderSide(color: AppColors.primaryBrand),
+                        foregroundColor: context.primary,
+                        side: BorderSide(color: context.primary),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
@@ -1997,7 +1995,7 @@ class _ShowInputPageState extends State<ShowInputPage>
                   const SizedBox(width: 6),
                 ],
 
-                // ── Run Optimization (primary CTA) ──
+                // -- Run Optimization (primary CTA) --
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _isLoading
@@ -2026,16 +2024,15 @@ class _ShowInputPageState extends State<ShowInputPage>
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBrand,
-                      disabledBackgroundColor: AppColors.primaryBrand
-                          .withOpacity(0.5),
+                      backgroundColor: context.primary,
+                      disabledBackgroundColor: context.primary.withOpacity(0.5),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
                       minimumSize: const Size(0, 40),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       elevation: 3,
-                      shadowColor: AppColors.primaryBrand.withOpacity(0.4),
+                      shadowColor: context.primary.withOpacity(0.4),
                     ),
                   ),
                 ),
@@ -2048,9 +2045,9 @@ class _ShowInputPageState extends State<ShowInputPage>
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Tiny helper widget — animated glow chip for "Solution Available"
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
+//  Tiny helper widget � animated glow chip for "Solution Available"
+// -------------------------------------------------------------
 class _GlowChip extends StatelessWidget {
   final String label;
   final Color color;

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/theme/theme.dart';
 
 /// A sliver-compatible shimmer loading widget for test case cards
 /// Displays skeleton placeholders with animated shimmer effect

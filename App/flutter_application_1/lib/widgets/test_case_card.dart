@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_application_1/theme/theme.dart';
 
 class TestCaseCard extends StatelessWidget {
@@ -60,7 +60,7 @@ class TestCaseCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: isSelected
-            ? const BorderSide(color: AppColors.primaryBrand, width: 2)
+            ? BorderSide(color: context.primary, width: 2)
             : BorderSide(
                 color: theme.colorScheme.outline.withOpacity(0.12),
                 width: 1,
@@ -70,8 +70,8 @@ class TestCaseCard extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(12),
-        splashColor: AppColors.primaryBrand.withOpacity(0.08),
-        highlightColor: AppColors.primaryBrand.withOpacity(0.06),
+        splashColor: context.primary.withOpacity(0.08),
+        highlightColor: context.primary.withOpacity(0.06),
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Row(
@@ -82,8 +82,8 @@ class TestCaseCard extends StatelessWidget {
                 height: 48,
                 decoration: BoxDecoration(
                   color: isSelectionMode && isSelected
-                      ? AppColors.primaryBrand
-                      : const Color(0x1A00C569),
+                      ? context.primary
+                      : context.primary.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: isSelectionMode
@@ -91,10 +91,7 @@ class TestCaseCard extends StatelessWidget {
                         isSelected ? Icons.check : Icons.circle_outlined,
                         color: isSelected ? Colors.white : Colors.grey,
                       )
-                    : const Icon(
-                        Icons.folder_outlined,
-                        color: AppColors.primaryBrand,
-                      ),
+                    : Icon(Icons.folder_outlined, color: context.primary),
               ),
               const SizedBox(width: 16),
 
@@ -108,7 +105,7 @@ class TestCaseCard extends StatelessWidget {
                       data['case_name'] ?? "Untitled",
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: isPinned ? AppColors.primaryBrand : null,
+                        color: isPinned ? context.primary : null,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

@@ -25,10 +25,7 @@ class FilterBottomSheet extends StatelessWidget {
         color: sheetColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         border: Border(
-          top: BorderSide(
-            color: AppColors.primaryBrand.withOpacity(0.35),
-            width: 1.5,
-          ),
+          top: BorderSide(color: context.primary.withOpacity(0.35), width: 1.5),
         ),
       ),
       padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 12),
@@ -49,16 +46,12 @@ class FilterBottomSheet extends StatelessWidget {
           // Header row
           Row(
             children: [
-              const Icon(
-                Icons.sort_rounded,
-                size: 16,
-                color: AppColors.primaryBrand,
-              ),
-              const SizedBox(width: 8),
+              Icon(Icons.sort_rounded, size: 16, color: context.primary),
+              SizedBox(width: 8),
               Text(
                 "SORT BY",
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.primaryBrand,
+                  color: context.primary,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.4,
                   fontSize: 11,
@@ -69,7 +62,7 @@ class FilterBottomSheet extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          // Options grid — 2x2
+          // Options grid � 2x2
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -93,13 +86,13 @@ class FilterBottomSheet extends StatelessWidget {
               _buildChip(
                 context,
                 Icons.sort_by_alpha_rounded,
-                "Name A → Z",
+                "Name A ? Z",
                 SortOption.nameAsc,
               ),
               _buildChip(
                 context,
                 Icons.sort_by_alpha_rounded,
-                "Name Z → A",
+                "Name Z ? A",
                 SortOption.nameDesc,
               ),
             ],
@@ -119,7 +112,7 @@ class FilterBottomSheet extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final isSelected = currentSort == option;
 
-    final selectedBg = AppColors.primaryBrand.withOpacity(isDark ? 0.18 : 0.10);
+    final selectedBg = context.primary.withOpacity(isDark ? 0.18 : 0.10);
     final unselectedBg = isDark
         ? const Color(0xFF2A2A2A)
         : const Color(0xFFF3F3F3);
@@ -136,7 +129,7 @@ class FilterBottomSheet extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isSelected
-                ? AppColors.primaryBrand
+                ? context.primary
                 : theme.colorScheme.outline.withOpacity(0.18),
             width: isSelected ? 1.5 : 1,
           ),
@@ -148,7 +141,7 @@ class FilterBottomSheet extends StatelessWidget {
               icon,
               size: 14,
               color: isSelected
-                  ? AppColors.primaryBrand
+                  ? context.primary
                   : theme.colorScheme.onSurface.withOpacity(0.5),
             ),
             const SizedBox(width: 6),
@@ -159,7 +152,7 @@ class FilterBottomSheet extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   color: isSelected
-                      ? AppColors.primaryBrand
+                      ? context.primary
                       : theme.colorScheme.onSurface.withOpacity(0.75),
                 ),
                 maxLines: 1,
@@ -167,11 +160,7 @@ class FilterBottomSheet extends StatelessWidget {
               ),
             ),
             if (isSelected)
-              const Icon(
-                Icons.check_rounded,
-                size: 13,
-                color: AppColors.primaryBrand,
-              ),
+              Icon(Icons.check_rounded, size: 13, color: context.primary),
           ],
         ),
       ),

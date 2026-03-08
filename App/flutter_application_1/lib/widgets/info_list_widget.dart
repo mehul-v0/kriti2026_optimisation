@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_application_1/theme/theme.dart';
 
 class InfoListWidget extends StatefulWidget {
@@ -87,7 +87,7 @@ class _InfoListWidgetState extends State<InfoListWidget> {
       child: Container(
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primaryBrand : Colors.transparent,
+          color: isSelected ? context.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Row(

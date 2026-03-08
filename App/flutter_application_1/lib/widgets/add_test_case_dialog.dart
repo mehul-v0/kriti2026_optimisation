@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/services/data_service.dart';
@@ -106,11 +106,11 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
       }
 
       // Backend /api/upload returns: employees, vehicles, digest, baseline_cost
-      // It does NOT return metadata or baseline list — use safe defaults.
+      // It does NOT return metadata or baseline list � use safe defaults.
       final inputJson = {
         "employees": backendResponse["employees"] ?? [],
         "vehicles": backendResponse["vehicles"] ?? [],
-        // metadata is not returned by backend; use empty map — optimizer
+        // metadata is not returned by backend; use empty map � optimizer
         // fills it in from request params (costWeight, timeWeight etc.)
         "metadata": <String, dynamic>{},
         // baseline list is not returned by backend; use empty list
@@ -190,7 +190,7 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
 
               const SizedBox(height: 20),
 
-              // Inline error banner — always in front, no z-order issues
+              // Inline error banner � always in front, no z-order issues
               if (_errorMessage != null)
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -249,12 +249,12 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0x1A00C569),
+            color: context.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.add_chart_rounded,
-            color: AppColors.primaryBrand,
+            color: context.primary,
             size: 24,
           ),
         ),
@@ -313,7 +313,7 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primaryBrand, width: 2),
+          borderSide: BorderSide(color: context.primary, width: 2),
         ),
         prefixIcon: Icon(
           Icons.edit_outlined,
@@ -368,8 +368,8 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.primaryBrand : Colors.transparent,
-          borderRadius: BorderRadius.circular(7), // 10 (outer) − 3 (margin) = 7
+          color: isActive ? context.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(7), // 10 (outer) - 3 (margin) = 7
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -408,12 +408,12 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         decoration: BoxDecoration(
           border: Border.all(
-            color: hasFile ? const Color(0x8000C569) : borderColor,
+            color: hasFile ? context.primary.withOpacity(0.5) : borderColor,
             width: hasFile ? 1.5 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
           color: hasFile
-              ? (isDark ? const Color(0x1400C569) : const Color(0x0A00C569))
+              ? context.primary.withOpacity(isDark ? 0.08 : 0.04)
               : (isDark ? const Color(0x08FFFFFF) : const Color(0x089E9E9E)),
         ),
         child: Row(
@@ -421,16 +421,14 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: hasFile
-                    ? const Color(0x2600C569)
-                    : const Color(0x1A00C569),
+                color: context.primary.withOpacity(hasFile ? 0.15 : 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 hasFile
                     ? Icons.check_circle_outline
                     : Icons.upload_file_outlined,
-                color: hasFile ? AppColors.success : AppColors.primaryBrand,
+                color: context.primary,
                 size: 22,
               ),
             ),
@@ -497,10 +495,7 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: AppColors.primaryBrand,
-                width: 2,
-              ),
+              borderSide: BorderSide(color: context.primary, width: 2),
             ),
             prefixIcon: Icon(
               Icons.link,
@@ -531,7 +526,7 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
 
   Widget _buildActionButtons(bool isDark, Color borderColor) {
     if (_isUploading) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
           child: SizedBox(
@@ -539,7 +534,7 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
             height: 24,
             child: CircularProgressIndicator(
               strokeWidth: 2.5,
-              color: AppColors.primaryBrand,
+              color: context.primary,
             ),
           ),
         ),
@@ -562,13 +557,13 @@ class _AddTestCaseDialogState extends State<AddTestCaseDialog> {
             child: const Text("Cancel"),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: 12),
         Expanded(
           flex: 2,
           child: ElevatedButton(
             onPressed: _handleUpload,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryBrand,
+              backgroundColor: context.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               elevation: 0,

@@ -1,10 +1,22 @@
-# Flutter Frontend Architecture - Corrected Implementation
+# Flutter App Architecture Guide
 
-## 🎯 Overview
+> **See also:** [overview.md](overview.md) — complete feature documentation for every screen, widget, service, and theme.
 
-This document explains the **correct** frontend architecture that works with the existing backend without any modifications.
+---
 
-**Key Principle**: Frontend acts as a **pass-through layer** for JSON. Backend is the single source of truth for schema.
+## 🎯 Core Principle
+
+The Flutter frontend is a **pass-through layer** for JSON.
+
+```
+Excel/Sheet  →  Backend /api/upload  →  JSON  →  Supabase
+                                                     ↓
+Supabase  →  JSON  →  Backend /api/optimize  →  Results  →  Supabase
+```
+
+- Backend owns the JSON schema. Frontend never defines, extends, or modifies it.
+- Supabase stores only two JSON blobs per test case: `input_data` and `output_json`.
+- No Excel bytes, no base64, no extra columns.
 
 ---
 
@@ -14,348 +26,267 @@ This document explains the **correct** frontend architecture that works with the
 
 ```sql
 create table public.test_cases (
-  id uuid not null default gen_random_uuid(),
-  created_at timestamp with time zone not null default now(),
-  user_id uuid not null default auth.uid(),
-  case_name text not null,
-  input_data jsonb not null,       -- Backend-generated JSON stored as-is
-  output_json jsonb null,           -- Optimization results
+  id          uuid        not null default gen_random_uuid(),
+  created_at  timestamptz not null default now(),
+  user_id     uuid        not null default auth.uid(),
+  case_name   text        not null,
+  input_data  jsonb       not null,   -- backend-generated JSON stored as-is
+  output_json jsonb       null,       -- optimization results (null until first run)
   constraint test_cases_pkey primary key (id),
-  constraint test_cases_user_id_fkey foreign key (user_id) references auth.users (id)
+  constraint test_cases_user_id_fkey
+    foreign key (user_id) references auth.users(id)
 );
 ```
 
-**❌ NO additional columns** (no file_base64, no file_name, etc.)
+**❌ NO additional columns** (no file_base64, no file_name, no processed_at, etc.)
+
+Row-Level Security: `user_id = auth.uid()` — users can only access their own rows. The `user_id` column uses `default auth.uid()` so the frontend never needs to pass a user ID explicitly.
 
 ---
 
 ## 🔄 Upload Flow
 
-### Step-by-Step Process:
+### Step-by-Step
 
-1. **User uploads Excel or provides Google Sheet link**
-   - Excel: Use FilePicker to get file bytes
-   - Google Sheets: Export to .xlsx format first
+1. **User picks an Excel file or provides a Google Sheets URL/ID.**
+   - Excel: `FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx','xls'])` → `Uint8List` bytes.
+   - Google Sheets: `UploadService.exportGoogleSheetAsBytes(id)` downloads `.xlsx` via the Google export API — then the same Excel path is followed.
 
-2. **Frontend sends file to backend `/api/upload`**
+2. **Frontend sends the file to `/api/upload` as `multipart/form-data`.**
    ```dart
-   // Using multipart/form-data
    var request = http.MultipartRequest('POST', uri);
    request.files.add(
-     http.MultipartFile.fromBytes('file', fileBytes, filename: fileName),
+     http.MultipartFile.fromBytes('file', fileBytes, filename: safeFileName),
    );
    ```
+   > Filename must have `.xlsx` extension. Android FilePicker sometimes omits it, so the dialog enforces it: `safeFileName = rawName.endsWith('.xlsx') ? rawName : '$rawName.xlsx'`.
 
-3. **Backend converts Excel → JSON**
-   - Backend reads Excel sheets (employees, vehicles, metadata, baseline)
-   - Converts to standardized JSON schema
-   - Returns JSON in response
-
-4. **Frontend receives backend response**
+3. **Backend parses the Excel workbook and returns JSON.**
    ```json
    {
      "success": true,
-     "message": "Parsed X employees and Y vehicles",
+     "message": "Parsed 42 employees and 8 vehicles",
      "employees": [...],
      "vehicles": [...],
-     "metadata": {...},
-     "baseline": [...],
+     "digest": {...},
      "baseline_cost": 1234.56
    }
    ```
+   Note: backend's `/api/upload` does **not** return `metadata` or `baseline` list — the frontend uses empty defaults.
 
-5. **Frontend stores JSON exactly as-is**
+4. **Frontend assembles and stores the input JSON in Supabase.**
    ```dart
    final inputJson = {
      "employees": backendResponse["employees"] ?? [],
      "vehicles": backendResponse["vehicles"] ?? [],
-     "metadata": backendResponse["metadata"] ?? {},
-     "baseline": backendResponse["baseline"] ?? [],
+     "metadata": <String, dynamic>{},   // optimizer fills this from request params
+     "baseline": <dynamic>[],           // empty; baseline list not returned by /api/upload
    };
-   
    await _dataService.uploadTestCase(caseName, inputJson);
    ```
 
-   **Critical:** Store only the JSON. Do NOT store file bytes.
+### Key Files
 
-### Implementation Files:
-
-**[upload_service.dart](lib/services/upload_service.dart)**
-- `uploadExcelFile()` - Sends Excel to backend
-- `uploadGoogleSheet()` - Exports Sheet → Excel → sends to backend
-- `exportGoogleSheetAsBytes()` - Downloads Google Sheet as Excel
-
-**[add_test_case_dialog.dart](lib/widgets/add_test_case_dialog.dart)**
-- Handles UI for Excel/Google Sheets upload
-- Calls upload service
-- Stores returned JSON in Supabase
-
-**[data_service.dart](lib/services/data_service.dart)**
-- `uploadTestCase()` - Stores JSON in `input_data` column
+| File | Role |
+|---|---|
+| `lib/services/upload_service.dart` | `uploadExcelFile()`, `uploadGoogleSheet()` |
+| `lib/widgets/add_test_case_dialog.dart` | Upload UI, calls services, stores to Supabase |
+| `lib/services/data_service.dart` | `uploadTestCase()` — INSERT into Supabase |
 
 ---
 
-## ⚡ Optimize Flow
+## ⚡ Optimise Flow
 
-### Step-by-Step Process:
+### Step-by-Step
 
-1. **User clicks "Optimize" button**
+1. **User taps "OPTIMISE" on ShowInputPage.**
 
-2. **Frontend fetches input JSON from Supabase**
+2. **Frontend fetches `input_data` from Supabase.**
    ```dart
    final inputData = await _dataService.fetchInputData(testCaseId);
    ```
 
-3. **Frontend sends JSON directly to `/api/optimize`**
+3. **Frontend sends JSON + optimisation config to `/api/optimize`.**
    ```dart
+   final requestBody = {
+     ...inputData,                          // spread all input fields
+     'mode': 'standard',
+     if (solverDurationSeconds != null)
+       'solverDurationSeconds': solverDurationSeconds,
+     if (costWeight != null) 'costWeight': costWeight,
+     if (timeWeight != null) 'timeWeight': timeWeight,
+   };
    final response = await http.post(
      uri,
-     headers: {
-       "Content-Type": "application/json",
-     },
-     body: jsonEncode(inputData),
+     headers: {"Content-Type": "application/json"},
+     body: jsonEncode(requestBody),
    );
    ```
+   Critical: `Content-Type: application/json` must be set.
 
-   **Critical Headers:**
-   - `Content-Type: application/json` ← Must be set correctly
-   - Send the exact JSON from Supabase without modification
+4. **Backend runs C++ ALNS solver and returns optimised routes.**
 
-4. **Backend processes optimization**
-   - Reads JSON from request body
-   - Runs C++ solver
-   - Returns optimized routes
-
-5. **Frontend stores results**
+5. **Frontend saves result to Supabase and navigates to OutputPage.**
    ```dart
    await _dataService.saveSolution(testCaseId, resultData);
+   Navigator.push(context, MaterialPageRoute(builder: (_) => OutputPage(...)));
    ```
 
-### Implementation Files:
+### Key Files
 
-**[optimization_service.dart](lib/services/optimization_service.dart)**
-- `runOptimization()` - Sends JSON to `/api/optimize`
-- Parameters: inputData (JSON), mode, solver config
-
-**[show_input_page.dart](lib/screen/show_input_page.dart)**
-- Fetches `input_data` from Supabase
-- Calls optimization service
-- Saves results
-
-**[output_page.dart](lib/screen/output_page.dart)**
-- Retry optimization: fetches input JSON and re-optimizes
+| File | Role |
+|---|---|
+| `lib/services/optimization_service.dart` | `runOptimization()` — builds request, calls `/api/optimize` |
+| `lib/screen/show_input_page.dart` | Triggers optimisation, saves result |
+| `lib/screen/output_page.dart` | Re-optimise button: fetches input JSON and re-runs |
+| `lib/services/data_service.dart` | `fetchInputData()`, `saveSolution()` |
 
 ---
 
 ## 🚨 Common Mistakes That Cause 400 Errors
 
-### ❌ Mistake #1: Wrong Content-Type Header
-**Problem:**
+### ❌ Mistake 1 — Wrong Content-Type Header
 ```dart
-// Missing or wrong header
-headers: {
-  "Content-Type": "text/plain", // WRONG
-}
+// WRONG
+headers: {"Content-Type": "text/plain"}
+
+// CORRECT
+headers: {"Content-Type": "application/json"}
 ```
 
-**Solution:**
+### ❌ Mistake 2 — Wrapping JSON in an Extra Layer
 ```dart
-headers: {
-  "Content-Type": "application/json", // CORRECT
-}
+// WRONG — backend doesn't understand a "data" envelope
+final body = jsonEncode({"data": inputData});
+
+// CORRECT — spread the input data directly
+final body = jsonEncode({...inputData, 'mode': mode});
 ```
 
-### ❌ Mistake #2: Modifying Backend JSON
-**Problem:**
+### ❌ Mistake 3 — Sending the Test Case ID Instead of JSON
 ```dart
-// Wrapping or modifying the JSON
-final inputJson = {
-  "data": backendResponse, // WRONG - adding wrapper
-};
+// WRONG
+body: jsonEncode({"test_case_id": testCaseId})
+
+// CORRECT
+body: jsonEncode(inputData)
 ```
 
-**Solution:**
+### ❌ Mistake 4 — Re-uploading the File Before Optimising
 ```dart
-// Store exactly as backend returns it
-final inputJson = {
-  "employees": backendResponse["employees"] ?? [],
-  "vehicles": backendResponse["vehicles"] ?? [],
-  "metadata": backendResponse["metadata"] ?? {},
-  "baseline": backendResponse["baseline"] ?? [],
-};
-```
-
-### ❌ Mistake #3: Sending Test Case ID Instead of JSON
-**Problem:**
-```dart
-// Backend expects JSON, not ID
-body: jsonEncode({"test_case_id": testCaseId}), // WRONG
-```
-
-**Solution:**
-```dart
-// Send the actual input JSON
-body: jsonEncode(inputData), // CORRECT
-```
-
-### ❌ Mistake #4: Re-uploading Files Before Optimization
-**Problem:**
-```dart
-// Unnecessary - causes delays and errors
+// WRONG — the file should be uploaded once only, at test case creation
 await uploadFile(fileBytes);
-await optimize(); // WRONG workflow
+await optimize(inputData);
+
+// CORRECT
+await optimize(inputData);   // input_data already in Supabase
 ```
 
-**Solution:**
+### ❌ Mistake 5 — Storing File Bytes in the Database
 ```dart
-// Direct optimization with JSON
-await optimize(inputData); // CORRECT workflow
-```
+// WRONG
+await supabase.from('test_cases').insert({'file_base64': base64Encode(bytes)});
 
-### ❌ Mistake #5: Storing File Bytes in Database
-**Problem:**
-```dart
-// Violates architecture constraints
-await _supabase.from('test_cases').insert({
-  'file_base64': base64Encode(fileBytes), // WRONG
-});
-```
-
-**Solution:**
-```dart
-// Store only JSON
-await _supabase.from('test_cases').insert({
-  'input_data': jsonData, // CORRECT
-});
+// CORRECT
+await supabase.from('test_cases').insert({'input_data': jsonData});
 ```
 
 ---
 
-## 📝 Architecture Diagram
+## 🗂️ Layer Responsibilities
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      UPLOAD FLOW                            │
-└─────────────────────────────────────────────────────────────┘
-
-User Uploads
-    │
-    ├─ Excel File ──────────────┐
-    │                           │
-    └─ Google Sheet ─┬─ Export to .xlsx
-                     │
-                     ▼
-              [Frontend] upload_service.dart
-                     │
-                     │ multipart/form-data
-                     ▼
-              [Backend] /api/upload
-                     │
-                     │ Excel → JSON conversion
-                     ▼
-              Returns JSON response
-                     │
-                     │ { employees, vehicles, metadata, baseline }
-                     ▼
-              [Frontend] Receives JSON
-                     │
-                     │ Store as-is (NO modifications)
-                     ▼
-              [Supabase] input_data (jsonb)
-
-
-┌─────────────────────────────────────────────────────────────┐
-│                    OPTIMIZE FLOW                            │
-└─────────────────────────────────────────────────────────────┘
-
-User Clicks Optimize
-         │
-         ▼
-    [Frontend] data_service.fetchInputData()
-         │
-         │ SELECT input_data FROM test_cases
-         ▼
-    [Supabase] Returns JSON
-         │
-         │ Exact JSON (no modifications)
-         ▼
-    [Frontend] optimization_service.runOptimization()
-         │
-         │ POST /api/optimize
-         │ Content-Type: application/json
-         │ Body: { employees, vehicles, metadata, baseline, ... }
-         ▼
-    [Backend] Processes JSON
-         │
-         │ Runs C++ solver
-         ▼
-    Returns optimization results
-         │
-         │ { routes, result, assignments, ... }
-         ▼
-    [Frontend] Receives results
-         │
-         │ Store in output_json
-         ▼
-    [Supabase] output_json (jsonb)
+┌─────────────────────────────────────────────────────────────────┐
+│  UI Layer (screens + widgets)                                   │
+│  auth_page, home_page, show_input_page, output_page            │
+│  Widgets: card, dialog, drawer, map, panels, charts            │
+├─────────────────────────────────────────────────────────────────┤
+│  Service Layer                                                  │
+│  auth_service   → Supabase Auth                                │
+│  data_service   → Supabase CRUD (test_cases table)             │
+│  upload_service → POST /api/upload (multipart)                 │
+│  optimization_service → POST /api/optimize (JSON)             │
+│  file_export_service  → JSON / Excel / PDF generation          │
+├─────────────────────────────────────────────────────────────────┤
+│  Config Layer                                                   │
+│  env.dart  → backend URLs (live vs. local)                     │
+│  info.dart → map tile URL and defaults                         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔧 Files Modified
+## 🔐 Authentication Architecture
 
-| File | Changes |
-|------|---------|
-| `data_service.dart` | Added `fetchInputData()`, removed file storage methods |
-| `upload_service.dart` | No changes needed (already correct) |
-| `add_test_case_dialog.dart` | Store JSON only, removed file bytes storage |
-| `optimization_service.dart` | Send JSON directly, removed file upload step |
-| `show_input_page.dart` | Fetch JSON instead of file bytes |
-| `output_page.dart` | Fetch JSON instead of file bytes |
+`main.dart` → `AuthGate` listens to `Supabase.instance.client.auth.onAuthStateChange` stream:
+
+```
+Session exists?  → YES → HomePage
+                 → NO  → AuthPage
+```
+
+This is a **reactive** pattern: the app never needs to manually push/pop auth routes. When `signOut()` is called, the stream fires a `null` session event and the widget tree automatically rebuilds to show `AuthPage`.
+
+The `AuthGate` widget is **cached** in `_MyAppState._cachedAuthGate` so it is not recreated on every theme change — only the `MaterialApp` shell rebuilds.
+
+---
+
+## 🎨 Theme Architecture
+
+Theme state lives at the root — `_MyAppState` in `main.dart`:
+
+```
+_themeNotifier       (ValueNotifier<ThemeMode>) ─→ dark / light
+_themeIndexNotifier  (ValueNotifier<int>)        ─→ 0=Petronas, 1=Orange, 2=Yellow
+```
+
+Both notifiers are passed down to `AuthGate → HomePage → HomeDrawer`. `HomeDrawer` writes to them; `MaterialApp` reads them via `ValueListenableBuilder` to swap the `ThemeData`.
+
+`AppTheme.lightThemeAt(index)` and `AppTheme.darkThemeAt(index)` produce the full `ThemeData` for each combination.
+
+---
+
+## 📤 Export Architecture
+
+`FileExportService.exportFile(context, type, fileName, data)` handles three formats:
+
+| Type | Generator | Threading |
+|---|---|---|
+| `"json"` | `JsonEncoder.withIndent('  ')` | Main thread (fast) |
+| `"excel"` | `excel` package, multi-sheet `.xlsx` | Main thread |
+| `"pdf"` | `pdf` + `printing` (Google Fonts) | Background via `compute()` |
+
+PDF runs in a `compute()` isolate because font embedding + zlib compression is CPU-intensive and would freeze the UI for several hundred milliseconds.
+
+Files are saved to `/storage/emulated/0/Download/` on Android (with per-API-level permission handling) and the documents directory on iOS.
 
 ---
 
 ## ✅ Testing Checklist
 
-- [ ] Upload Excel file and verify JSON stored in `input_data`
-- [ ] Upload Google Sheet and verify JSON stored in `input_data`
-- [ ] Run optimization and verify results stored in `output_json`
-- [ ] Check no 400 errors during optimization
-- [ ] Verify snackbar appears on top after upload
-- [ ] Test retry optimization from output page
+- [ ] Upload Excel file → verify JSON stored in `input_data` (not file bytes)
+- [ ] Upload Google Sheet → same verification
+- [ ] Run optimisation → verify `output_json` stored in Supabase
+- [ ] Check no 400 errors during optimisation
+- [ ] Re-optimise from output page → verify updated result saved
+- [ ] Export as JSON / Excel / PDF → verify files appear in Downloads
+- [ ] Theme switch → verify map colour filter updates
+- [ ] Sign out → verify redirect to AuthPage
 
 ---
 
-## 🎨 UI Improvements
+## 📋 Key Rules Summary
 
-### Snackbar Z-Index Fix
-
-**Issue:** Dialog covered snackbar after upload
-
-**Fix:** Close dialog before showing snackbar
-```dart
-// BEFORE
-AppSnackbar.show(context, message: "Success");
-Navigator.pop(context);
-
-// AFTER
-Navigator.pop(context);
-AppSnackbar.show(context, message: "Success");
-```
+| Rule | Reason |
+|---|---|
+| Store only JSON in `input_data` | Schema is owned by the backend |
+| Never modify JSON returned by backend | Backend depends on exact field names |
+| Always set `Content-Type: application/json` | Flask reads `request.get_json()` which needs this header |
+| Send full input JSON to `/api/optimize` | Backend needs all fields, not just an ID |
+| Never add columns to test_cases table | Breaks RLS policies and migration contracts |
+| Run PDF generation in `compute()` | Prevents UI jank |
 
 ---
 
-## 📋 Key Takeaways
-
-1. ✅ **Frontend = Pass-through layer** for JSON
-2. ✅ **Backend = Single source of truth** for schema
-3. ✅ **No file storage** in database
-4. ✅ **No schema changes** required
-5. ✅ **Direct JSON optimization** flow
-6. ✅ **Proper headers** on all requests
-
----
-
-**Last Updated:** February 23, 2026  
-**Architecture Version:** 2.0 (Corrected)  
-**Backend Version:** Unchanged (no modifications)
+**Last Updated:** March 2026  
+**See also:** [overview.md](overview.md) · [QUICK_REFERENCE.md](QUICK_REFERENCE.md)

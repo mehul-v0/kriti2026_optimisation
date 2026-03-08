@@ -1,4 +1,4 @@
-import 'dart:ui' as ui;
+﻿import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -87,7 +87,11 @@ class _MapViewWidgetState extends State<MapViewWidget> {
           children: [
             ColorFiltered(
               colorFilter: isDarkMode
-                  ? const ColorFilter.matrix(AppThemeData.mapDarkMatrix)
+                  ? ColorFilter.matrix(
+                      context.primary == const Color(0xFF00D2BE)
+                          ? AppThemeData.mapDarkMatrix
+                          : AppThemeData.mapDarkNeutralMatrix,
+                    )
                   : const ColorFilter.matrix(AppThemeData.mapLightMatrix),
               child: TileLayer(
                 urlTemplate: MapConfig.tileUrlTemplate,
@@ -161,7 +165,7 @@ class _MapViewWidgetState extends State<MapViewWidget> {
         child: SizedBox(
           width: 42,
           height: 42,
-          child: Icon(icon, color: AppColors.primaryBrand, size: 20),
+          child: Icon(icon, color: context.primary, size: 20),
         ),
       ),
     );
@@ -203,8 +207,8 @@ class _MapViewWidgetState extends State<MapViewWidget> {
               child: Container(
                 width: 20,
                 height: 20,
-                decoration: const BoxDecoration(
-                  color: AppColors.primaryBrand,
+                decoration: BoxDecoration(
+                  color: context.primary,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -258,7 +262,7 @@ class _MapViewWidgetState extends State<MapViewWidget> {
                 width: 20,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: AppColors.markerPremium,
+                  color: context.primary,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Center(
@@ -329,7 +333,6 @@ class _MapViewWidgetState extends State<MapViewWidget> {
       double pLng = _toDouble(emp['pickup_lng']);
       double dLat = _toDouble(emp['drop_lat']);
       double dLng = _toDouble(emp['drop_lng']);
-      final priority = int.tryParse(emp['priority']?.toString() ?? '') ?? 5;
       // Uniform silver for all employees; lighter silver on light map tiles
       final color = isDark ? AppColors.silver : const Color(0xFFA0A0A0);
       final shortId = (emp['employee_id']?.toString() ?? '');
@@ -361,11 +364,11 @@ class _MapViewWidgetState extends State<MapViewWidget> {
             height: 40,
             child: Container(
               decoration: BoxDecoration(
-                color: AppColors.primaryBrand,
+                color: context.primary,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primaryBrand.withOpacity(0.4),
+                    color: context.primary.withOpacity(0.4),
                     blurRadius: 8,
                     spreadRadius: 2,
                   ),
@@ -481,9 +484,9 @@ class _VehicleMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Premium → Petronas teal; Normal → silver (dark mode) / medium grey (light mode)
+    // Premium → theme accent; Normal → silver (dark mode) / medium grey (light mode)
     final color = isPremium
-        ? AppColors.markerPremium
+        ? context.primary
         : (isDark ? AppColors.markerNormal : const Color(0xFFA0A0A0));
     final bg = isDark ? AppColors.darkSurface : Colors.white;
 

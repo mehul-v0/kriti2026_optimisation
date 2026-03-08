@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/theme/theme.dart';
 
 class AppSnackbar {
   static const Duration _snackBarDuration = Duration(seconds: 2);
@@ -19,7 +18,7 @@ class AppSnackbar {
     // 4. Color Logic
     final backgroundColor = isError
         ? Theme.of(context).colorScheme.error
-        : AppColors.success;
+        : const Color(0xFF616161);
     final icon = isError ? Icons.error_outline : Icons.check_circle_outline;
 
     final snackBar = SnackBar(
