@@ -5,20 +5,21 @@ import 'auth_page.dart';
 
 class AuthGate extends StatelessWidget {
   final ValueNotifier<ThemeMode>? themeNotifier;
+  final ValueNotifier<int>? themeIndexNotifier;
 
-  const AuthGate({super.key, this.themeNotifier});
+  const AuthGate({super.key, this.themeNotifier, this.themeIndexNotifier});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AuthState>(
-      // Listens to Supabase auth changes
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
         final session = snapshot.data?.session;
-
-        // If we have a session, go to Home. Otherwise, stay on Auth.
         if (session != null) {
-          return HomePage(themeNotifier: themeNotifier);
+          return HomePage(
+            themeNotifier: themeNotifier,
+            themeIndexNotifier: themeIndexNotifier,
+          );
         } else {
           return const AuthPage();
         }

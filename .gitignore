@@ -48,6 +48,9 @@ Thumbs.db
 .flutter-plugins
 .flutter-plugins-dependencies
 App/flutter_application_1/.dart_tool/
+
+# App secrets — gitignored; use secret.dart.example as template
+App/flutter_application_1/lib/config/secret.dart
 App/flutter_application_1/build/
 
 # Logs & temp

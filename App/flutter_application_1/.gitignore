@@ -42,3 +42,9 @@ coverage/
 *.pyc
 __pycache__/
 .env
+
+##############
+# App secrets — never commit the real file
+# Copy secret.dart.example → secret.dart to set up
+##############
+lib/config/secret.dart

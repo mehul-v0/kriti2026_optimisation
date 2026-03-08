@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/screen/show_input_page.dart';
@@ -13,11 +13,10 @@ import 'package:flutter_application_1/widgets/home_drawer.dart';
 import 'package:flutter_application_1/widgets/filter_bottom_sheet.dart';
 
 class HomePage extends StatefulWidget {
-  // Pass a notifier if you want to control theme from main.dart,
-  // otherwise this manages local state for the switch UI.
   final ValueNotifier<ThemeMode>? themeNotifier;
+  final ValueNotifier<int>? themeIndexNotifier;
 
-  const HomePage({super.key, this.themeNotifier});
+  const HomePage({super.key, this.themeNotifier, this.themeIndexNotifier});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -283,10 +282,7 @@ class _HomePageState extends State<HomePage> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.primaryBrand,
-                  width: 2,
-                ),
+                borderSide: BorderSide(color: context.primary, width: 2),
               ),
             ),
             onSubmitted: (val) => Navigator.pop(ctx, val.trim()),
@@ -298,10 +294,7 @@ class _HomePageState extends State<HomePage> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, renameController.text.trim()),
-              child: const Text(
-                "Rename",
-                style: TextStyle(color: AppColors.primaryBrand),
-              ),
+              child: Text("Rename", style: TextStyle(color: context.primary)),
             ),
           ],
         );
@@ -434,8 +427,8 @@ class _HomePageState extends State<HomePage> {
       floating: false,
       pinned: true,
       backgroundColor: _isSelectionMode
-          ? AppColors.darkBrand
-          : AppColors.primaryBrand,
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Theme.of(context).colorScheme.primary,
       iconTheme: const IconThemeData(color: Colors.white),
       actions: _isSelectionMode
           ? _buildSelectionActions()
@@ -469,9 +462,11 @@ class _HomePageState extends State<HomePage> {
                     end: Alignment.bottomRight,
                     colors: [
                       _isSelectionMode
-                          ? AppColors.darkBrand
-                          : AppColors.primaryBrand,
-                      _isSelectionMode ? Colors.black87 : AppColors.darkBrand,
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context).colorScheme.primary,
+                      _isSelectionMode
+                          ? Colors.black87
+                          : Theme.of(context).colorScheme.primaryContainer,
                     ],
                   ),
                 ),
@@ -591,7 +586,7 @@ class _HomePageState extends State<HomePage> {
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: AppColors.primaryBrand,
+                          color: context.primary,
                           borderRadius: BorderRadius.circular(16),
                           border: isDark
                               ? Border.all(
@@ -640,7 +635,7 @@ class _HomePageState extends State<HomePage> {
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBrand,
+                      color: context.primary,
                       borderRadius: BorderRadius.circular(18),
                       border: isDark
                           ? Border.all(
@@ -704,6 +699,7 @@ class _HomePageState extends State<HomePage> {
     return HomeDrawer(
       userEmail: userEmail,
       themeNotifier: widget.themeNotifier,
+      themeIndexNotifier: widget.themeIndexNotifier,
       onLogout: () async {
         await _authService.signOut();
       },

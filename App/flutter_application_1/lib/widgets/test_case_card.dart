@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_application_1/theme/theme.dart';
 
 class TestCaseCard extends StatelessWidget {
@@ -52,24 +52,26 @@ class TestCaseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Card(
-      elevation: isSelected ? 4 : 1,
+      elevation: isSelected ? 2 : 1,
       margin: EdgeInsets.zero,
-      color: isSelected
-          ? (isDark ? const Color(0x3300C569) : const Color(0x1A00C569))
-          : theme.cardColor,
+      color: theme.cardColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: isSelected
-            ? const BorderSide(color: AppColors.primaryBrand, width: 2)
-            : BorderSide.none,
+            ? BorderSide(color: context.primary, width: 2)
+            : BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.12),
+                width: 1,
+              ),
       ),
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(12),
+        splashColor: context.primary.withOpacity(0.08),
+        highlightColor: context.primary.withOpacity(0.06),
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Row(
@@ -80,8 +82,8 @@ class TestCaseCard extends StatelessWidget {
                 height: 48,
                 decoration: BoxDecoration(
                   color: isSelectionMode && isSelected
-                      ? AppColors.primaryBrand
-                      : const Color(0x1A00C569),
+                      ? context.primary
+                      : context.primary.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: isSelectionMode
@@ -89,10 +91,7 @@ class TestCaseCard extends StatelessWidget {
                         isSelected ? Icons.check : Icons.circle_outlined,
                         color: isSelected ? Colors.white : Colors.grey,
                       )
-                    : const Icon(
-                        Icons.folder_outlined,
-                        color: AppColors.primaryBrand,
-                      ),
+                    : Icon(Icons.folder_outlined, color: context.primary),
               ),
               const SizedBox(width: 16),
 
@@ -106,7 +105,7 @@ class TestCaseCard extends StatelessWidget {
                       data['case_name'] ?? "Untitled",
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: isPinned ? AppColors.primaryBrand : null,
+                        color: isPinned ? context.primary : null,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -123,32 +122,86 @@ class TestCaseCard extends StatelessWidget {
               ),
 
               // Action Buttons
-              if (!isSelectionMode) ...[
-                IconButton(
+              if (!isSelectionMode)
+                PopupMenuButton<_CardAction>(
                   icon: Icon(
-                    Icons.edit_outlined,
-                    color: Colors.grey[400],
+                    Icons.more_vert,
                     size: 20,
+                    color: theme.colorScheme.onSurface.withOpacity(0.45),
                   ),
-                  onPressed: onRename,
-                  tooltip: "Rename",
-                ),
-                IconButton(
-                  icon: Icon(
-                    isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                    color: isPinned ? AppColors.warning : Colors.grey[400],
-                    size: 20,
+                  padding: EdgeInsets.zero,
+                  splashRadius: 20,
+                  color: theme.brightness == Brightness.dark
+                      ? const Color(0xFF2C2C2C)
+                      : Colors.white,
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: theme.colorScheme.outline.withOpacity(0.15),
+                      width: 1,
+                    ),
                   ),
-                  onPressed: onPinToggle,
-                  tooltip: isPinned ? "Unpin" : "Pin to top",
+                  onSelected: (action) {
+                    switch (action) {
+                      case _CardAction.rename:
+                        onRename();
+                      case _CardAction.pin:
+                        onPinToggle();
+                      case _CardAction.delete:
+                        onDelete();
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: _CardAction.rename,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.edit_outlined,
+                            size: 18,
+                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text("Rename"),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _CardAction.pin,
+                      child: Row(
+                        children: [
+                          Icon(
+                            isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                            size: 18,
+                            color: isPinned
+                                ? AppColors.warning
+                                : theme.colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(isPinned ? "Unpin" : "Pin to top"),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _CardAction.delete,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                            color: AppColors.error,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            "Delete",
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  color: AppColors.error,
-                  onPressed: onDelete,
-                  tooltip: "Delete",
-                ),
-              ],
             ],
           ),
         ),
@@ -156,3 +209,5 @@ class TestCaseCard extends StatelessWidget {
     );
   }
 }
+
+enum _CardAction { rename, pin, delete }

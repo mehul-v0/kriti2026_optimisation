@@ -1,195 +1,254 @@
 import 'package:flutter/material.dart';
 
-// 1. Define your raw colors here (Centralized Control)
 class AppColors {
-  // --- BRAND COLORS (Extracted from "Roxio" UI) ---
-  // The vibrant green seen on the car, buttons, and logo.
-  static const Color primaryBrand = Color(0xFF00C569);
-  static const Color darkBrand = Color(
-    0xFF00964F,
-  ); // A darker shade for gradients/press states
+  // --- BRAND COLORS (Petronas defaults – widgets that can't access context use these) ---
+  static const Color primaryBrand = Color(0xFF00D2BE);
+  static const Color darkBrand = Color(0xFF00A19C);
 
   // --- BACKGROUNDS ---
-  // The deep midnight blue/black seen on the Splash screen and Dark cards
-  static const Color darkBackground = Color(0xFF10151C);
-  static const Color darkSurface = Color(
-    0xFF1A212B,
-  ); // Slightly lighter for cards in dark mode
-
-  static const Color lightBackground = Color(0xFFF5F7FA); // Light greyish-white
-  static const Color lightSurface = Colors.white;
+  static const Color darkBackground = Color(0xFF090909);
+  static const Color darkSurface = Color(0xFF1A1A1A);
+  static const Color lightBackground = Color(0xFFEAEAEA);
+  static const Color lightSurface = Color(0xFFF5F5F5);
 
   // --- STATE COLORS ---
-  static const Color success = Color(0xFF00C569); // Matches Brand Green
-  static const Color error = Color(0xFFEF4444); // Modern Red
-  static const Color warning = Color(0xFFF59E0B); // Amber
+  static const Color success = Color(0xFF00D2BE);
+  static const Color error = Color(0xFFEF4444);
+  static const Color warning = Color(0xFFF59E0B);
 
   // --- BORDERS & NEUTRALS ---
-  static const Color borderColor = Color(0xFFE2E8F0);
-  static const Color darkBorderColor = Color(0xFF2D3748);
+  static const Color borderColor = Color(0xFFB0B0B0);
+  static const Color darkBorderColor = Color(0xFF2E2E2E);
 
-  static const Color textPrimaryLight = Color(0xFF111827); // Nearly black
-  static const Color textSecondaryLight = Color(0xFF6B7280); // Grey text
+  static const Color textPrimaryLight = Color(0xFF0A0A0A);
+  static const Color textSecondaryLight = Color(0xFF5A5A5A);
+
+  static const Color silver = Color(0xFFC0C0C0);
+  static const Color chromeSilver = Color(0xFFE8E8E8);
 
   // --- MAP COLORS ---
-  // Specific colors for your map implementation
-  static const Color routeLine = primaryBrand; // The green line in the image
-  static const Color markerEmployee = Color(0xFF3B82F6); // Blue
-  static const Color markerPremium = Color(0xFFF59E0B); // Gold
-  static const Color markerNormal = Color(0xFF64748B); // Slate Grey
-  static const Color markerCompany = primaryBrand; // Green for brand
+  static const Color routeLine = primaryBrand;
+  static const Color markerEmployee = silver;
+  static const Color markerPremium = primaryBrand;
+  static const Color markerNormal = silver;
+  static const Color markerCompany = primaryBrand;
+
+  // --- ROUTE COLORS ---
+  static const Color tripAccent = Color(0xFF9E9E9E);
+  static const Color officeAccent = Color(0xFF9E9E9E);
 }
 
+class AppThemeData {
+  // Map tile ColorFilter matrices (used in map rendering)
+  static const List<double> mapDarkMatrix = [
+    -0.164,
+    -0.323,
+    -0.063,
+    0,
+    140,
+    -0.215,
+    -0.423,
+    -0.082,
+    0,
+    184,
+    -0.197,
+    -0.387,
+    -0.075,
+    0,
+    168,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+
+  static const List<double> mapLightMatrix = [
+    0.68,
+    0.22,
+    0.06,
+    0,
+    0,
+    0.14,
+    0.78,
+    0.08,
+    0,
+    0,
+    0.14,
+    0.22,
+    0.64,
+    0,
+    12,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+
+  // Neutral dark matrix — balanced charcoal/grey for Orange & Yellow themes
+  static const List<double> mapDarkNeutralMatrix = [
+    -0.2,
+    -0.35,
+    -0.08,
+    0,
+    150,
+    -0.2,
+    -0.35,
+    -0.08,
+    0,
+    150,
+    -0.2,
+    -0.35,
+    -0.08,
+    0,
+    150,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+}
+
+// F1-inspired colour themes: 0 = Petronas/Mercedes, 1 = McLaren, 2 = Velora
+enum AppThemeVariant { petronas, mclaren, velora }
+
 class AppTheme {
-  // ================= LIGHT THEME =================
-  static final ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.light,
-    primaryColor: AppColors.primaryBrand,
-    scaffoldBackgroundColor: AppColors.lightBackground,
+  // Accent primary and dark container per variant (index matches AppThemeVariant)
+  static const _primary = [
+    Color(0xFF00D2BE),
+    Color(0xFFFF8000),
+    Color(0xFFF5B800),
+  ];
+  static const _container = [
+    Color(0xFF00A19C),
+    Color(0xFFCC6600),
+    Color(0xFFCC9800),
+  ];
 
-    // Color Scheme defines the palette for standard widgets (Fab, SnackBar, etc.)
-    colorScheme: const ColorScheme.light(
-      primary: AppColors.primaryBrand,
-      onPrimary: Colors.white, // Text on green buttons
-      secondary: AppColors.darkBackground, // Used for dark buttons/accents
-      onSecondary: Colors.white,
-      error: AppColors.error,
-      surface: AppColors.lightSurface,
-      onSurface: AppColors.textPrimaryLight,
-      outline: AppColors.borderColor,
+  static ThemeData lightTheme(AppThemeVariant v) => _build(v, Brightness.light);
+  static ThemeData darkTheme(AppThemeVariant v) => _build(v, Brightness.dark);
+
+  // Index-based helpers for use with ValueNotifier<int>
+  static ThemeData lightThemeAt(int i) => lightTheme(AppThemeVariant.values[i]);
+  static ThemeData darkThemeAt(int i) => darkTheme(AppThemeVariant.values[i]);
+
+  static ThemeData _build(AppThemeVariant v, Brightness brightness) {
+    final p = _primary[v.index];
+    final con = _container[v.index];
+    final isDark = brightness == Brightness.dark;
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: brightness,
+      primaryColor: p,
+      scaffoldBackgroundColor: isDark
+          ? AppColors.darkBackground
+          : AppColors.lightBackground,
+      colorScheme: isDark
+          ? ColorScheme.dark(
+              primary: p,
+              onPrimary: Colors.black,
+              primaryContainer: con,
+              secondary: AppColors.silver,
+              onSecondary: Colors.black,
+              error: AppColors.error,
+              surface: AppColors.darkSurface,
+              onSurface: AppColors.chromeSilver,
+              outline: AppColors.darkBorderColor,
+            )
+          : ColorScheme.light(
+              primary: p,
+              onPrimary: Colors.black,
+              primaryContainer: con,
+              secondary: AppColors.darkBackground,
+              onSecondary: Colors.white,
+              error: AppColors.error,
+              surface: AppColors.lightSurface,
+              onSurface: AppColors.textPrimaryLight,
+              outline: AppColors.borderColor,
+            ),
+      textTheme: isDark ? _darkText : _lightText,
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isDark ? p : AppColors.darkBackground,
+          foregroundColor: isDark ? Colors.black : AppColors.chromeSilver,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          minimumSize: const Size(double.infinity, 54),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: BorderSide(
+            color: isDark ? AppColors.darkBorderColor : AppColors.borderColor,
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: BorderSide(
+            color: isDark ? AppColors.darkBorderColor : AppColors.borderColor,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: BorderSide(color: p, width: 2),
+        ),
+        hintStyle: TextStyle(
+          color: isDark ? AppColors.silver : AppColors.textSecondaryLight,
+        ),
+      ),
+      iconTheme: IconThemeData(color: isDark ? p : AppColors.darkBackground),
+    );
+  }
+
+  static const _lightText = TextTheme(
+    headlineLarge: TextStyle(
+      color: AppColors.textPrimaryLight,
+      fontWeight: FontWeight.w800,
+      fontSize: 32,
+      letterSpacing: -1.0,
     ),
-
-    // Typography matching the clean, geometric sans-serif style
-    textTheme: const TextTheme(
-      headlineLarge: TextStyle(
-        color: AppColors.textPrimaryLight,
-        fontWeight: FontWeight.w700,
-        fontSize: 32,
-        letterSpacing: -0.5,
-      ),
-      headlineSmall: TextStyle(
-        color: AppColors.textPrimaryLight,
-        fontWeight: FontWeight.w600,
-        fontSize: 20,
-      ),
-      bodyMedium: TextStyle(color: AppColors.textSecondaryLight, fontSize: 16),
-      labelLarge: TextStyle(
-        // Button text
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.5,
-      ),
+    headlineSmall: TextStyle(
+      color: AppColors.textPrimaryLight,
+      fontWeight: FontWeight.w700,
+      fontSize: 20,
+      letterSpacing: -0.3,
     ),
-
-    // Button Styling (Pill/Rounded shapes as seen in "Get Started")
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors
-            .darkBackground, // Dark buttons on light mode (Common in this UI)
-        foregroundColor: Colors.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ), // High radius for pill shape
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        minimumSize: const Size(
-          double.infinity,
-          54,
-        ), // Tall, full-width buttons
-      ),
-    ),
-
-    // Input Fields (Clean, minimal borders)
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none, // Cleaner look
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.transparent),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primaryBrand, width: 1.5),
-      ),
-      hintStyle: TextStyle(color: Colors.grey.shade400),
-    ),
-
-    // Icon Theme
-    iconTheme: const IconThemeData(color: AppColors.darkBackground),
+    bodyMedium: TextStyle(color: AppColors.textSecondaryLight, fontSize: 16),
+    labelLarge: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.2),
   );
 
-  // ================= DARK THEME =================
-  static final ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    primaryColor: AppColors.primaryBrand,
-    scaffoldBackgroundColor: AppColors.darkBackground,
-
-    colorScheme: const ColorScheme.dark(
-      primary: AppColors.primaryBrand,
-      onPrimary: Colors.black, // Green is bright, so black text looks better
-      secondary: Colors.white,
-      onSecondary: Colors.black,
-      error: AppColors.error,
-      surface: AppColors.darkSurface,
-      onSurface: Colors.white,
-      outline: AppColors.darkBorderColor,
+  static const _darkText = TextTheme(
+    headlineLarge: TextStyle(
+      color: AppColors.chromeSilver,
+      fontWeight: FontWeight.w800,
+      fontSize: 32,
+      letterSpacing: -1.0,
     ),
-
-    textTheme: const TextTheme(
-      headlineLarge: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.w700,
-        fontSize: 32,
-        letterSpacing: -0.5,
-      ),
-      headlineSmall: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.w600,
-        fontSize: 20,
-      ),
-      bodyMedium: TextStyle(
-        color: Color(0xFF9CA3AF), // Lighter grey for dark mode
-        fontSize: 16,
-      ),
+    headlineSmall: TextStyle(
+      color: AppColors.chromeSilver,
+      fontWeight: FontWeight.w700,
+      fontSize: 20,
+      letterSpacing: -0.3,
     ),
-
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor:
-            AppColors.primaryBrand, // Green buttons pop in dark mode
-        foregroundColor: Colors.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        minimumSize: const Size(double.infinity, 54),
-      ),
-    ),
-
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: AppColors.darkSurface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.transparent),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primaryBrand, width: 1.5),
-      ),
-      hintStyle: TextStyle(color: Colors.grey.shade600),
-    ),
-
-    iconTheme: const IconThemeData(color: Colors.white),
+    bodyMedium: TextStyle(color: AppColors.silver, fontSize: 16),
+    labelLarge: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.2),
   );
+}
+
+/// Convenience extension so widgets can write `context.primary` instead of
+/// `Theme.of(context).colorScheme.primary`.
+extension AppThemeExt on BuildContext {
+  Color get primary => Theme.of(this).colorScheme.primary;
+  Color get primaryDark => Theme.of(this).colorScheme.primaryContainer;
 }

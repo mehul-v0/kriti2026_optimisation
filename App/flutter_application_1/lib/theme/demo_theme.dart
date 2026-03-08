@@ -32,8 +32,8 @@ class _ThemeDemoAppState extends State<ThemeDemoApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Roxio Design System',
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: AppTheme.lightThemeAt(0),
+      darkTheme: AppTheme.darkThemeAt(0),
       themeMode: _themeMode,
       // SMOOTH TRANSITION SETTINGS
       themeAnimationDuration: const Duration(milliseconds: 600),
