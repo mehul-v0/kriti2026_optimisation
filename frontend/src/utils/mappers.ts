@@ -189,7 +189,7 @@ export function mapAssignments(backendAssignments: BackendAssignment[]): Assignm
 
 export function buildConstraintReport(
   _hardViolations: number,
-  softViolations: number,
+  _softViolations: number,
   assignments: Assignment[],
   employees: Employee[],
   violationDetails?: ViolationDetails

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import { getRouteColors } from '../utils/helpers';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -144,7 +144,7 @@ interface TimelineSegment {
 }
 
 function buildVehicleTimeline(
-  vehicleId: string,
+  _vehicleId: string,
   trips: { tripNumber: number; vehicleId: string; employees: string[]; route: { type: string; lat: number; lng: number; time: string; arrivalTime: string; departureTime: string; geometry?: [number, number][]; distanceFromPrev: number; address: string; employeeId?: string }[]; distance: number; duration: number; cost: number; startTime: string; endTime: string }[],
   vehicle: { currentLat: number; currentLng: number; availabilityTime: string } | undefined
 ): TimelineSegment[] {
@@ -167,11 +167,10 @@ function buildVehicleTimeline(
 
     // Travel segment
     const positions: [number, number][] = [];
-    const vehicleTripsArr = trips;
     const isFirstTrip = tIdx === 0;
     if (isFirstTrip && vehicle) positions.push([vehicle.currentLat, vehicle.currentLng]);
 
-    trip.route.forEach((point, idx) => {
+    trip.route.forEach((point) => {
       if (point.geometry && point.geometry.length > 0) {
         point.geometry.slice(0, -1).forEach(coord => positions.push(coord));
       }
@@ -273,7 +272,7 @@ function TimelineVehicleMarkers({ vehicleTimelines, currentTimeMin, vehicles, ve
   vehicles: { id: string; currentLat: number; currentLng: number }[];
   vehicleIds: string[];
 }) {
-  const markers: JSX.Element[] = [];
+  const markers: React.JSX.Element[] = [];
   for (const vid of vehicleIds) {
     const segs = vehicleTimelines.get(vid);
     if (!segs) continue;
@@ -402,7 +401,6 @@ export default function RouteExplorer() {
   }, [selectedTrips, mapBounds, currentResult.vehicles, vehicleIds, selectedVehicle, officeLocation]);
 
   // Selected vehicle detail
-  const selectedVehicleData = selectedVehicle ? currentResult.vehicles.find(v => v.id === selectedVehicle) : null;
   const selectedVehicleTrips = selectedVehicle ? vehicleTrips.get(selectedVehicle) || [] : [];
   const selTotalDist = selectedVehicleTrips.reduce((s, t) => s + t.distance, 0);
   const selTotalDur = selectedVehicleTrips.reduce((s, t) => s + t.duration, 0);
@@ -576,10 +574,9 @@ export default function RouteExplorer() {
 
         {/* Vehicle List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
-          {vehicleIds.map((vehicleId, idx) => {
+          {vehicleIds.map((vehicleId) => {
             const trips = vehicleTrips.get(vehicleId) || [];
             const vehicle = currentResult.vehicles.find(v => v.id === vehicleId);
-            const color = colors[idx % colors.length];
             const isActive = selectedVehicle === vehicleId;
             const totalDist = trips.reduce((s, t) => s + t.distance, 0);
             const totalEmps = trips.reduce((s, t) => s + t.employees.length, 0);
@@ -733,7 +730,7 @@ export default function RouteExplorer() {
             const isFirstTrip = vehicleTripsArray[0]?.tripNumber === trip.tripNumber;
             if (isFirstTrip && vehicle) positions.push([vehicle.currentLat, vehicle.currentLng]);
 
-            trip.route.forEach((point, idx) => {
+            trip.route.forEach((point) => {
               if (point.geometry && point.geometry.length > 0) {
                 point.geometry.slice(0, -1).forEach(coord => positions.push(coord));
               }
