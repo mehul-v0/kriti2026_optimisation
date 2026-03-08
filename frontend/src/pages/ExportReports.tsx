@@ -21,7 +21,7 @@ export default function ExportReports() {
     'Cost Breakdown',
     'Methodology Notes',
   ]);
-  const [reportFormat, setReportFormat] = useState('PDF Format');
+  const [reportFormat, setReportFormat] = useState('JSON Format');
 
   if (!currentResult) {
     return (
@@ -168,8 +168,21 @@ export default function ExportReports() {
       }));
     }
 
-    // Download as JSON (PDF generation would require additional library)
-    downloadJSON(reportData, `custom_report_${Date.now()}.json`);
+    if (reportFormat === 'Excel Format' || reportFormat === 'Both Formats') {
+      const ws = XLSX.utils.json_to_sheet(
+        Object.entries(reportData.data).flatMap(([section, data]) => {
+          if (Array.isArray(data)) return data;
+          if (typeof data === 'object' && data !== null) return [data];
+          return [{ section, value: data }];
+        })
+      );
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Custom Report');
+      XLSX.writeFile(wb, `custom_report_${Date.now()}.xlsx`);
+    }
+    if (reportFormat === 'JSON Format' || reportFormat === 'Both Formats') {
+      downloadJSON(reportData, `custom_report_${Date.now()}.json`);
+    }
     alert(`Custom report with ${selectedSections.length} section(s) has been generated!`);
   };
 
@@ -295,15 +308,15 @@ export default function ExportReports() {
             <select 
               value={reportFormat}
               onChange={(e) => setReportFormat(e.target.value)}
-              className="flex-1 px-4 py-2.5 bg-white/[0.02] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-primary/40 transition-colors"
+              className="flex-1 px-4 py-2.5 bg-[#0D1117] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-primary/40 transition-colors"
             >
-              <option>PDF Format</option>
-              <option>Excel Format</option>
-              <option>Both Formats</option>
+              <option className="bg-[#0D1117] text-white">JSON Format</option>
+              <option className="bg-[#0D1117] text-white">Excel Format</option>
+              <option className="bg-[#0D1117] text-white">Both Formats</option>
             </select>
             <button 
               onClick={handleGenerateCustomReport}
-              className="px-6 py-2.5 bg-primary text-background-dark font-label font-bold uppercase tracking-widest glow-amber transition-all duration-200 whitespace-nowrap"
+              className="px-6 py-2.5 bg-primary text-background-dark text-xs font-label font-bold uppercase tracking-widest glow-amber transition-all duration-200 whitespace-nowrap"
             >
               Generate Custom Report
             </button>

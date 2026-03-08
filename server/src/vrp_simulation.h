@@ -544,8 +544,8 @@ inline PhysVehicleCostComponents evaluate_physical_vehicle(
     std::vector<int> perm(K);
     std::iota(perm.begin(), perm.end(), 0);
     
-    if (K <= 6) {
-        // Exact search (up to 720 perms for K=6) — matches find_best_trip_permutation
+    if (K <= 7) {
+        // Exact search (up to 5040 perms for K=7) — matches find_best_trip_permutation
         int best_v = INT_MAX, best_l = INT_MAX;
         double best_c = 1e18;
         std::vector<int> best_p = perm;
@@ -557,7 +557,7 @@ inline PhysVehicleCostComponents evaluate_physical_vehicle(
         } while (std::next_permutation(perm.begin(), perm.end()));
         perm = best_p;
     } else {
-        // Heuristic for K>6: try 3 orderings (same as find_best_trip_permutation)
+        // Heuristic for K>7: try 3 orderings (same as find_best_trip_permutation)
         int best_v = INT_MAX, best_l = INT_MAX;
         double best_c = 1e18;
         std::vector<int> best_p = perm;
@@ -601,7 +601,7 @@ inline PhysVehicleCostComponents evaluate_physical_vehicle(
         double route_dist = 0.0;
         int pax_aboard = 0;
         
-        int pickup_times_arr[64];
+        std::vector<int> pickup_times_vec(route.size());
         int pt_idx = 0;
         
         for (int e : route) {
@@ -612,7 +612,7 @@ inline PhysVehicleCostComponents evaluate_physical_vehicle(
             int wait = std::max(0, emps[e].earliest_pickup - arrival);
             if (pax_aboard > 0 && wait > 0) c.total_wait_pax += wait * pax_aboard;
             curr_time = std::max(arrival, emps[e].earliest_pickup);
-            pickup_times_arr[pt_idx++] = curr_time;
+            pickup_times_vec[pt_idx++] = curr_time;
             curr_node = emps[e].node_idx;
             pax_aboard++;
         }
@@ -638,7 +638,7 @@ inline PhysVehicleCostComponents evaluate_physical_vehicle(
                 c.priority_weighted_lateness += lat * pw;
             }
             
-            int ride_time = office_arrival - pickup_times_arr[idx];
+            int ride_time = office_arrival - pickup_times_vec[idx];
             int max_rt = g_config.get_max_ride_time(emps[e].priority);
             if (ride_time > max_rt) {
                 c.ride_time_violations++;
@@ -669,7 +669,7 @@ inline double compute_score_from_components(
     const Metadata& meta, int total_employees)
 {
     double score = 0.0;
-    int unassigned = total_employees - sum_assigned;
+    int unassigned = std::max(0, total_employees - sum_assigned);
     score += unassigned * g_config.unassigned_penalty;
     score += sum_hard_time * g_config.time_violation_penalty;
     score += sum_total_lateness * g_config.lateness_per_min_penalty;
@@ -736,7 +736,7 @@ inline FastCostResult fast_evaluate_solution(
         for (size_t vi : route_indices) emp_lists.push_back(routes[vi]);
         
         // Find best permutation using canonical logic
-        // Must match find_best_trip_permutation: exact for K<=6, multi-heuristic for K>6
+        // Must match find_best_trip_permutation: exact for K<=7, multi-heuristic for K>7
         auto eval_perm_fe = [&](const std::vector<int>& p) -> std::tuple<int, int, double> {
             int tv = 0, tl = 0; double tc = 0;
             int na = pv.available_from;
@@ -771,8 +771,8 @@ inline FastCostResult fast_evaluate_solution(
         std::vector<int> perm(K);
         std::iota(perm.begin(), perm.end(), 0);
         
-        if (K <= 6) {
-            // Exact search (up to 720 perms for K=6)
+        if (K <= 7) {
+            // Exact search (up to 5040 perms for K=7)
             int best_v = INT_MAX, best_l = INT_MAX;
             double best_c = 1e18;
             std::vector<int> best_p = perm;
@@ -784,7 +784,7 @@ inline FastCostResult fast_evaluate_solution(
             } while (std::next_permutation(perm.begin(), perm.end()));
             perm = best_p;
         } else {
-            // Heuristic for K>6: try 3 orderings
+            // Heuristic for K>7: try 3 orderings
             int best_v = INT_MAX, best_l = INT_MAX;
             double best_c = 1e18;
             std::vector<int> best_p = perm;
@@ -826,7 +826,7 @@ inline FastCostResult fast_evaluate_solution(
             int pax_aboard = 0;
             
             // Track pickup times for per-employee ride time (Phase 3A)
-            int pickup_times_arr[64];
+            std::vector<int> pickup_times_vec(route.size());
             int pt_idx = 0;
             
             for (int e : route) {
@@ -837,7 +837,7 @@ inline FastCostResult fast_evaluate_solution(
                 int wait = std::max(0, emps[e].earliest_pickup - arrival);
                 if (pax_aboard > 0 && wait > 0) total_wait_pax += wait * pax_aboard;
                 curr_time = std::max(arrival, emps[e].earliest_pickup);
-                pickup_times_arr[pt_idx++] = curr_time;
+                pickup_times_vec[pt_idx++] = curr_time;
                 curr_node = emps[e].node_idx;
                 pax_aboard++;
             }
@@ -863,7 +863,7 @@ inline FastCostResult fast_evaluate_solution(
                 }
                 
                 // Max ride time constraint (Phase 3A)
-                int ride_time = office_arrival - pickup_times_arr[idx];
+                int ride_time = office_arrival - pickup_times_vec[idx];
                 int max_rt = g_config.get_max_ride_time(emps[e].priority);
                 if (ride_time > max_rt) {
                     ride_time_violations++;
@@ -884,7 +884,7 @@ inline FastCostResult fast_evaluate_solution(
     }
     
     double score = 0.0;
-    int unassigned = total_employees - assigned;
+    int unassigned = std::max(0, total_employees - assigned);
     score += unassigned * g_config.unassigned_penalty;
     score += hard_time * g_config.time_violation_penalty;
     score += total_lateness * g_config.lateness_per_min_penalty;
@@ -900,7 +900,7 @@ inline FastCostResult fast_evaluate_solution(
     // Priority-weighted ride time (Phase 3D)
     score += priority_weighted_ride * g_config.priority_ride_time_weight;
     
-    return {score, hard_time + pref_v, total_lateness, total_dist_cost, pref_v};
+    return {score, hard_time, total_lateness, total_dist_cost, pref_v};
 }
 
 // ============================================================================
@@ -935,9 +935,9 @@ inline BaselineCost compute_baseline_cost(
     for (const auto& emp : emps) {
         double direct_dist = dist_matrix[emp.node_idx][OFFICE_NODE];
         
-        ola_total += std::max(OLA_BASE, OLA_BASE + direct_dist * OLA_PER_KM);
-        uber_total += std::max(UBER_BASE, UBER_BASE + direct_dist * UBER_PER_KM);
-        rapido_total += std::max(RAPIDO_BASE, RAPIDO_BASE + direct_dist * RAPIDO_PER_KM);
+        ola_total += OLA_BASE + direct_dist * OLA_PER_KM;
+        uber_total += UBER_BASE + direct_dist * UBER_PER_KM;
+        rapido_total += RAPIDO_BASE + direct_dist * RAPIDO_PER_KM;
     }
     
     double avg = (ola_total + uber_total + rapido_total) / 3.0;

@@ -17,19 +17,31 @@ export default function DataInsights() {
   const [priorityFilter, setPriorityFilter] = useState<'All' | 'High' | 'Medium' | 'Low'>('All');
   const ROWS_PER_PAGE = 10;
   
-  // Configuration state with default values
-  const defaultConfig = {
-    costWeight: 0.7,
-    timeWeight: 0.3,
-    distanceMethod: 'haversine' as 'haversine' | 'actual_maps',
-    priorityDelays: {
-      1: 5,
-      2: 5,
-      3: 10,
-      4: 15,
-      5: 15
-    } as Record<number, number>
+  // Configuration state — initialized from Excel metadata if available, else hardcoded defaults
+  const getDefaultConfig = () => {
+    const savedData = sessionStorage.getItem('uploadedData');
+    let meta: Record<string, number> = {};
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        meta = parsed.metadata || {};
+      } catch { /* ignore */ }
+    }
+    return {
+      costWeight: meta.objective_cost_weight ?? 0.7,
+      timeWeight: meta.objective_time_weight ?? 0.3,
+      distanceMethod: 'haversine' as 'haversine' | 'actual_maps',
+      priorityDelays: {
+        1: meta.priority_1_max_delay_min ?? 5,
+        2: meta.priority_2_max_delay_min ?? 5,
+        3: meta.priority_3_max_delay_min ?? 10,
+        4: meta.priority_4_max_delay_min ?? 15,
+        5: meta.priority_5_max_delay_min ?? 15,
+      } as Record<number, number>,
+    };
   };
+
+  const defaultConfig = getDefaultConfig();
   
   const [config, setConfig] = useState(defaultConfig);
   
@@ -144,7 +156,7 @@ export default function DataInsights() {
       {Array.from({ length: 10 }, (_, i) => (
         <div
           key={i}
-          className={`w-1 h-4 rounded ${
+          className={`w-1 h-4 ${
             i + 1 <= (filled / total) * 10 ? 'bg-primary' : 'bg-white/[0.04]'
           }`}
         />
@@ -154,10 +166,19 @@ export default function DataInsights() {
 
   return (
     <div className="max-w-[1400px] mx-auto p-6 md:p-8">
-      {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-black text-white tracking-tight uppercase">Data Insights Preview</h1>
-        <p className="text-xs font-mono text-white/30 mt-1">Review your uploaded data before optimization</p>
+      {/* Page header + Run Optimization */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-white tracking-tight uppercase">Data Insights Preview</h1>
+          <p className="text-xs font-mono text-white/30 mt-1">Review your uploaded data before optimization</p>
+        </div>
+        <button
+          onClick={handleRunOptimization}
+          className="px-6 py-2.5 bg-primary text-background-dark font-label font-bold tracking-widest uppercase glow-amber hover:bg-primary/90 transition-all flex items-center gap-2 text-sm shrink-0"
+        >
+          <span className="material-symbols-outlined text-lg">rocket_launch</span>
+          Run Optimization ({solverDuration === 'Quick' ? '30s' : solverDuration === 'Standard' ? '1m' : solverDuration === 'Thorough' ? '2m' : '5m'})
+        </button>
       </div>
 
       {/* ===== Two‑column layout: scrollable left | sticky right ===== */}
@@ -173,14 +194,15 @@ export default function DataInsights() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
-              className="bg-panel-dark border border-white/10 p-5 flex flex-col gap-2 relative overflow-hidden"
+              className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-xl -mr-10 -mt-10 pointer-events-none" />
-              <div className="flex justify-between items-start">
-                <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Total Employees</p>
-                <span className="material-symbols-outlined text-primary text-sm">groups</span>
+              <div className="flex justify-between items-start mb-4">
+                <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">groups</span>
               </div>
-              <p className="text-3xl font-bold font-mono text-white mt-1">{data.employees.length}</p>
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/30">Total Employees</p>
+                <p className="text-2xl font-bold font-mono text-white mt-1">{data.employees.length}</p>
+              </div>
             </motion.div>
 
             {/* Vehicle KPI */}
@@ -188,14 +210,15 @@ export default function DataInsights() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.05 }}
-              className="bg-panel-dark border border-white/10 p-5 flex flex-col gap-2 relative overflow-hidden"
+              className="bg-panel-dark border border-white/10 p-5 flex flex-col justify-between"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-xl -mr-10 -mt-10 pointer-events-none" />
-              <div className="flex justify-between items-start">
-                <p className="text-[11px] font-label uppercase tracking-widest text-white/40">Total Vehicles</p>
-                <span className="material-symbols-outlined text-primary text-sm">local_shipping</span>
+              <div className="flex justify-between items-start mb-4">
+                <span className="p-2 bg-primary/10 text-primary material-symbols-outlined">local_shipping</span>
               </div>
-              <p className="text-3xl font-bold font-mono text-white mt-1">{data.vehicles.length}</p>
+              <div>
+                <p className="text-[11px] font-label uppercase tracking-widest text-white/30">Total Vehicles</p>
+                <p className="text-2xl font-bold font-mono text-white mt-1">{data.vehicles.length}</p>
+              </div>
             </motion.div>
           </div>
 
@@ -298,7 +321,7 @@ export default function DataInsights() {
           >
             <button
               onClick={() => setShowEmployees(!showEmployees)}
-              className="w-full p-5 flex items-center justify-between hover:bg-white/5 transition-colors"
+              className="w-full p-5 flex items-center justify-between hover:bg-white/[0.03] transition-colors"
             >
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-white/40">table_chart</span>
@@ -348,7 +371,7 @@ export default function DataInsights() {
                 </div>
 
                 {/* Table */}
-                <div className="overflow-x-auto border border-white/10">
+                <div className="overflow-x-auto border border-white/10" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-white/10 bg-white/[0.015]">
@@ -372,7 +395,7 @@ export default function DataInsights() {
                                 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
                                 : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                             }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${
+                              <span className={`w-1.5 h-1.5 ${
                                 emp.priority === 'High' ? 'bg-red-400' : emp.priority === 'Medium' ? 'bg-yellow-400' : 'bg-blue-400'
                               }`} />
                               {emp.priority}
@@ -425,7 +448,7 @@ export default function DataInsights() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            className="bg-panel-dark border border-white/10 overflow-hidden"
+            className="bg-panel-dark border border-white/10"
           >
             {/* Header */}
             <div className="p-5 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
@@ -511,7 +534,7 @@ export default function DataInsights() {
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     />
                     <div
-                      className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none z-20"
+                      className="absolute top-1 w-4 h-4 bg-white shadow-lg border-2 border-primary pointer-events-none z-20"
                       style={{ left: `calc(${config.costWeight * 100}% - 8px)` }}
                     />
                   </div>
@@ -546,7 +569,7 @@ export default function DataInsights() {
                           max="60"
                           value={config.priorityDelays[p]}
                           onChange={(e) => updatePriorityDelay(p, parseInt(e.target.value) || 0)}
-                          className="w-full px-1.5 py-1.5 bg-transparent border border-white/10 rounded-sm text-center text-sm font-mono focus:border-primary focus:outline-none text-white"
+                          className="w-full px-1.5 py-1.5 bg-transparent border border-white/10 text-center text-sm font-mono focus:border-primary focus:outline-none text-white"
                         />
                       </div>
                       <div className="text-[9px] font-mono text-white/20 text-center mt-0.5">min</div>
@@ -569,10 +592,10 @@ export default function DataInsights() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {([
-                    { key: 'Quick' as const, time: '15s' },
-                    { key: 'Standard' as const, time: '30s' },
-                    { key: 'Thorough' as const, time: '1m' },
-                    { key: 'Maximum' as const, time: '2m' },
+                    { key: 'Quick' as const, time: '30s' },
+                    { key: 'Standard' as const, time: '1m' },
+                    { key: 'Thorough' as const, time: '2m' },
+                    { key: 'Maximum' as const, time: '5m' },
                   ]).map(({ key, time }) => (
                     <button
                       key={key}
@@ -599,7 +622,7 @@ export default function DataInsights() {
                 className="w-full px-8 py-3 bg-primary text-background-dark font-label font-bold tracking-widest uppercase glow-amber hover:bg-primary/90 transition-all flex items-center justify-center gap-2 text-sm"
               >
                 <span className="material-symbols-outlined text-lg">rocket_launch</span>
-                Run Optimization ({solverDuration === 'Quick' ? '15s' : solverDuration === 'Standard' ? '30s' : solverDuration === 'Thorough' ? '1m' : '2m'})
+                Run Optimization ({solverDuration === 'Quick' ? '30s' : solverDuration === 'Standard' ? '1m' : solverDuration === 'Thorough' ? '2m' : '5m'})
               </button>
               <button
                 onClick={() => navigate('/upload')}

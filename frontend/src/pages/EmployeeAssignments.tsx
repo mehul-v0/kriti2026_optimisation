@@ -9,7 +9,8 @@ import { useState, useMemo, useRef } from 'react';
 import { formatNumber } from '../utils/helpers';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, Cell, AreaChart, Area
+  ResponsiveContainer, Cell, AreaChart, Area,
+  PieChart, Pie
 } from 'recharts';
 
 // Animated Chart Component with Scroll Trigger
@@ -286,7 +287,8 @@ export default function EmployeeAssignments() {
               <div className="group relative">
                 <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
                 <div className="absolute right-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
-                  Employees assigned to vehicles out of total employees
+                  <span className="font-semibold text-primary">Employees Assigned</span><br/>
+                  Employees assigned to vehicles out of total employees.
                 </div>
               </div>
             </div>
@@ -512,33 +514,48 @@ export default function EmployeeAssignments() {
                 </div>
               </div>
             </div>
-            <div className="h-52">
+            <div className="h-52 flex items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
-                  data={[
-                    { name: 'Solo', value: metrics.sharingCounts.Single, fill: '#FFB800' },
-                    { name: 'Shared +1', value: metrics.sharingCounts.Double, fill: '#CC9300' },
-                    { name: 'Shared +2', value: metrics.sharingCounts.Triple, fill: '#997000' }
-                  ]} 
-                  layout="vertical"
-                  margin={{ top: 5, right: 5, left: 5, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" opacity={0.2} horizontal={false} />
-                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} width={55} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '11px', fontFamily: 'JetBrains Mono' }}
-                    itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
-                    labelStyle={{ color: '#ffffff' }}
-                    formatter={(value) => [`${value} rides`, 'Count']}
-                  />
-                  <Bar dataKey="value" radius={[0, 0, 0, 0]} animationDuration={1500} animationBegin={0}>
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Solo', value: metrics.sharingCounts.Single },
+                      { name: 'Shared +1', value: metrics.sharingCounts.Double },
+                      { name: 'Shared +2', value: metrics.sharingCounts.Triple }
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                    animationDuration={1500}
+                  >
                     {['#FFB800', '#CC9300', '#997000'].map((color, index) => (
                       <Cell key={`cell-${index}`} fill={color} />
                     ))}
-                  </Bar>
-                </BarChart>
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0', fontSize: '11px', fontFamily: 'JetBrains Mono' }}
+                    itemStyle={{ color: '#ffffff', fontWeight: 'bold' }}
+                    formatter={(value: number, name: string) => [`${value} rides`, name]}
+                  />
+                </PieChart>
               </ResponsiveContainer>
+            </div>
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-4 mt-2">
+              {[
+                { label: 'Solo', color: '#FFB800', count: metrics.sharingCounts.Single },
+                { label: '+1', color: '#CC9300', count: metrics.sharingCounts.Double },
+                { label: '+2', color: '#997000', count: metrics.sharingCounts.Triple },
+              ].map(item => (
+                <div key={item.label} className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5" style={{ backgroundColor: item.color }} />
+                  <span className="text-[10px] font-mono text-white/40">{item.label} ({item.count})</span>
+                </div>
+              ))}
             </div>
           </AnimatedChart>
         </div>
@@ -809,10 +826,7 @@ export default function EmployeeAssignments() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          emp.priority === 'High' ? 'bg-red-400' : 
-                          emp.priority === 'Medium' ? 'bg-yellow-400' : 'bg-blue-400'
-                        }`} />
+                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-primary/60" />
                         <div className="min-w-0">
                           <p className="font-mono font-medium text-sm truncate text-white/90">{emp.id}</p>
                           <p className="text-[10px] font-mono text-white/30 truncate">{emp.pickupLocation.substring(0, 25)}...</p>

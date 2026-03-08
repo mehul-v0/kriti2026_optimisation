@@ -674,7 +674,7 @@ export default function RouteExplorer() {
                       : 'bg-panel-dark/90 text-white/70 border-white/[0.08] hover:border-white/15'
                   }`}
                 >
-                  <div className="w-2 h-2 rounded-full bg-primary" />
+                  <div className={`w-2 h-2 rounded-full ${active ? 'bg-background-dark' : 'bg-primary'}`} />
                   {vid}
                 </button>
               );
@@ -861,22 +861,24 @@ export default function RouteExplorer() {
                 </div>
               </div>
 
-              {/* Speed controls */}
-              <div className="flex-shrink-0 flex items-center gap-1">
-                <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest mr-1">Speed</span>
-                {[1, 2, 5, 10].map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setMotionSpeed(s)}
-                    className={`px-2 py-1 text-[10px] font-bold transition-all ${
-                      motionSpeed === s
-                        ? 'bg-primary text-background-dark'
-                        : 'text-white/40 hover:text-white/60 bg-white/[0.04]'
-                    }`}
-                  >
-                    {s}x
-                  </button>
-                ))}
+              {/* Speed controls — 2×2 grid */}
+              <div className="flex-shrink-0 flex flex-col items-center gap-0.5">
+                <span className="text-[7px] font-bold text-white/20 uppercase tracking-widest">Speed</span>
+                <div className="grid grid-cols-2 gap-0.5">
+                  {[1, 2, 5, 10].map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setMotionSpeed(s)}
+                      className={`w-9 py-0.5 text-[10px] font-bold transition-all ${
+                        motionSpeed === s
+                          ? 'bg-primary text-background-dark'
+                          : 'text-white/40 hover:text-white/60 bg-white/[0.04]'
+                      }`}
+                    >
+                      {s}x
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Loop / Once toggle */}

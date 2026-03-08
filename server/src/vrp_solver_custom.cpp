@@ -125,6 +125,24 @@ int main(int argc, char* argv[]) {
         std::cout << "  SingleTrip:       score=" << sol.score << " hard=" << sol.hard_violations << " soft=" << sol.soft_violations << "\n";
     }
     
+    // A2: Preference-First construction (guarantees preference satisfaction)
+    {
+        std::vector<std::vector<int>> routes;
+        PreferenceFirstConstruction::build(routes, emps, virt, cp_soft, true, meta);
+        Solution sol = OutputFormatter::format(routes, virt, phys, emps, meta, true, "init");
+        candidates.push_back({routes, sol.score, sol.hard_violations, sol.soft_violations, "PrefFirst"});
+        std::cout << "  PrefFirst:        score=" << sol.score << " hard=" << sol.hard_violations << " soft=" << sol.soft_violations << "\n";
+    }
+    
+    // A3: Preference-First construction (relaxed - allows time window violations for maximum pref satisfaction)
+    {
+        std::vector<std::vector<int>> routes;
+        PreferenceFirstConstruction::build(routes, emps, virt, cp_hard, false, meta);
+        Solution sol = OutputFormatter::format(routes, virt, phys, emps, meta, true, "init");
+        candidates.push_back({routes, sol.score, sol.hard_violations, sol.soft_violations, "PrefFirst(relaxed)"});
+        std::cout << "  PrefFirst(relax): score=" << sol.score << " hard=" << sol.hard_violations << " soft=" << sol.soft_violations << "\n";
+    }
+    
     // B-G: Parallel cheapest insertion with various orderings
     // Alternate soft/hard enforcement for diversity
     for (size_t i = 0; i < strategies.size(); i++) {

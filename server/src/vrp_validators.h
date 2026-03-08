@@ -6,6 +6,7 @@
 #include "vrp_utils.h"
 #include <cmath>
 #include <algorithm>
+#include <climits>
 
 extern std::vector<std::vector<double>> dist_matrix;
 extern int OFFICE_NODE;
@@ -250,13 +251,17 @@ inline bool is_capacity_valid(const std::vector<int>& route, int pos, int emp_id
     std::vector<int> temp = route;
     temp.insert(temp.begin() + pos, emp_idx);
     
+    // Per-trip capacity check: each trip batch must fit within vehicle capacity
+    // A single virtual-vehicle route represents ONE trip, so route size <= capacity
     if ((int)temp.size() > veh.capacity) return false;
                                 
     if (enforce_soft) {
-        // Check sharing preference
-        int max_allowed = veh.capacity;
-        for (int e : temp) if (emps[e].sharing_pref < max_allowed) max_allowed = emps[e].sharing_pref;
-        if ((int)temp.size() > max_allowed) return false;
+        // Check sharing preference PER-TRIP (Bug 0C fix)
+        // Since each virtual vehicle route is one trip, trip_size = temp.size()
+        int trip_size = (int)temp.size();
+        for (int e : temp) {
+            if (emps[e].sharing_pref < trip_size) return false;
+        }
         
         // Check vehicle preference (only enforce if penalty is non-zero)
         if (g_config.pref_violation_penalty > 0) {
@@ -264,6 +269,11 @@ inline bool is_capacity_valid(const std::vector<int>& route, int pos, int emp_id
                 if (emps[e].vehicle_pref == 1 && veh.category != 1) return false;
                 if (emps[e].vehicle_pref == 2 && veh.category == 1) return false;
             }
+        }
+        
+        // Check vehicle mode compatibility (Phase 3B)
+        for (int e : temp) {
+            if (!is_mode_compatible(emps[e].priority, emps[e].vehicle_pref, veh.vehicle_mode)) return false;
         }
     }
     return true;
@@ -283,11 +293,14 @@ inline bool is_time_window_valid(const std::vector<int>& route, int pos, int emp
         }
     }
     
-    // Use shared simulation
-    RouteSimResult sim = simulate_route(temp, veh, emps);
+    // Use MULTI-TRIP simulation (Bug 0B fix)
+    // This correctly splits the route into trips based on vehicle capacity
+    // and computes per-employee arrival times
+    MultiTripResult mtr = simulate_route_multitrip(temp, veh, emps);
     
-    for (int e : temp) {
-        if (sim.office_arrival > emps[e].latest_arrival_deadline) return false;
+    for (int i = 0; i < (int)temp.size(); i++) {
+        int e = temp[i];
+        if (mtr.employee_arrivals[i] > emps[e].latest_arrival_deadline) return false;
     }
     
     return true;
@@ -311,15 +324,18 @@ inline bool validate_full_route(const std::vector<int>& route, const Vehicle& ve
                                  bool enforce_soft, const Metadata& /*meta*/,
                                  bool allow_hard_violations = false) {
     if (route.empty()) return true;
+    // Single virtual vehicle route: must fit in one trip
     if ((int)route.size() > veh.capacity) { hard_v++; return false; }
     
+    int trip_size = (int)route.size(); // for virtual vehicle, route IS the trip
+    
     if (enforce_soft) {
-        // Check sharing preference
-        int max_allowed = veh.capacity;
-        for (int e : route) if (emps[e].sharing_pref < max_allowed) max_allowed = emps[e].sharing_pref;
-        if ((int)route.size() > max_allowed) {
-            soft_v++;
-            return false;
+        // Check sharing preference PER-TRIP (Bug 0C fix)
+        for (int e : route) {
+            if (emps[e].sharing_pref < trip_size) {
+                soft_v++;
+                return false;
+            }
         }
         
         // Check vehicle preference violations (only enforce if penalty is non-zero)
@@ -335,13 +351,22 @@ inline bool validate_full_route(const std::vector<int>& route, const Vehicle& ve
                 }
             }
         }
+        
+        // Check vehicle mode compatibility (Phase 3B)
+        for (int e : route) {
+            if (!is_mode_compatible(emps[e].priority, emps[e].vehicle_pref, veh.vehicle_mode)) {
+                soft_v++;
+                return false;
+            }
+        }
     }
     
-    // Use shared simulation
-    RouteSimResult sim = simulate_route(route, veh, emps);
+    // Use multi-trip simulation for correct per-employee arrivals (Bug 0B fix)
+    MultiTripResult mtr = simulate_route_multitrip(route, veh, emps);
     
-    for (int e : route) {
-        if (sim.office_arrival > emps[e].latest_arrival_deadline) {
+    for (int i = 0; i < (int)route.size(); i++) {
+        int e = route[i];
+        if (mtr.employee_arrivals[i] > emps[e].latest_arrival_deadline) {
             hard_v++;
             if (!allow_hard_violations) return false;
         }

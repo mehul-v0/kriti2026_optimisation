@@ -71,6 +71,7 @@ export default function DataUpload() {
         baselineCost: response.baseline_cost,
         filename: response.filename,
         digest: response.digest,
+        metadata: response.metadata || {},
       }));
 
       sessionStorage.removeItem('optimizationComplete');

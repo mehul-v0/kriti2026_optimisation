@@ -55,7 +55,7 @@ struct SolverConfig {
     int weight_update_interval = 500;
 
     // Initial destroy operator weights (indexed by DestroyOperator enum order)
-    double init_destroy_weights[11] = {1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.5, 2.5, 2.0, 1.5, 3.0};
+    double init_destroy_weights[12] = {1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.5, 2.5, 2.0, 1.5, 3.0, 2.0};
     // Initial repair operator weights (indexed by RepairOperator enum order)
     // Regret insertion boosted to 4x (Parragh 2011: dominates across DR-PBS categories)
     double init_repair_weights[5] = {1.0, 4.0, 1.0, 1.0, 2.0};
@@ -66,13 +66,13 @@ struct SolverConfig {
     int max_ride_time_P3 = 60;
     int max_ride_time_P4 = 75;
     int max_ride_time_P5 = 90;
-    double ride_time_violation_penalty = 5000.0;
+    double ride_time_violation_penalty = 500.0;
 
     // Waiting-with-passengers penalty weight theta (Parragh 2011, Objective Function 1)
-    double wait_with_pax_penalty = 0.0;  // Quality metric only, not part of cost+time objective
+    double wait_with_pax_penalty = 1.0;  // Tie-breaker: penalize waiting with passengers aboard
 
     // Priority-weighted ride time in objective (Portell Section 4.3)
-    double priority_ride_time_weight = 0.0;  // Not part of cost+time objective
+    double priority_ride_time_weight = 0.01;  // Tie-breaker: prefer shorter rides for high-priority
 
     // Shaw removal relatedness coefficients
     double shaw_time_coeff = 0.01;
@@ -201,6 +201,10 @@ struct SolverConfig {
                     pref_violation_penalty = pw["preference_violation_penalty"].get<double>();
                 if (pw.contains("vehicle_activation_cost"))
                     vehicle_activation_cost = pw["vehicle_activation_cost"].get<double>();
+                if (pw.contains("wait_with_pax_penalty"))
+                    wait_with_pax_penalty = pw["wait_with_pax_penalty"].get<double>();
+                if (pw.contains("priority_ride_time_weight"))
+                    priority_ride_time_weight = pw["priority_ride_time_weight"].get<double>();
             }
 
             // Objective weights
@@ -284,6 +288,7 @@ struct SolverConfig {
                     if (dw.contains("expensive_arc_removal")) init_destroy_weights[8] = dw["expensive_arc_removal"].get<double>();
                     if (dw.contains("string_removal")) init_destroy_weights[9] = dw["string_removal"].get<double>();
                     if (dw.contains("lateness_targeted_removal")) init_destroy_weights[10] = dw["lateness_targeted_removal"].get<double>();
+                    if (dw.contains("ejection_chain_removal")) init_destroy_weights[11] = dw["ejection_chain_removal"].get<double>();
                 }
                 if (aw.contains("initial_repair_weights")) {
                     auto& rw = aw["initial_repair_weights"];

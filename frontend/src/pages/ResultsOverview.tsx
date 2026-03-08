@@ -67,16 +67,20 @@ export default function ResultsOverview() {
 
 
 
-        {/* Primary Summary — Three Column Layout */}
+        {/* Primary Summary — Two Column Layout */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_1.5fr] gap-6 lg:gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1.5fr] gap-6">
+
+            {/* Left Column: Cost + Time side by side, then Weighted Score below */}
+            <div className="flex flex-col gap-6">
+              <div className="grid grid-cols-2 gap-6">
 
             {/* Cost Metrics — Own Card */}
-            <div className={`${cardClass} p-6 flex flex-col gap-5 relative overflow-hidden`}>
+            <div className={`${cardClass} p-6 flex flex-col gap-3 relative overflow-hidden`}>
               {/* Background icon */}
               <span className="material-symbols-outlined absolute right-5 top-6 text-[128px] text-primary/10 pointer-events-none z-0">payments</span>
               
@@ -123,7 +127,7 @@ export default function ResultsOverview() {
             </div>
 
             {/* Time Metrics — Own Card */}
-            <div className={`${cardClass} p-6 flex flex-col gap-5 relative overflow-hidden`}>
+            <div className={`${cardClass} p-6 flex flex-col gap-3 relative overflow-hidden`}>
               {/* Background icon */}
               <span className="material-symbols-outlined absolute right-5 top-6 text-[128px] text-primary/10 pointer-events-none z-0">schedule</span>
               
@@ -169,10 +173,43 @@ export default function ResultsOverview() {
               </div>
             </div>
 
-            {/* Key Stats — Own Card with 2×3 Grid */}
-            <div className={`${cardClass} p-6`}>
+              </div>
+
+              {/* Weighted Score Card — below cost & time, spanning their width */}
+              {(() => {
+                const configStr = sessionStorage.getItem('optimizationConfig');
+                const config = configStr ? JSON.parse(configStr) : { costWeight: 0.7, timeWeight: 0.3 };
+                const wCost = config.costWeight ?? 0.7;
+                const wTime = config.timeWeight ?? 0.3;
+                const costComponent = wCost * currentResult.optimizedCost;
+                const timeComponent = wTime * optimizedTime;
+                const score = costComponent + timeComponent;
+                return (
+                  <div className={`${cardClass} p-5 flex flex-col sm:flex-row sm:items-center gap-4`}>
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-primary text-2xl">functions</span>
+                      <div>
+                        <p className="text-[11px] font-label uppercase tracking-widest text-white/40 mb-1">Weighted Optimization Score</p>
+                        <p className="text-3xl font-bold font-mono text-primary">{formatNumber(Math.round(score))}</p>
+                      </div>
+                    </div>
+                    <div className="sm:ml-auto text-right">
+                      <p className="text-[10px] font-mono text-white/30 leading-relaxed">
+                        ({wCost.toFixed(2)} × {formatCurrency(currentResult.optimizedCost)}) + ({wTime.toFixed(2)} × {formatTripTime(optimizedTime)})
+                      </p>
+                      <p className="text-[10px] font-mono text-white/20">
+                        = {formatNumber(Math.round(costComponent))} + {(timeComponent).toFixed(1)} = <span className="text-primary font-bold">{formatNumber(Math.round(score))}</span>
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Key Stats — Own Card with 2×3 Grid, stretches to match left side */}
+            <div className={`${cardClass} p-6 flex flex-col`}>
               <h3 className="text-[11px] font-label font-bold uppercase tracking-widest text-white/40 mb-4">Key Metrics</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 flex-1">
                 {[
                   { label: 'Vehicles Utilized', value: `${vehiclesUsed} / ${currentResult.vehicles.length}`, icon: 'directions_car', color: 'text-primary/70' },
                   { label: 'Total Trips', value: totalTrips.toString(), icon: 'route', color: 'text-primary' },
@@ -181,12 +218,12 @@ export default function ResultsOverview() {
                   { label: 'Employees Served', value: `${currentResult.employees.length}`, icon: 'person', color: 'text-primary/70' },
                   { label: 'Solver Duration', value: formatDuration(currentResult.solverDuration), icon: 'timer', color: 'text-primary/70' },
                 ].map((metric) => (
-                  <div key={metric.label} className={`${cardClass} p-4 relative overflow-hidden`}>
+                  <div key={metric.label} className={`${cardClass} p-4 relative overflow-hidden flex flex-col justify-center`}>
                     {/* Background icon - bottom-right corner */}
                     <span className={`material-symbols-outlined absolute right-0 bottom-0 text-[80px] text-primary/10 pointer-events-none`}>{metric.icon}</span>
                     
                     {/* Content */}
-                    <div className="relative z-10 flex flex-col h-full">
+                    <div className="relative z-10 flex flex-col">
                       <p className="text-xs font-mono text-white/30 mb-2">{metric.label}</p>
                       <p className="text-2xl font-bold font-mono">{metric.value}</p>
                     </div>

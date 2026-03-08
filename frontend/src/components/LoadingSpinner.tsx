@@ -23,7 +23,7 @@ export default function LoadingSpinner({ size = 'md', text, className = '' }: Lo
     >
       {/* Terminal-style spinner */}
       <div
-        className={`${sizeClasses[size]} animate-spin`}
+        className={`${sizeClasses[size]} animate-spin rounded-full`}
         style={{
           border: `${borderWidth[size]} solid rgba(255,255,255,0.06)`,
           borderTop: `${borderWidth[size]} solid #FFB800`,

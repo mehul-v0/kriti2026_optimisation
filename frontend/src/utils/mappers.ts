@@ -248,7 +248,7 @@ export function buildConstraintReport(
 
   // --- Soft constraints with real violation details ---
   const vehiclePrefViolations = vd?.vehicle_pref_violations?.map((v) =>
-    `${v.employee} on ${v.vehicle}: wanted ${v.preferred}, got ${v.assigned}`
+    `${v.employee} on ${v.vehicle}: preferred ${v.preferred} vehicle, assigned ${v.assigned}`
   ) ?? [];
 
   const sharingPrefViolations = vd?.sharing_pref_violations?.map((v) =>
@@ -256,6 +256,16 @@ export function buildConstraintReport(
       v.preferred === 'Single' ? 1 : v.preferred === 'Double' ? 2 : 3
     }), had ${v.actual_riders} riders`
   ) ?? [];
+
+  const priorityDelayWithinTolerance = vd?.priority_delay_violations?.filter((v: any) => v.within_tolerance)?.map((v: any) =>
+    `${v.employee} (Priority ${v.priority}) on ${v.vehicle} Trip ${v.trip}: delayed ${v.actual_delay_min} min (within ${v.tolerance_min} min tolerance) ✓`
+  ) ?? [];
+
+  const priorityDelayExceeded = vd?.priority_delay_violations?.filter((v: any) => !v.within_tolerance)?.map((v: any) =>
+    `${v.employee} (Priority ${v.priority}) on ${v.vehicle} Trip ${v.trip}: delayed ${v.actual_delay_min} min, tolerance was ${v.tolerance_min} min`
+  ) ?? [];
+
+  const priorityDelayAll = [...priorityDelayWithinTolerance, ...priorityDelayExceeded];
 
   const vehiclePrefRate = assignedCount > 0
     ? Math.round(((assignedCount - vehiclePrefViolations.length) / assignedCount) * 100)
@@ -283,9 +293,13 @@ export function buildConstraintReport(
     },
     {
       name: 'Priority-Based Delay Tolerance',
-      description: 'High-priority employees experience minimal detours',
-      status: (softViolations === 0 ? 'satisfied' : 'relaxed') as 'satisfied' | 'relaxed',
-      violations: [],
+      description: priorityDelayExceeded.length > 0
+        ? `${priorityDelayExceeded.length} employee(s) exceeded their priority-based delay tolerance`
+        : priorityDelayWithinTolerance.length > 0
+          ? `All delayed employees are within their priority-based delay tolerance`
+          : 'All employees are within their priority-based delay tolerance',
+      status: (priorityDelayExceeded.length === 0 ? 'satisfied' : 'relaxed') as 'satisfied' | 'relaxed',
+      violations: priorityDelayAll,
     },
   ];
 

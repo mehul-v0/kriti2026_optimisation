@@ -148,7 +148,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setGeometryStatus('pending');
 
     const durationStr = sessionStorage.getItem('solverDuration');
-    const durationMap: Record<string, number> = { Quick: 15, Standard: 30, Thorough: 60, Maximum: 120 };
+    const durationMap: Record<string, number> = { Quick: 30, Standard: 60, Thorough: 120, Maximum: 300 };
     const dur = durationMap[durationStr || 'Standard'] || 120;
     setSolverDuration(dur);
 

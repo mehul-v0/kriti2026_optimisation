@@ -149,7 +149,6 @@ export default function Topbar() {
         {/* Notification */}
         <button className="p-1.5 hover:bg-white/5 text-white/40 hover:text-white transition-colors relative">
           <span className="material-symbols-outlined text-lg">notifications</span>
-          <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-action rounded-full" />
         </button>
 
         {/* Settings */}

@@ -97,6 +97,11 @@ public:
             veh.available_from = time_to_min(v.value("available_from", "08:00"));
             veh.category = get_category_code(v.value("category", "normal"));
             veh.vehicle_mode = infer_vehicle_mode(veh.capacity);
+            // Premium vehicles should never be classified as 2-wheelers
+            // even if capacity is small (they are sedans/cars)
+            if (veh.category == 1 && veh.vehicle_mode == 1) {
+                veh.vehicle_mode = 2;  // Upgrade to sedan
+            }
             // Override with explicit vehicle_type from JSON if present
             if (v.contains("vehicle_type")) {
                 std::string vt = v.value("vehicle_type", "");

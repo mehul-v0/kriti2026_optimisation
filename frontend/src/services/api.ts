@@ -20,6 +20,16 @@ interface UploadResponse {
   employees: BackendEmployee[];
   vehicles: BackendVehicle[];
   baseline_cost: number;
+  metadata?: {
+    objective_cost_weight?: number;
+    objective_time_weight?: number;
+    priority_1_max_delay_min?: number;
+    priority_2_max_delay_min?: number;
+    priority_3_max_delay_min?: number;
+    priority_4_max_delay_min?: number;
+    priority_5_max_delay_min?: number;
+    [key: string]: unknown;
+  };
 }
 
 export interface ViolationDetails {
@@ -28,6 +38,7 @@ export interface ViolationDetails {
   unassigned_employees: { employee: string }[];
   vehicle_pref_violations: { employee: string; vehicle: string; preferred: string; assigned: string }[];
   sharing_pref_violations: { employee: string; vehicle: string; trip: number; preferred: string; actual_riders: number }[];
+  priority_delay_violations: { employee: string; vehicle: string; trip: number; priority: number; tolerance_min: number; actual_delay_min: number; within_tolerance: boolean }[];
 }
 
 interface OptimizeResponse {
@@ -165,10 +176,10 @@ export async function runOptimization(): Promise<OptimizeResponse> {
   if (solverDuration) {
     // Convert frontend duration labels to actual seconds for the solver
     const durationMap: Record<string, number> = { 
-      Quick: 15,
-      Standard: 30,
-      Thorough: 60,
-      Maximum: 120
+      Quick: 30,
+      Standard: 60,
+      Thorough: 120,
+      Maximum: 300
     };
     payload.solverDurationSeconds = durationMap[solverDuration] || 30;
   }

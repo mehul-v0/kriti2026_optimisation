@@ -250,9 +250,14 @@ public:
                         // to strongly prefer cheap vehicles (like OR-Tools cost callback)
                         if (strategy == CHEAPEST_VEHICLE_FIRST || strategy == DOLLAR_COST_AWARE || strategy == PREFERENCE_PRIORITY || strategy == GEO_CLUSTER_CONSOL || strategy == ANGULAR_SECTOR) {
                             cost = cost * virt_vehs[v].cost_per_km;
-                            // Add penalty for opening new trip (consolidation preference) - use config value
-                            if ((strategy == DOLLAR_COST_AWARE || strategy == PREFERENCE_PRIORITY || strategy == GEO_CLUSTER_CONSOL || strategy == ANGULAR_SECTOR) && routes[v].empty()) {
-                                cost += g_config.vehicle_activation_cost;
+                            // Capacity-aware penalty for opening a new trip —
+                            // low-capacity vehicles pay more since they can't amortize deadheading
+                            if (routes[v].empty()) {
+                                double deadhead = (dist_matrix[OFFICE_NODE][emps[e].node_idx]
+                                                 + dist_matrix[emps[e].node_idx][OFFICE_NODE])
+                                                * virt_vehs[v].cost_per_km;
+                                cost += g_config.new_trip_penalty
+                                      + deadhead * (1.0 - 1.0 / std::max(1, virt_vehs[v].capacity));
                             }
                             // Add penalty for vehicle preference violations
                             // Premium preference employee on normal vehicle, or normal preference on premium
@@ -261,6 +266,17 @@ public:
                             }
                             if (emps[e].vehicle_pref == 2 && virt_vehs[v].category == 1) {
                                 cost += g_config.pref_violation_penalty;
+                            }
+                            // Add penalty for sharing preference violations
+                            // If employee wants single ride but trip already has people (or vice versa)
+                            if (emps[e].sharing_pref < (int)(routes[v].size() + 1)) {
+                                cost += g_config.pref_violation_penalty;
+                            }
+                            // Also penalize existing riders whose sharing pref would be violated
+                            for (int ex : routes[v]) {
+                                if (emps[ex].sharing_pref < (int)(routes[v].size() + 1)) {
+                                    cost += g_config.pref_violation_penalty;
+                                }
                             }
                         }
                         
@@ -359,6 +375,254 @@ public:
             std::cout << "\n";
         }
         
+        std::cout << std::string(60, '=') << std::endl;
+    }
+};
+
+// ============================================================================
+// PreferenceFirstConstruction: Guarantees preference satisfaction for strict employees
+// Phase 1: Directly assign each premium+single employee to an empty premium trip (1 per trip)
+// Phase 2: Cheapest insertion for remaining employees with pref+sharing penalties
+// ============================================================================
+class PreferenceFirstConstruction {
+public:
+    static void build(std::vector<std::vector<int>>& routes,
+                      const std::vector<Employee>& emps,
+                      const std::vector<Vehicle>& virt_vehs,
+                      const ConstraintEngine& cp, bool enforce_soft, const Metadata& meta) {
+        
+        std::cout << "\n" << std::string(60, '=') << "\n";
+        std::cout << "PREFERENCE-FIRST CONSTRUCTION\n";
+        std::cout << std::string(60, '=') << std::endl;
+        
+        int n_emp = emps.size();
+        int n_veh = virt_vehs.size();
+        
+        routes.clear();
+        routes.resize(n_veh);
+        
+        std::vector<bool> routed(n_emp, false);
+        int unrouted = n_emp;
+        
+        // ---- Phase 1: Direct assignment for preference-strict employees ----
+        // Identify employees who want premium + single (vehicle_pref==1, sharing_pref==1)
+        // Sort by tightest deadline first (they need the earliest trip slots)
+        std::vector<int> strict_emps;
+        for (int i = 0; i < n_emp; i++) {
+            if (emps[i].vehicle_pref == 1 && emps[i].sharing_pref == 1) {
+                strict_emps.push_back(i);
+            }
+        }
+        std::sort(strict_emps.begin(), strict_emps.end(), [&emps](int a, int b) {
+            return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
+        });
+        
+        // Find empty premium trips, sorted by trip index (Trip 1 starts from depot, others from office)
+        // Prefer Trip 1 slots since they start earliest
+        std::vector<int> premium_trips;
+        for (int v = 0; v < n_veh; v++) {
+            if (virt_vehs[v].category == 1) {  // premium vehicle
+                premium_trips.push_back(v);
+            }
+        }
+        // Sort: Trip 1 first (v % TRIPS_PER_VEHICLE == 0), then by cost_per_km ascending
+        std::sort(premium_trips.begin(), premium_trips.end(), [&virt_vehs](int a, int b) {
+            int trip_a = a % TRIPS_PER_VEHICLE;
+            int trip_b = b % TRIPS_PER_VEHICLE;
+            if (trip_a != trip_b) return trip_a < trip_b;  // earlier trip slots first
+            return virt_vehs[a].cost_per_km < virt_vehs[b].cost_per_km;
+        });
+        
+        int premium_idx = 0;
+        std::cout << "  Phase 1: Assigning " << strict_emps.size() << " premium+single employees\n";
+        for (int e : strict_emps) {
+            bool placed = false;
+            // Find first available empty premium trip
+            while (premium_idx < (int)premium_trips.size() && !placed) {
+                int v = premium_trips[premium_idx];
+                if (routes[v].empty() && 
+                    is_mode_compatible(emps[e].priority, emps[e].vehicle_pref, virt_vehs[v].vehicle_mode)) {
+                    // Check compatibility with CP
+                    bool valid = true;
+                    if (cp.employee_vars.size() > 0) {
+                        if (!cp.employee_vars[e].is_vehicle_valid(v)) valid = false;
+                    }
+                    if (valid) {
+                        routes[v].push_back(e);
+                        routed[e] = true;
+                        unrouted--;
+                        placed = true;
+                        std::cout << "    " << emps[e].employee_id << " -> " << virt_vehs[v].vehicle_id 
+                                  << " (premium trip, deadline=" << emps[e].latest_arrival_deadline << ")\n";
+                    }
+                }
+                premium_idx++;
+            }
+            if (!placed) {
+                std::cout << "    WARNING: " << emps[e].employee_id << " - no empty premium trip available\n";
+            }
+        }
+        
+        // ---- Also handle normal-preference+single employees (vehicle_pref==2, sharing_pref==1) ----
+        std::vector<int> normal_single_emps;
+        for (int i = 0; i < n_emp; i++) {
+            if (!routed[i] && emps[i].sharing_pref == 1 && emps[i].vehicle_pref != 1) {
+                normal_single_emps.push_back(i);
+            }
+        }
+        std::sort(normal_single_emps.begin(), normal_single_emps.end(), [&emps](int a, int b) {
+            return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
+        });
+        
+        // Find empty normal trips
+        std::vector<int> normal_trips;
+        for (int v = 0; v < n_veh; v++) {
+            if (routes[v].empty() && virt_vehs[v].category != 1) {  // non-premium
+                normal_trips.push_back(v);
+            }
+        }
+        std::sort(normal_trips.begin(), normal_trips.end(), [&virt_vehs](int a, int b) {
+            int trip_a = a % TRIPS_PER_VEHICLE;
+            int trip_b = b % TRIPS_PER_VEHICLE;
+            if (trip_a != trip_b) return trip_a < trip_b;
+            return virt_vehs[a].cost_per_km < virt_vehs[b].cost_per_km;
+        });
+        
+        int normal_idx = 0;
+        for (int e : normal_single_emps) {
+            bool placed = false;
+            while (normal_idx < (int)normal_trips.size() && !placed) {
+                int v = normal_trips[normal_idx];
+                if (routes[v].empty() &&
+                    is_mode_compatible(emps[e].priority, emps[e].vehicle_pref, virt_vehs[v].vehicle_mode)) {
+                    bool valid = true;
+                    if (cp.employee_vars.size() > 0) {
+                        if (!cp.employee_vars[e].is_vehicle_valid(v)) valid = false;
+                    }
+                    if (valid) {
+                        routes[v].push_back(e);
+                        routed[e] = true;
+                        unrouted--;
+                        placed = true;
+                        std::cout << "    " << emps[e].employee_id << " -> " << virt_vehs[v].vehicle_id 
+                                  << " (normal single trip)\n";
+                    }
+                }
+                normal_idx++;
+            }
+        }
+        
+        std::cout << "  Phase 1 complete: " << (n_emp - unrouted) << "/" << n_emp << " placed\n";
+        
+        // ---- Phase 2: Cheapest insertion for remaining employees ----
+        // Sort remaining by deadline (tightest first)
+        std::vector<int> remaining;
+        for (int i = 0; i < n_emp; i++) {
+            if (!routed[i]) remaining.push_back(i);
+        }
+        std::sort(remaining.begin(), remaining.end(), [&emps](int a, int b) {
+            return emps[a].latest_arrival_deadline < emps[b].latest_arrival_deadline;
+        });
+        
+        // Vehicle order: cheapest first
+        std::vector<int> veh_order(n_veh);
+        for (int i = 0; i < n_veh; i++) veh_order[i] = i;
+        std::sort(veh_order.begin(), veh_order.end(), [&virt_vehs](int a, int b) {
+            return virt_vehs[a].cost_per_km < virt_vehs[b].cost_per_km;
+        });
+        
+        std::cout << "  Phase 2: Cheapest insertion for " << unrouted << " remaining employees\n";
+        
+        while (unrouted > 0) {
+            InsertionInfo best;
+            
+            for (int e : remaining) {
+                if (routed[e]) continue;
+                
+                for (int vi = 0; vi < n_veh; vi++) {
+                    int v = veh_order[vi];
+                    if (!cp.employee_vars.empty() && !cp.employee_vars[e].is_vehicle_valid(v)) continue;
+                    
+                    bool compat = true;
+                    for (int ex : routes[v]) {
+                        if (!cp.are_compatible(e, ex)) { compat = false; break; }
+                    }
+                    if (!compat) continue;
+                    
+                    for (size_t p = 0; p <= routes[v].size(); p++) {
+                        double cost = calculate_delta_cost(routes[v], p, e, virt_vehs[v].start_node, emps);
+                        cost = cost * virt_vehs[v].cost_per_km;
+                        
+                        if (routes[v].empty()) {
+                            double deadhead = (dist_matrix[OFFICE_NODE][emps[e].node_idx]
+                                             + dist_matrix[emps[e].node_idx][OFFICE_NODE])
+                                            * virt_vehs[v].cost_per_km;
+                            cost += g_config.new_trip_penalty
+                                  + deadhead * (1.0 - 1.0 / std::max(1, virt_vehs[v].capacity));
+                        }
+                        
+                        // Vehicle preference penalty
+                        if (emps[e].vehicle_pref == 1 && virt_vehs[v].category != 1) {
+                            cost += g_config.pref_violation_penalty;
+                        }
+                        if (emps[e].vehicle_pref == 2 && virt_vehs[v].category == 1) {
+                            cost += g_config.pref_violation_penalty;
+                        }
+                        // Sharing preference penalty
+                        if (emps[e].sharing_pref < (int)(routes[v].size() + 1)) {
+                            cost += g_config.pref_violation_penalty;
+                        }
+                        for (int ex : routes[v]) {
+                            if (emps[ex].sharing_pref < (int)(routes[v].size() + 1)) {
+                                cost += g_config.pref_violation_penalty;
+                            }
+                        }
+                        
+                        if (cost < best.delta_cost &&
+                            is_capacity_valid(routes[v], p, e, virt_vehs[v], emps, enforce_soft) &&
+                            is_time_window_valid(routes[v], p, e, virt_vehs[v], emps, meta)) {
+                            best.employee_idx = e;
+                            best.vehicle_idx = v;
+                            best.position = p;
+                            best.delta_cost = cost;
+                        }
+                    }
+                }
+            }
+            
+            if (best.employee_idx >= 0) {
+                routes[best.vehicle_idx].insert(routes[best.vehicle_idx].begin() + best.position, 
+                                                 best.employee_idx);
+                routed[best.employee_idx] = true;
+                unrouted--;
+            } else {
+                // Forced insertion for remaining employees
+                for (int e = 0; e < n_emp; e++) {
+                    if (!routed[e]) {
+                        for (int v = 0; v < n_veh; v++) {
+                            if ((int)routes[v].size() < virt_vehs[v].capacity) {
+                                routes[v].push_back(e);
+                                routed[e] = true;
+                                unrouted--;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        int used = 0;
+        for (const auto& r : routes) if (!r.empty()) used++;
+        
+        std::cout << "  Result: " << n_emp << " employees in " << used << " trips\n";
+        for (size_t v = 0; v < routes.size(); v++) {
+            if (routes[v].empty()) continue;
+            std::cout << "    " << virt_vehs[v].vehicle_id << ": ";
+            for (int e : routes[v]) std::cout << emps[e].employee_id << " ";
+            std::cout << "\n";
+        }
         std::cout << std::string(60, '=') << std::endl;
     }
 };

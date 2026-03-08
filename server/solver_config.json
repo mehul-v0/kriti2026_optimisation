@@ -8,9 +8,11 @@
     "unassigned_employee_penalty": 100000.0,
     "time_violation_penalty": 100000.0,
     "lateness_per_minute_penalty": 5.0,
-    "priority_lateness_multiplier": 0.0,
-    "preference_violation_penalty": 20.0,
-    "vehicle_activation_cost": 0.0
+    "priority_lateness_multiplier": 2.0,
+    "preference_violation_penalty": 2000.0,
+    "vehicle_activation_cost": 20.0,
+    "wait_with_pax_penalty": 0.3,
+    "priority_ride_time_weight": 0.5
   },
 
   "objective_weights": {
@@ -31,7 +33,7 @@
   "local_search_weights": {
     "_comment": "Weights used in weighted_violation_score() for local search move decisions.",
     "hard_violation_weight": 10000000,
-    "pref_violation_weight": 20.0,
+    "pref_violation_weight": 5000.0,
     "lateness_weight": 0
   },
 
@@ -67,11 +69,12 @@
       "vehicle_elimination": 2.5,
       "expensive_arc_removal": 2.0,
       "string_removal": 1.5,
-      "lateness_targeted_removal": 3.0
+      "lateness_targeted_removal": 3.0,
+      "ejection_chain_removal": 2.0
     },
     "initial_repair_weights": {
       "greedy_insertion": 1.0,
-      "regret_insertion": 1.0,
+      "regret_insertion": 4.0,
       "nearest_insertion": 1.0,
       "batching_insertion": 2.0,
       "cheapest_vehicle_insertion": 4.0
@@ -134,15 +137,15 @@
 
   "repair_parameters": {
     "_comment": "Parameters for repair operators.",
-    "new_trip_penalty": 5.0,
+    "new_trip_penalty": 15.0,
     "time_penalty_multiplier": 0.1,
     "regret_k": 3
   },
 
   "construction": {
     "_comment": "How many top initial solutions get ALNS time, and how the time is split.",
-    "num_candidates_to_optimize": 5,
-    "time_split_percent": [35, 25, 20, 12, 8],
+    "num_candidates_to_optimize": 3,
+    "time_split_percent": [50, 30, 20],
     "trip_time_estimate_minutes": 30,
     "min_trips_per_vehicle": 4,
     "trips_buffer": 2,

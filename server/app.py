@@ -609,6 +609,12 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
     time_window_violations = []
     vehicle_pref_violations = []
     sharing_pref_violations = []
+    priority_delay_violations = []
+
+    # Priority delay tolerances from metadata
+    priority_delay_map = {}
+    for p in range(1, 6):
+        priority_delay_map[p] = int(metadata.get(f'priority_{p}_max_delay_min', 15))
 
     for sv in solver_vehicles:
         vid = sv['vehicle_id']
@@ -750,14 +756,43 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
                     deadline = emp.get('latest_drop', '23:59')
                     oa_min = _time_str_to_minutes(office_arrival)
                     dl_min = _time_str_to_minutes(deadline)
-                    if oa_min > dl_min:
+                    delay = oa_min - dl_min
+
+                    # Priority-based delay tolerance
+                    emp_priority = int(emp.get('priority', 5))
+                    tolerance = priority_delay_map.get(emp_priority, 15)
+
+                    if delay > 0 and delay <= tolerance:
+                        # Within priority tolerance — not a hard violation,
+                        # just mention under priority-based delay tolerance
+                        priority_delay_violations.append({
+                            'employee': pid,
+                            'vehicle': vid,
+                            'trip': trip_num,
+                            'priority': emp_priority,
+                            'tolerance_min': tolerance,
+                            'actual_delay_min': delay,
+                            'within_tolerance': True,
+                        })
+                    elif delay > tolerance:
+                        # Exceeds priority tolerance — hard time-window violation
                         time_window_violations.append({
                             'employee': pid,
                             'vehicle': vid,
                             'trip': trip_num,
                             'office_arrival': office_arrival,
                             'deadline': deadline,
-                            'delay_min': oa_min - dl_min,
+                            'delay_min': delay,
+                        })
+                        # Also note under priority delay
+                        priority_delay_violations.append({
+                            'employee': pid,
+                            'vehicle': vid,
+                            'trip': trip_num,
+                            'priority': emp_priority,
+                            'tolerance_min': tolerance,
+                            'actual_delay_min': delay,
+                            'within_tolerance': False,
                         })
 
             # Sharing preference check
@@ -781,13 +816,11 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
                 vpref = str(emp.get('vehicle_preference', 'any')).lower()
                 if vpref != 'any':
                     if vpref != veh_category:
-                        assigned_label = 'Diesel' if veh_category == 'premium' else ('Electric' if veh_category == 'electric' else 'Petrol')
-                        preferred_label = 'Diesel' if vpref == 'premium' else ('Electric' if vpref == 'electric' else 'Petrol')
                         vehicle_pref_violations.append({
                             'employee': pid,
                             'vehicle': vid,
-                            'preferred': preferred_label,
-                            'assigned': assigned_label,
+                            'preferred': vpref.capitalize(),
+                            'assigned': veh_category.capitalize(),
                         })
 
         total_distance += veh_total_distance
@@ -814,7 +847,9 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
             unassigned.append({'employee': emp['employee_id']})
 
     hard_violations = len(capacity_violations) + len(time_window_violations) + len(unassigned)
-    soft_violations = len(vehicle_pref_violations) + len(sharing_pref_violations)
+    # Only count priority delay entries that exceeded tolerance as soft violations
+    priority_exceeded = [v for v in priority_delay_violations if not v.get('within_tolerance', False)]
+    soft_violations = len(vehicle_pref_violations) + len(sharing_pref_violations) + len(priority_exceeded)
 
     violation_details = {
         'capacity_violations': capacity_violations,
@@ -822,6 +857,7 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
         'unassigned_employees': unassigned,
         'vehicle_pref_violations': vehicle_pref_violations,
         'sharing_pref_violations': sharing_pref_violations,
+        'priority_delay_violations': priority_delay_violations,
     }
 
     result_summary = {
@@ -933,6 +969,7 @@ def upload_file():
             'employees': employees,
             'vehicles': vehicles,
             'baseline_cost': baseline_cost,
+            'metadata': input_data.get('metadata', {}),
         })
 
     except Exception as e:
@@ -957,10 +994,18 @@ def optimize():
         print(f"Optimization Request: {solver_duration}s solver duration")
         print(f"{'='*60}")
         
-        # Get optimization config from frontend
-        cost_weight = float(body.get('costWeight', 0.7))
-        time_weight = float(body.get('timeWeight', 0.3))
-        priority_delays = body.get('priorityDelays', {1: 5, 2: 5, 3: 10, 4: 15, 5: 15})
+        # Get optimization config from frontend, falling back to Excel metadata values
+        excel_meta = input_data.get('metadata', {})
+        cost_weight = float(body.get('costWeight', excel_meta.get('objective_cost_weight', 0.7)))
+        time_weight = float(body.get('timeWeight', excel_meta.get('objective_time_weight', 0.3)))
+        default_delays = {
+            1: excel_meta.get('priority_1_max_delay_min', 5),
+            2: excel_meta.get('priority_2_max_delay_min', 5),
+            3: excel_meta.get('priority_3_max_delay_min', 10),
+            4: excel_meta.get('priority_4_max_delay_min', 15),
+            5: excel_meta.get('priority_5_max_delay_min', 15),
+        }
+        priority_delays = body.get('priorityDelays', default_delays)
         distance_method = body.get('distanceMethod', 'haversine')
         
         # Update metadata in input data with frontend settings
@@ -969,11 +1014,11 @@ def optimize():
         
         input_data['metadata']['objective_cost_weight'] = cost_weight
         input_data['metadata']['objective_time_weight'] = time_weight
-        input_data['metadata']['priority_1_max_delay_min'] = int(priority_delays.get('1', priority_delays.get(1, 5)))
-        input_data['metadata']['priority_2_max_delay_min'] = int(priority_delays.get('2', priority_delays.get(2, 5)))
-        input_data['metadata']['priority_3_max_delay_min'] = int(priority_delays.get('3', priority_delays.get(3, 10)))
-        input_data['metadata']['priority_4_max_delay_min'] = int(priority_delays.get('4', priority_delays.get(4, 15)))
-        input_data['metadata']['priority_5_max_delay_min'] = int(priority_delays.get('5', priority_delays.get(5, 15)))
+        input_data['metadata']['priority_1_max_delay_min'] = int(priority_delays.get('1', priority_delays.get(1, default_delays[1])))
+        input_data['metadata']['priority_2_max_delay_min'] = int(priority_delays.get('2', priority_delays.get(2, default_delays[2])))
+        input_data['metadata']['priority_3_max_delay_min'] = int(priority_delays.get('3', priority_delays.get(3, default_delays[3])))
+        input_data['metadata']['priority_4_max_delay_min'] = int(priority_delays.get('4', priority_delays.get(4, default_delays[4])))
+        input_data['metadata']['priority_5_max_delay_min'] = int(priority_delays.get('5', priority_delays.get(5, default_delays[5])))
         
         # Handle distance calculation method
         if distance_method == 'actual_maps':

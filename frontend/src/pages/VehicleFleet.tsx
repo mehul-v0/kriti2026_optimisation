@@ -296,7 +296,8 @@ export default function VehicleFleet() {
               <div className="group relative">
                 <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
                 <div className="absolute right-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
-                  Vehicles actively deployed out of total fleet
+                  <span className="font-semibold text-primary">Vehicles Used</span><br/>
+                  Vehicles actively deployed out of total fleet.
                 </div>
               </div>
             </div>
@@ -314,7 +315,8 @@ export default function VehicleFleet() {
               <div className="group relative">
                 <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
                 <div className="absolute right-0 top-full mt-2 w-48 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
-                  Total number of trips completed by all vehicles
+                  <span className="font-semibold text-primary">Total Trips</span><br/>
+                  Total number of trips completed by all vehicles.
                 </div>
               </div>
             </div>
@@ -389,6 +391,7 @@ export default function VehicleFleet() {
               <div className="group relative">
                 <span className="material-symbols-outlined text-white/20 text-sm cursor-help hover:text-primary transition-colors">info</span>
                 <div className="absolute right-0 top-full mt-2 w-52 p-2 bg-panel-dark border border-white/10 text-xs text-white/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-xl pointer-events-none">
+                  <span className="font-semibold text-primary">Average Occupancy</span><br/>
                   Average passenger occupancy across all trips as % of capacity.
                 </div>
               </div>
@@ -515,8 +518,8 @@ export default function VehicleFleet() {
                 
                 const maxDistance = Math.max(...vehicleDistances.map(v => v.totalDistance), 1);
                 
-                // Color palette for different employee pickups
-                const employeeColors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#EF4444', '#14B8A6', '#F97316', '#6366F1'];
+                // Amber theme palette — more passengers = deeper amber
+                const employeeColors = ['#FFB800', '#E6A600', '#CC9300', '#B38100', '#997000', '#805E00', '#664B00', '#4D3800', '#332600', '#1A1300'];
                 
                 return vehicleDistances.slice(0, 10).map((item, idx) => {
                   const widthPercent = (item.totalDistance / maxDistance) * 100;
@@ -541,8 +544,8 @@ export default function VehicleFleet() {
                       
                       const segmentPercent = (segmentDistance / item.totalDistance) * 100;
                       
-                      // Assign color based on current passenger count
-                      const color = currentPassengers > 0 ? employeeColors[(currentPassengers - 1) % employeeColors.length] : '#4a5568';
+                      // Assign color based on current passenger count — amber gradient
+                      const color = currentPassengers > 0 ? employeeColors[(currentPassengers - 1) % employeeColors.length] : 'rgba(255,255,255,0.04)';
                       
                       allSegments.push({
                         percent: segmentPercent,
@@ -586,7 +589,7 @@ export default function VehicleFleet() {
                               </div>
                               {segment.percent > 5 && segment.passengers > 0 && (
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                  <span className="text-[9px] font-bold text-white opacity-80">{segment.passengers}p</span>
+                                  <span className="text-[9px] font-bold text-black">{segment.passengers}p</span>
                                 </div>
                               )}
                             </div>

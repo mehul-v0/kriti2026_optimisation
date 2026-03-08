@@ -16,30 +16,35 @@ export default function LandingDashboard() {
   }, []);
   const handleMouseLeave = useCallback(() => setMousePos(null), []);
 
+  // Derive real change values from the latest completed session
+  const lastSession = sessionHistory.find(s => s.status === 'completed');
+  const lastResult = lastSession?.result;
+  const lastKm = lastResult ? lastResult.trips.reduce((sum, t) => sum + t.distance, 0) : 0;
+
   const metrics = [
     {
       label: 'Total Optimizations',
       value: formatNumber(lifetimeMetrics.totalOptimizations),
       icon: 'route',
-      change: '+15%',
+      change: lastSession ? '+1 last run' : null,
     },
     {
       label: 'Cumulative Cost Saved',
       value: formatCurrency(lifetimeMetrics.cumulativeSavings),
       icon: 'savings',
-      change: '+8%',
+      change: lastSession ? `+${formatCurrency(lastSession.savings)} last run` : null,
     },
     {
       label: 'Employees Transported',
       value: formatNumber(lifetimeMetrics.totalEmployees),
       icon: 'groups',
-      change: '+5%',
+      change: lastSession ? `+${lastSession.employeeCount} last run` : null,
     },
     {
       label: 'Total KM Optimized',
       value: formatNumber(lifetimeMetrics.totalKilometers),
       icon: 'directions_car',
-      change: '+12%',
+      change: lastKm > 0 ? `+${formatNumber(lastKm)} km last run` : null,
     },
   ];
 
@@ -78,7 +83,7 @@ export default function LandingDashboard() {
         }} />
         <div className="relative z-10 flex flex-col items-center text-center max-w-2xl gap-5">
           <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-[9px] font-mono text-white/50 uppercase tracking-widest">
-            AI-Powered Logistics // v2.0
+            AI-Powered Logistics // v1.0
           </span>
           <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight uppercase leading-tight">
             Vehicle Routing<br />Optimization
@@ -122,12 +127,13 @@ export default function LandingDashboard() {
                 <span className="material-symbols-outlined text-sm text-white/20">{metric.icon}</span>
               </div>
               <p className="text-3xl font-bold font-mono text-white mt-1">{metric.value}</p>
-              <div className="flex items-center gap-2 mt-auto">
-                <span className="text-[9px] font-mono text-primary bg-primary/10 px-1.5 py-0.5 flex items-center gap-0.5">
-                  <span className="material-symbols-outlined text-[11px]">arrow_upward</span>{metric.change}
-                </span>
-                <span className="text-[10px] font-mono text-white/30">vs last month</span>
-              </div>
+              {metric.change && (
+                <div className="flex items-center gap-2 mt-auto">
+                  <span className="text-[9px] font-mono text-primary bg-primary/10 px-1.5 py-0.5 flex items-center gap-0.5">
+                    <span className="material-symbols-outlined text-[11px]">arrow_upward</span>{metric.change}
+                  </span>
+                </div>
+              )}
             </motion.div>
           ))}
         </div>
