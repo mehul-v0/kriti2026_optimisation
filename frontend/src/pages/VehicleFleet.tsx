@@ -786,7 +786,6 @@ export default function VehicleFleet() {
                 const isUsed = vehicleTrips.has(vehicle.id);
                 const trips = vehicleTrips.get(vehicle.id) || [];
                 const totalDistance = trips.reduce((sum, t) => sum + (t.distance || 0), 0);
-                const _totalEmployees = new Set(trips.flatMap(t => t.employees)).size;
                 const { avgUsed, totalCapacity } = getVehicleCapacityInfo(vehicle.id);
                 const utilizationPercent = totalCapacity > 0 ? (avgUsed / totalCapacity) * 100 : 0;
                 const isSelected = selectedVehicle === vehicle.id;
