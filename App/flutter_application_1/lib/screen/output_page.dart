@@ -276,8 +276,8 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
   }
 
   /// Parse Format B: backend API response with routes + assignments.
-  /// Groups route_points by trip_number (matching the website's mapRoutes logic)
-  /// and uses trip_costs/trip_distances from the backend for accurate per-trip data.
+  /// route_points already carry arrival_time, departure_time, distance_from_prev
+  /// and lat/lng directly - use them instead of secondary lookups.
   List<_VehicleRoute> _parseFromBackendFormat(Map<String, dynamic> data) {
     final List routesList = data['routes'] ?? [];
     final List<_VehicleRoute> routes = [];
@@ -291,21 +291,13 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
       final totalDist = (r['total_distance'] as num?)?.toDouble() ?? 0;
       final color = _routePalette[i % _routePalette.length];
 
-      // Per-trip cost/distance data from backend (if provided)
-      final Map<String, dynamic> tripCostsRaw =
-          (r['trip_costs'] as Map<String, dynamic>?) ?? {};
-      final Map<String, dynamic> tripDistancesRaw =
-          (r['trip_distances'] as Map<String, dynamic>?) ?? {};
-
-      // Build stops from route_points and group by trip_number
+      // Build stops from route_points using data already embedded in each point
       final List routePoints = r['route_points'] ?? [];
       final List<_StopInfo> allStops = [];
-      final Map<int, List<_StopInfo>> tripGroups = {};
 
       for (var pt in routePoints) {
         final type = pt['type']?.toString() ?? '';
         final empId = pt['employee_id']?.toString() ?? '';
-        final tripNumber = (pt['trip_number'] as num?)?.toInt() ?? 1;
 
         String location;
         if (type == 'pickup') {
@@ -318,55 +310,79 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
           location = type.isNotEmpty ? type : 'Stop';
         }
 
+        // Use times and distance directly from route_point - they are correct
         final arrTime = pt['arrival_time']?.toString() ?? '';
         final depTime = pt['departure_time']?.toString() ?? '';
         final distPrev = (pt['distance_from_prev'] as num?)?.toDouble() ?? 0.0;
 
-        final stop = _StopInfo(
-          location: location,
-          arrivalTime: arrTime,
-          departureTime: depTime,
-          distanceFromPrev: distPrev,
-          waitTime: 0,
-          lat: (pt['lat'] as num?)?.toDouble(),
-          lng: (pt['lng'] as num?)?.toDouble(),
-          employeeId: (type == 'pickup' && empId.isNotEmpty) ? empId : null,
-        );
-
-        allStops.add(stop);
-        tripGroups.putIfAbsent(tripNumber, () => []);
-        tripGroups[tripNumber]!.add(stop);
-      }
-
-      // Build trips from grouped route points, using backend trip_costs/trip_distances
-      final sortedTripNumbers = tripGroups.keys.toList()..sort();
-      final int tripCount = sortedTripNumbers.length;
-      final List<_TripInfo> parsedTrips = [];
-
-      for (final tn in sortedTripNumbers) {
-        final stops = tripGroups[tn]!;
-
-        // Use actual per-trip cost/distance from backend if available
-        final backendTripCost = (tripCostsRaw[tn.toString()] as num?)?.toDouble();
-        final backendTripDist = (tripDistancesRaw[tn.toString()] as num?)?.toDouble();
-
-        final tripDist = backendTripDist ??
-            stops.fold(0.0, (sum, s) => sum + s.distanceFromPrev);
-        final tripCost = backendTripCost ??
-            (tripCount > 0 ? totalCost / tripCount : 0.0);
-
-        parsedTrips.add(
-          _TripInfo(
-            tripNumber: tn,
-            totalCost: tripCost,
-            totalDistance: tripDist,
-            totalTime: 0,
-            stops: stops,
+        allStops.add(
+          _StopInfo(
+            location: location,
+            arrivalTime: arrTime,
+            departureTime: depTime,
+            distanceFromPrev: distPrev,
+            waitTime: 0, // not available in route_points
+            lat: (pt['lat'] as num?)?.toDouble(),
+            lng: (pt['lng'] as num?)?.toDouble(),
+            employeeId: (type == 'pickup' && empId.isNotEmpty) ? empId : null,
           ),
         );
       }
 
-      // Remove any solo office/depot trips
+      // Group stops into trips by splitting at every office drop-off.
+      // Also tally per-trip distance from distanceFromPrev so each card
+      // shows accurate km and proportional cost.
+      final List<_TripInfo> parsedTrips = [];
+      List<_StopInfo> currentTripStops = [];
+      int tripNum = 1;
+
+      for (var stop in allStops) {
+        currentTripStops.add(stop);
+        if (stop.location.contains('Drop-off') ||
+            stop.location.contains('Office')) {
+          // sum distance from the stops in this trip
+          final tripDist = currentTripStops.fold(
+            0.0,
+            (sum, s) => sum + s.distanceFromPrev,
+          );
+          // Cost proportional to distance share
+          final tripCost = totalDist > 0
+              ? totalCost * (tripDist / totalDist)
+              : 0.0;
+          parsedTrips.add(
+            _TripInfo(
+              tripNumber: tripNum,
+              totalCost: tripCost,
+              totalDistance: tripDist,
+              totalTime: 0, // not available in Format B
+              stops: List.from(currentTripStops),
+            ),
+          );
+          currentTripStops = [];
+          tripNum++;
+        }
+      }
+      // Remaining stops that didn't end with a drop-off
+      if (currentTripStops.isNotEmpty) {
+        final tripDist = currentTripStops.fold(
+          0.0,
+          (sum, s) => sum + s.distanceFromPrev,
+        );
+        parsedTrips.add(
+          _TripInfo(
+            tripNumber: tripNum,
+            totalCost: totalDist > 0 ? totalCost * (tripDist / totalDist) : 0.0,
+            totalDistance: tripDist,
+            totalTime: 0,
+            stops: currentTripStops,
+          ),
+        );
+      }
+
+      // Use tripsCount from backend if parsedTrips is empty
+      // (vehicle in solution but no route_points means unassigned)
+      // Remove any solo office/depot trips produced by Format B grouping
+      // (e.g. a trip that starts and ends with just an office stop at 0 km).
       final cleanedTrips = parsedTrips.where((t) {
         if (t.stops.isEmpty) return false;
         if (t.stops.length == 1) {
@@ -377,7 +393,6 @@ class _OutputPageState extends State<OutputPage> with TickerProviderStateMixin {
         }
         return true;
       }).toList();
-
       // Re-number trips after filtering
       for (int n = 0; n < cleanedTrips.length; n++) {
         cleanedTrips[n] = _TripInfo(
