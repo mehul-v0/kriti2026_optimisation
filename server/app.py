@@ -979,15 +979,27 @@ def upload_file():
 @app.route('/api/optimize', methods=['POST'])
 def optimize():
     try:
-        if not _state.get('input_json') or not os.path.exists(_state['input_json']):
+        # Read request body
+        body = request.get_json(silent=True) or {}
+
+        # Check if the request body contains inline input data (sent by Flutter app).
+        # Inline data is detected by the presence of an 'employees' list in the body.
+        if 'employees' in body and isinstance(body.get('employees'), list):
+            # Flutter app sends full input data + config in the body.
+            # Write it to a temporary JSON file for the solver.
+            timestamp = str(int(time.time()))
+            input_json = os.path.join(OUTPUT_FOLDER, f'input_{timestamp}.json')
+            # Separate solver config keys from the input data
+            config_keys = {'solverDurationSeconds', 'costWeight', 'timeWeight',
+                           'priorityDelays', 'distanceMethod', 'mode'}
+            input_data = {k: v for k, v in body.items() if k not in config_keys}
+        elif _state.get('input_json') and os.path.exists(_state['input_json']):
+            # Website flow: data was previously uploaded via /api/upload
+            input_json = _state['input_json']
+            input_data = copy.deepcopy(_state['input_data'])
+        else:
             return jsonify({'success': False, 'error': 'No data uploaded yet. Please upload an Excel file first.'}), 400
 
-        input_json = _state['input_json']
-        # Make a deep copy to avoid mutating the original stored data
-        input_data = copy.deepcopy(_state['input_data'])
-
-        # Read optional solver parameters from request
-        body = request.get_json(silent=True) or {}
         solver_duration = int(body.get('solverDurationSeconds', 30))  # Default to 30s (Standard)
         
         print(f"\n{'='*60}")
