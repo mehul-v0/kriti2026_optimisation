@@ -259,6 +259,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             console.log('Geometry status:', geometryStatusResponse.geometry_status, 
                        `(${geometryStatusResponse.geometry_progress.fetched}/${geometryStatusResponse.geometry_progress.total})`);
             
+            // Log backend debug info if available
+            if (geometryStatusResponse.geometry_debug) {
+              console.log('  Backend debug:', geometryStatusResponse.geometry_debug);
+            }
+            
             // Debug: check how many routes actually have geometry
             if (geometryStatusResponse.result && geometryStatusResponse.result.routes) {
               let routesWithGeometry = 0;
@@ -279,6 +284,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               
               console.log(`  Routes with geometry: ${routesWithGeometry}/${geometryStatusResponse.result.routes.length}`);
               console.log(`  Points with geometry: ${pointsWithGeometry}/${totalRoutePoints}`);
+              
+              // Distance verification: compare matrix distances vs geometry road distances
+              if (pointsWithGeometry > 0 || geometryStatusResponse.geometry_status === 'complete') {
+                console.group('📏 Distance Verification (Matrix vs Road Geometry)');
+                geometryStatusResponse.result.routes.forEach((route: any) => {
+                  let routeMatrixDist = 0;
+                  let routeGeomDist = 0;
+                  route.route_points?.forEach((pt: any) => {
+                    const matrixDist = pt.distance_from_prev || 0;
+                    routeMatrixDist += matrixDist;
+                    if (pt.geometry && pt.geometry.length > 1) {
+                      // Compute road distance from geometry coordinates using haversine
+                      let segDist = 0;
+                      for (let i = 1; i < pt.geometry.length; i++) {
+                        const [lat1, lng1] = pt.geometry[i - 1];
+                        const [lat2, lng2] = pt.geometry[i];
+                        const R = 6371;
+                        const dLat = (lat2 - lat1) * Math.PI / 180;
+                        const dLng = (lng2 - lng1) * Math.PI / 180;
+                        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+                        segDist += R * 2 * Math.asin(Math.sqrt(a));
+                      }
+                      routeGeomDist += segDist;
+                      if (matrixDist > 0) {
+                        const diff = Math.abs(segDist - matrixDist);
+                        const pctDiff = matrixDist > 0 ? ((diff / matrixDist) * 100).toFixed(1) : 'N/A';
+                        console.log(`  ${route.vehicle_id} | ${pt.employee_id || 'Office'} trip${pt.trip_number}: matrix=${matrixDist.toFixed(2)}km, geometry=${segDist.toFixed(2)}km, diff=${pctDiff}%`);
+                      }
+                    }
+                  });
+                  if (routeGeomDist > 0) {
+                    console.log(`  ${route.vehicle_id} TOTAL: matrix=${routeMatrixDist.toFixed(2)}km, geometry=${routeGeomDist.toFixed(2)}km`);
+                  }
+                });
+                console.groupEnd();
+              }
             }
             
             // Always update result with latest geometry data

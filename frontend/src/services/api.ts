@@ -218,6 +218,7 @@ export async function getGeometryStatus(optimizationId: string): Promise<{
   success: boolean;
   geometry_status: 'pending' | 'fetching' | 'complete' | 'not_needed';
   geometry_progress: { total: number; fetched: number };
+  geometry_debug?: { routes_with_geometry: number; total_routes: number; points_with_geometry: number; total_points: number; ors_api_key_set: boolean };
   result: OptimizeResponse;
 }> {
   const res = await fetch(`${API_BASE}/geometry-status/${optimizationId}`);

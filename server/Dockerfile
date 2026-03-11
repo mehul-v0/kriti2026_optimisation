@@ -30,6 +30,9 @@ RUN mkdir -p output uploads
 # Expose port
 EXPOSE 5000
 
+# Ensure Python output is sent straight to logs (no buffering in Docker)
+ENV PYTHONUNBUFFERED=1
+
 # Single worker (solver is CPU-heavy, multiple workers = memory contention)
 # Timeout 300s = 5 min (large VRP problems can take 2-3 min)
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "300", "--keep-alive", "5", "app:app"]

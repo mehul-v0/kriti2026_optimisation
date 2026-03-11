@@ -279,6 +279,7 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
     api_key = os.environ.get('ORS_API_KEY', '')
     
     if not api_key or api_key == 'your_api_key_here':
+        print(f"    ⚠ ORS_API_KEY not set or placeholder - skipping geometry fetch", flush=True)
         return None
     
     ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car"
@@ -307,6 +308,7 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
             if response.status_code == 200:
                 try:
                     data = response.json()
+                    print(f"    📡 ORS response keys: {list(data.keys())}", flush=True)
                     
                     # With format=geojson, response structure is GeoJSON FeatureCollection
                     if 'features' in data:
@@ -319,9 +321,9 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
                                     # Convert from [lng, lat] to [lat, lng]
                                     result = [[coord[1], coord[0]] for coord in coordinates]
                                     if attempt > 0:
-                                        print(f"    ✓ Fetched geometry with {len(result)} points (retry {attempt})")
+                                        print(f"    ✓ Fetched geometry with {len(result)} points (retry {attempt})", flush=True)
                                     else:
-                                        print(f"    ✓ Fetched geometry with {len(result)} points")
+                                        print(f"    ✓ Fetched geometry with {len(result)} points", flush=True)
                                     return result
                     
                     # Fallback to routes format (ORS returns this even with format=geojson)
@@ -336,12 +338,12 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
                                     import polyline
                                     decoded = polyline.decode(geometry)
                                     if attempt > 0:
-                                        print(f"    ✓ Decoded polyline with {len(decoded)} points (retry {attempt})")
+                                        print(f"    ✓ Decoded polyline with {len(decoded)} points (retry {attempt})", flush=True)
                                     else:
-                                        print(f"    ✓ Decoded polyline with {len(decoded)} points")
+                                        print(f"    ✓ Decoded polyline with {len(decoded)} points", flush=True)
                                     return decoded  # Already in [lat, lng] format
                                 except Exception as e:
-                                    print(f"    ⚠ Polyline decode error: {str(e)}")
+                                    print(f"    ⚠ Polyline decode error: {str(e)}", flush=True)
                                     return None
                             # Check if it's GeoJSON object
                             elif isinstance(geometry, dict) and geometry.get('type') == 'LineString':
@@ -349,70 +351,76 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
                                 if coordinates:
                                     result = [[coord[1], coord[0]] for coord in coordinates]
                                     if attempt > 0:
-                                        print(f"    ✓ Fetched geometry with {len(result)} points (retry {attempt})")
+                                        print(f"    ✓ Fetched geometry with {len(result)} points (retry {attempt})", flush=True)
                                     else:
-                                        print(f"    ✓ Fetched geometry with {len(result)} points")
+                                        print(f"    ✓ Fetched geometry with {len(result)} points", flush=True)
                                     return result
                     
-                    print(f"    ⚠ No geometry in response")
+                    print(f"    ⚠ No geometry in response. Response data: {str(data)[:200]}", flush=True)
                     return None
                     
                 except Exception as e:
-                    print(f"    ⚠ Parse error: {str(e)}")
+                    print(f"    ⚠ Parse error: {str(e)}", flush=True)
                     return None
             
             # Handle HTTP error codes
             elif response.status_code == 404:
                 # 404 Not Found - don't retry, route doesn't exist
-                print(f"    ⚠ HTTP 404 - Route not found")
+                print(f"    ⚠ HTTP 404 - Route not found", flush=True)
                 return None
             
             elif response.status_code == 429:
-                # Rate limit exceeded - don't retry immediately
-                print(f"    ⚠ HTTP 429 - Rate limit exceeded")
-                return None
+                # Rate limit exceeded - retry with longer backoff
+                if attempt < max_retries - 1:
+                    backoff_time = 10 * (attempt + 1)  # 10s, 20s, 30s
+                    print(f"    ⚠ HTTP 429 - Rate limit, retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})", flush=True)
+                    time.sleep(backoff_time)
+                    continue
+                else:
+                    print(f"    ⚠ HTTP 429 - Rate limit exceeded, max retries reached", flush=True)
+                    return None
             
             elif response.status_code >= 500:
                 # Server errors - retry with backoff
                 if attempt < max_retries - 1:
                     backoff_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    print(f"    ⚠ HTTP {response.status_code} - Server error, retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})")
+                    print(f"    ⚠ HTTP {response.status_code} - Server error, retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})", flush=True)
                     time.sleep(backoff_time)
                     continue  # Retry
                 else:
-                    print(f"    ⚠ HTTP {response.status_code} - Max retries reached")
+                    print(f"    ⚠ HTTP {response.status_code} - Max retries reached", flush=True)
                     return None
             
             else:
                 # Other HTTP errors - don't retry
-                print(f"    ⚠ HTTP {response.status_code}")
+                print(f"    ⚠ HTTP {response.status_code} - Response: {response.text[:200]}", flush=True)
                 return None
             
         except requests.exceptions.Timeout:
             # Timeout - retry with backoff
             if attempt < max_retries - 1:
                 backoff_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"    ⚠ Timeout (10s), retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})")
+                print(f"    ⚠ Timeout (10s), retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})", flush=True)
                 time.sleep(backoff_time)
                 continue  # Retry
             else:
-                print(f"    ⚠ Timeout - Max retries reached")
+                print(f"    ⚠ Timeout - Max retries reached", flush=True)
                 return None
         
         except requests.exceptions.ConnectionError as e:
             # Connection errors - retry with backoff
             if attempt < max_retries - 1:
                 backoff_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"    ⚠ Connection error, retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})")
+                print(f"    ⚠ Connection error, retrying in {backoff_time}s (attempt {attempt + 1}/{max_retries})", flush=True)
                 time.sleep(backoff_time)
                 continue  # Retry
             else:
-                print(f"    ⚠ Connection error - Max retries reached: {str(e)}")
+                print(f"    ⚠ Connection error - Max retries reached: {str(e)}", flush=True)
                 return None
         
         except Exception as e:
             # Other errors - don't retry
-            print(f"    ⚠ Request failed: {str(e)}")
+            print(f"    ⚠ Request failed: {str(e)}", flush=True)
             return None
     
     # If we get here, all retries failed
@@ -424,7 +432,19 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
     Background thread function to fetch route geometries after optimization completes.
     Updates _optimization_results[optimization_id] with geometry data as it's fetched.
     """
-    print(f"\n🔄 [Background] Starting geometry fetch for optimization {optimization_id}")
+    print(f"\n🔄 [Background] Starting geometry fetch for optimization {optimization_id}", flush=True)
+    
+    # Diagnostic: check ORS API key availability
+    api_key = os.environ.get('ORS_API_KEY', '')
+    print(f"  [Background] ORS_API_KEY present: {bool(api_key and api_key != 'your_api_key_here')}, length: {len(api_key)}", flush=True)
+    
+    # Diagnostic: test ORS connectivity before starting
+    try:
+        test_resp = requests.get('https://api.openrouteservice.org/health', timeout=5)
+        print(f"  [Background] ORS health check: HTTP {test_resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"  [Background] ⚠ ORS health check failed: {str(e)}", flush=True)
+        print(f"  [Background] ⚠ This may indicate DNS or network issues in this container", flush=True)
     
     try:
         employees = input_data.get('employees', [])
@@ -436,6 +456,8 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
         office_lat = employees[0]['drop_lat'] if employees else 0
         office_lng = employees[0]['drop_lng'] if employees else 0
         
+        print(f"  [Background] Office: ({office_lat}, {office_lng}), Employees: {len(employees)}, Vehicles: {len(vehicles_input)}", flush=True)
+        
         solver_vehicles = solver_output.get('vehicles', [])
         
         # Count total geometry segments needed
@@ -443,6 +465,8 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
         for sv in solver_vehicles:
             for trip in sv.get('trips', []):
                 total_segments += len(trip.get('stops', []))
+        
+        print(f"  [Background] Total geometry segments to fetch: {total_segments}", flush=True)
         
         # Update progress
         with _geometry_fetch_lock:
@@ -454,6 +478,7 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                 }
         
         fetched_count = 0
+        segment_index = 0
         
         # Iterate through all vehicles/trips/stops and fetch geometry
         for sv in solver_vehicles:
@@ -486,10 +511,18 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                     loc = stop.get('location', '')
                     emp_id = _extract_employee_id(loc)
                     
+                    segment_index += 1
+                    
+                    # Rate limit: wait 2s between ORS direction requests to avoid 429
+                    if segment_index > 1:
+                        time.sleep(2)
+                    
                     if 'Pickup' in loc and emp_id:
                         emp = emp_lookup.get(emp_id, {})
                         pickup_lat = emp.get('pickup_lat', 0)
                         pickup_lng = emp.get('pickup_lng', 0)
+                        
+                        print(f"  [{segment_index}/{total_segments}] Fetching geometry: ({prev_lat:.4f},{prev_lng:.4f}) -> ({pickup_lat:.4f},{pickup_lng:.4f}) [{emp_id}]", flush=True)
                         
                         # Fetch geometry
                         geometry = _fetch_route_geometry(prev_lat, prev_lng, pickup_lat, pickup_lng)
@@ -511,13 +544,15 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                                         break
                                 
                                 if not updated:
-                                    print(f"    ⚠️ [Background] Could not find matching pickup point for {emp_id} trip {trip_num}")
+                                    print(f"    ⚠️ [Background] Could not find matching pickup point for {emp_id} trip {trip_num}", flush=True)
                                 
                                 _optimization_results[optimization_id]['geometry_progress']['fetched'] = fetched_count
                         
                         prev_lat, prev_lng = pickup_lat, pickup_lng
                         
                     elif 'Drop' in loc or 'Office' in loc:
+                        print(f"  [{segment_index}/{total_segments}] Fetching geometry: ({prev_lat:.4f},{prev_lng:.4f}) -> ({office_lat:.4f},{office_lng:.4f}) [Office]", flush=True)
+                        
                         # Fetch geometry to office
                         geometry = _fetch_route_geometry(prev_lat, prev_lng, office_lat, office_lng)
                         
@@ -537,14 +572,14 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                                         break
                                 
                                 if not updated:
-                                    print(f"    ⚠️ [Background] Could not find matching office point for trip {trip_num}")
+                                    print(f"    ⚠️ [Background] Could not find matching office point for trip {trip_num}", flush=True)
                                 
                                 _optimization_results[optimization_id]['geometry_progress']['fetched'] = fetched_count
                         
                         prev_lat, prev_lng = office_lat, office_lng
     
     except Exception as e:
-        print(f"❌ [Background] Error in geometry fetch: {str(e)}")
+        print(f"❌ [Background] Error in geometry fetch: {str(e)}", flush=True)
         import traceback
         traceback.print_exc()
     
@@ -555,7 +590,7 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                 _optimization_results[optimization_id]['geometry_status'] = 'complete'
                 fetched = _optimization_results[optimization_id]['geometry_progress'].get('fetched', 0)
                 total = _optimization_results[optimization_id]['geometry_progress'].get('total', 0)
-                print(f"✅ [Background] Geometry fetch complete for optimization {optimization_id} ({fetched}/{total} segments)")
+                print(f"✅ [Background] Geometry fetch complete for optimization {optimization_id} ({fetched}/{total} segments)", flush=True)
 
 
 def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
@@ -1265,13 +1300,20 @@ def get_geometry_status(optimization_id):
                 routes_with_geom += 1
         
         if status == 'complete':
-            print(f"📊 Returning COMPLETE status for {optimization_id} ({progress['fetched']}/{progress['total']})")
-            print(f"   Response has {routes_with_geom}/{len(routes)} routes with geometry, {points_with_geom}/{total_points} points with geometry")
+            print(f"📊 Returning COMPLETE status for {optimization_id} ({progress['fetched']}/{progress['total']})", flush=True)
+            print(f"   Response has {routes_with_geom}/{len(routes)} routes with geometry, {points_with_geom}/{total_points} points with geometry", flush=True)
         
         return jsonify({
             'success': True,
             'geometry_status': status,
             'geometry_progress': progress,
+            'geometry_debug': {
+                'routes_with_geometry': routes_with_geom,
+                'total_routes': len(routes),
+                'points_with_geometry': points_with_geom,
+                'total_points': total_points,
+                'ors_api_key_set': bool(os.environ.get('ORS_API_KEY', '')),
+            },
             'result': opt_data['response'],  # Return full result with updated geometry
         })
 
