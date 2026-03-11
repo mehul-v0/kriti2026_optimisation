@@ -268,13 +268,13 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
         max_retries: Maximum number of retry attempts for failed requests (default: 3)
         
     Returns:
-        List of [lat, lng] coordinates along the route, or None if API call fails
+        List of [lat, lng] coordinates along the route, [] for same-point, or None if API call fails
     """
     # Skip if start and end are the same point (e.g., office to office)
     # Use small tolerance for floating point comparison (about 11 meters)
     distance = ((end_lat - start_lat) ** 2 + (end_lng - start_lng) ** 2) ** 0.5
     if distance < 0.0001:  # ~11 meters tolerance
-        return None
+        return []  # Empty list = same point, no intermediate coords needed
     
     api_key = os.environ.get('ORS_API_KEY', '')
     
@@ -293,7 +293,8 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
                     [start_lng, start_lat],
                     [end_lng, end_lat]
                 ],
-                "format": "geojson"  # Request GeoJSON format for decoded coordinates
+                "format": "geojson",  # Request GeoJSON format for decoded coordinates
+                "radiuses": [-1, -1],  # Unlimited snapping radius — fixes 404 on off-road coords
             }
             
             headers = {
@@ -365,8 +366,14 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
             
             # Handle HTTP error codes
             elif response.status_code == 404:
-                # 404 Not Found - don't retry, route doesn't exist
-                print(f"    ⚠ HTTP 404 - Route not found", flush=True)
+                # 404 Not Found — ORS can't snap to road or no drivable route
+                try:
+                    err_body = response.json()
+                    err_msg = err_body.get('error', {}).get('message', response.text[:200])
+                except Exception:
+                    err_msg = response.text[:200]
+                print(f"    ⚠ HTTP 404 - Route not found: {err_msg}", flush=True)
+                print(f"      Coords: [{start_lng},{start_lat}] -> [{end_lng},{end_lat}]", flush=True)
                 return None
             
             elif response.status_code == 429:
@@ -427,6 +434,32 @@ def _fetch_route_geometry(start_lat, start_lng, end_lat, end_lng, max_retries=3)
     return None
 
 
+def _fetch_osrm_fallback(start_lat, start_lng, end_lat, end_lng):
+    """
+    Fallback: fetch route geometry from OSRM public demo server.
+    Free, no API key, but rate-limited. Only used when ORS fails.
+    Returns list of [lat, lng] or None.
+    """
+    try:
+        url = (
+            f"https://router.project-osrm.org/route/v1/driving/"
+            f"{start_lng},{start_lat};{end_lng},{end_lat}"
+            f"?overview=full&geometries=geojson"
+        )
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('code') == 'Ok':
+                coords = data['routes'][0]['geometry']['coordinates']
+                result = [[c[1], c[0]] for c in coords]  # [lng,lat] -> [lat,lng]
+                print(f"    ✓ OSRM fallback: {len(result)} points", flush=True)
+                return result
+        print(f"    ⚠ OSRM fallback failed: HTTP {resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"    ⚠ OSRM fallback error: {str(e)}", flush=True)
+    return None
+
+
 def _fetch_geometries_background(optimization_id, solver_output, input_data):
     """
     Background thread function to fetch route geometries after optimization completes.
@@ -438,12 +471,16 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
     api_key = os.environ.get('ORS_API_KEY', '')
     print(f"  [Background] ORS_API_KEY present: {bool(api_key and api_key != 'your_api_key_here')}, length: {len(api_key)}", flush=True)
     
-    # Diagnostic: test ORS connectivity before starting
+    # Diagnostic: test ORS connectivity with a real API call
     try:
-        test_resp = requests.get('https://api.openrouteservice.org/health', timeout=5)
-        print(f"  [Background] ORS health check: HTTP {test_resp.status_code}", flush=True)
+        test_resp = requests.get(
+            'https://api.openrouteservice.org/v2/health',
+            headers={'Authorization': api_key},
+            timeout=5
+        )
+        print(f"  [Background] ORS connectivity check: HTTP {test_resp.status_code}", flush=True)
     except Exception as e:
-        print(f"  [Background] ⚠ ORS health check failed: {str(e)}", flush=True)
+        print(f"  [Background] ⚠ ORS connectivity check failed: {str(e)}", flush=True)
         print(f"  [Background] ⚠ This may indicate DNS or network issues in this container", flush=True)
     
     try:
@@ -460,11 +497,17 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
         
         solver_vehicles = solver_output.get('vehicles', [])
         
-        # Count total geometry segments needed
+        # Count total geometry segments needed (exclude start-of-trip stops — no geometry needed)
         total_segments = 0
         for sv in solver_vehicles:
             for trip in sv.get('trips', []):
-                total_segments += len(trip.get('stops', []))
+                for s_idx, stop in enumerate(trip.get('stops', [])):
+                    loc = stop.get('location', '')
+                    emp_id = _extract_employee_id(loc)
+                    # Skip start-of-trip stops (depot, office departure) — same logic as fetch loop
+                    if 'Depot' in loc or (s_idx == 0 and float(stop.get('distance_from_prev', 0)) == 0 and not ('Pickup' in loc and emp_id)):
+                        continue
+                    total_segments += 1
         
         print(f"  [Background] Total geometry segments to fetch: {total_segments}", flush=True)
         
@@ -511,6 +554,11 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                     loc = stop.get('location', '')
                     emp_id = _extract_employee_id(loc)
                     
+                    # Skip depot/start stops — no geometry needed (distance=0)
+                    if 'Depot' in loc or (stop_idx == 0 and float(stop.get('distance_from_prev', 0)) == 0 and not ('Pickup' in loc and emp_id)):
+                        print(f"  [skip] Start stop for {vid} trip {trip_num}: {loc}", flush=True)
+                        continue
+                    
                     segment_index += 1
                     
                     # Rate limit: wait 2s between ORS direction requests to avoid 429
@@ -524,8 +572,13 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                         
                         print(f"  [{segment_index}/{total_segments}] Fetching geometry: ({prev_lat:.4f},{prev_lng:.4f}) -> ({pickup_lat:.4f},{pickup_lng:.4f}) [{emp_id}]", flush=True)
                         
-                        # Fetch geometry
-                        geometry = _fetch_route_geometry(prev_lat, prev_lng, pickup_lat, pickup_lng)
+                        # Fetch geometry (use more retries in background for resilience)
+                        geometry = _fetch_route_geometry(prev_lat, prev_lng, pickup_lat, pickup_lng, max_retries=5)
+                        
+                        # Fallback to OSRM if ORS failed
+                        if geometry is None:
+                            print(f"    🔄 Trying OSRM fallback for [{emp_id}]...", flush=True)
+                            geometry = _fetch_osrm_fallback(prev_lat, prev_lng, pickup_lat, pickup_lng)
                         
                         # Update the stored result
                         with _geometry_fetch_lock:
@@ -539,7 +592,7 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                                         rp['trip_number'] == trip_num):
                                         rp['geometry'] = geometry  # Update even if None
                                         updated = True
-                                        if geometry:
+                                        if geometry is not None:  # [] (same-point) counts as success
                                             fetched_count += 1
                                         break
                                 
@@ -553,8 +606,13 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                     elif 'Drop' in loc or 'Office' in loc:
                         print(f"  [{segment_index}/{total_segments}] Fetching geometry: ({prev_lat:.4f},{prev_lng:.4f}) -> ({office_lat:.4f},{office_lng:.4f}) [Office]", flush=True)
                         
-                        # Fetch geometry to office
-                        geometry = _fetch_route_geometry(prev_lat, prev_lng, office_lat, office_lng)
+                        # Fetch geometry to office (use more retries in background for resilience)
+                        geometry = _fetch_route_geometry(prev_lat, prev_lng, office_lat, office_lng, max_retries=5)
+                        
+                        # Fallback to OSRM if ORS failed
+                        if geometry is None:
+                            print(f"    🔄 Trying OSRM fallback for [Office]...", flush=True)
+                            geometry = _fetch_osrm_fallback(prev_lat, prev_lng, office_lat, office_lng)
                         
                         # Update the stored result
                         with _geometry_fetch_lock:
@@ -567,7 +625,7 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                                         rp['trip_number'] == trip_num):
                                         rp['geometry'] = geometry  # Update even if None
                                         updated = True
-                                        if geometry:
+                                        if geometry is not None:  # [] (same-point) counts as success
                                             fetched_count += 1
                                         break
                                 
@@ -683,9 +741,14 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
             else:
                 prev_lat, prev_lng = office_lat, office_lng
 
-            for stop in stops:
+            for stop_idx, stop in enumerate(stops):
                 loc = stop.get('location', '')
                 emp_id = _extract_employee_id(loc)
+
+                # Skip start-of-trip stops (depot or office departure point)
+                # These have distance_from_prev=0 and are just the departure location
+                if stop_idx == 0 and float(stop.get('distance_from_prev', 0)) == 0 and not ('Pickup' in loc and emp_id):
+                    continue
 
                 if 'Pickup' in loc and emp_id:
                     emp = emp_lookup.get(emp_id, {})
@@ -696,7 +759,7 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
                     geometry = None
                     if uses_actual_maps and prev_lat is not None and prev_lng is not None:
                         geometry = _fetch_route_geometry(prev_lat, prev_lng, pickup_lat, pickup_lng)
-                        if geometry:
+                        if geometry is not None:
                             geometry_fetches += 1
                     
                     route_points.append({
@@ -732,7 +795,7 @@ def _transform_solver_output(solver_output, input_data, fetch_geometry=False):
                     geometry = None
                     if uses_actual_maps and prev_lat is not None and prev_lng is not None:
                         geometry = _fetch_route_geometry(prev_lat, prev_lng, office_lat, office_lng)
-                        if geometry:
+                        if geometry is not None:
                             geometry_fetches += 1
                     
                     route_points.append({
@@ -1288,20 +1351,28 @@ def get_geometry_status(optimization_id):
         routes_with_geom = 0
         total_points = 0
         points_with_geom = 0
+        points_same_point = 0  # [] = same-point, no geometry needed
+        points_missing = 0     # None = geometry fetch failed
         
         for route in routes:
             has_geom = False
             for pt in route.get('route_points', []):
                 total_points += 1
-                if pt.get('geometry') and len(pt.get('geometry', [])) > 0:
+                geom = pt.get('geometry')
+                if geom is not None and len(geom) > 0:
                     points_with_geom += 1
                     has_geom = True
+                elif geom is not None and len(geom) == 0:
+                    points_same_point += 1
+                    has_geom = True  # Same-point is successfully resolved
+                else:
+                    points_missing += 1
             if has_geom:
                 routes_with_geom += 1
         
         if status == 'complete':
             print(f"📊 Returning COMPLETE status for {optimization_id} ({progress['fetched']}/{progress['total']})", flush=True)
-            print(f"   Response has {routes_with_geom}/{len(routes)} routes with geometry, {points_with_geom}/{total_points} points with geometry", flush=True)
+            print(f"   Response has {routes_with_geom}/{len(routes)} routes with geometry, {points_with_geom}/{total_points} points with road geometry, {points_same_point} same-point, {points_missing} missing", flush=True)
         
         return jsonify({
             'success': True,
