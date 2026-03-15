@@ -41,6 +41,7 @@ public:
         int n_emp = emps.size();
         int n_veh = virt_vehs.size();
         int trips_per_vehicle = TRIPS_PER_VEHICLE;
+        if (trips_per_vehicle <= 0) trips_per_vehicle = 1;
         
         routes.clear();
         routes.resize(n_veh);
@@ -158,7 +159,7 @@ public:
                         // Check if there's at least one earlier trip used on this vehicle
                         bool has_earlier = false;
                         for (int t = 0; t < trip_idx; t++) {
-                            if (!routes[phys_base + t].empty()) { has_earlier = true; break; }
+                            if (phys_base + t < n_veh && !routes[phys_base + t].empty()) { has_earlier = true; break; }
                         }
                         
                         // Check no LATER trips are used (don't insert before used trips)

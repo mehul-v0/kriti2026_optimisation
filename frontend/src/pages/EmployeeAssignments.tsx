@@ -125,8 +125,8 @@ export default function EmployeeAssignments() {
         if (assignment.pickupTime && assignment.dropoffTime) {
           const pickup = assignment.pickupTime.split(':').map(Number);
           const dropoff = assignment.dropoffTime.split(':').map(Number);
-          const pickupMins = pickup[0] * 60 + pickup[1];
-          const dropoffMins = dropoff[0] * 60 + dropoff[1];
+          const pickupMins = (pickup[0] || 0) * 60 + (pickup[1] || 0);
+          const dropoffMins = (dropoff[0] || 0) * 60 + (dropoff[1] || 0);
           totalActualTime += Math.max(0, dropoffMins - pickupMins);
         } else {
           totalActualTime += directTime * 1.3; // Estimate 30% more
@@ -141,7 +141,7 @@ export default function EmployeeAssignments() {
       if (assignment.pickupTime && assignment.dropoffTime) {
         const pickup = assignment.pickupTime.split(':').map(Number);
         const dropoff = assignment.dropoffTime.split(':').map(Number);
-        const duration = (dropoff[0] * 60 + dropoff[1]) - (pickup[0] * 60 + pickup[1]);
+        const duration = ((dropoff[0] || 0) * 60 + (dropoff[1] || 0)) - ((pickup[0] || 0) * 60 + (pickup[1] || 0));
         if (duration > 0) commuteDurations.push(duration);
       }
     });

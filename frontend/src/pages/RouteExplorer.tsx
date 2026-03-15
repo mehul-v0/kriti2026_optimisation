@@ -99,7 +99,10 @@ const getMidpointAndAngle = (pos1: [number, number], pos2: [number, number]) => 
 const parseTimeToMinutes = (t: string): number => {
   if (!t || t === '--') return 0;
   const parts = t.split(':');
-  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  if (parts.length < 2) return 0;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
 };
 
 /* ── format minutes → "HH:MM" ── */

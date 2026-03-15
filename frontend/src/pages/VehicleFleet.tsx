@@ -90,7 +90,7 @@ export default function VehicleFleet() {
     const trips = vehicleTrips.get(vehicleId) || [];
     if (!vehicle) return { avgUsed: 0, totalCapacity: 0 };
     
-    const totalCapacity = vehicle.capacity || 0;
+    const totalCapacity = vehicle.capacity || 1;
     const avgUsed = trips.length > 0 
       ? trips.reduce((sum, trip) => sum + trip.employees.length, 0) / trips.length
       : 0;

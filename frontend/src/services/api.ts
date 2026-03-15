@@ -148,7 +148,7 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
     throw new Error(err.error || 'Upload failed');
   }
 
-  return res.json();
+  return res.json().catch(() => { throw new Error('Invalid response from server'); });
 }
 
 /**
@@ -197,7 +197,7 @@ export async function runOptimization(): Promise<OptimizeResponse> {
     throw new Error(err.error || 'Optimization failed');
   }
 
-  return res.json();
+  return res.json().catch(() => { throw new Error('Invalid response from server'); });
 }
 
 /**
@@ -225,5 +225,5 @@ export async function getGeometryStatus(optimizationId: string): Promise<{
   if (!res.ok) {
     throw new Error('Failed to get geometry status');
   }
-  return res.json();
+  return res.json().catch(() => { throw new Error('Invalid geometry status response'); });
 }

@@ -68,15 +68,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const savedMetrics = localStorage.getItem('velora_lifetime_metrics');
     const savedResult = localStorage.getItem('velora_current_result');
 
-    if (savedHistory) {
-      setSessionHistory(JSON.parse(savedHistory));
-    }
-    if (savedMetrics) {
-      setLifetimeMetrics(JSON.parse(savedMetrics));
-    }
-    if (savedResult) {
-      setCurrentResult(JSON.parse(savedResult));
-    }
+    try {
+      if (savedHistory) setSessionHistory(JSON.parse(savedHistory));
+    } catch (e) { console.warn('Failed to parse session history from localStorage', e); }
+    try {
+      if (savedMetrics) setLifetimeMetrics(JSON.parse(savedMetrics));
+    } catch (e) { console.warn('Failed to parse lifetime metrics from localStorage', e); }
+    try {
+      if (savedResult) setCurrentResult(JSON.parse(savedResult));
+    } catch (e) { console.warn('Failed to parse current result from localStorage', e); }
   }, []);
 
   // Save to localStorage whenever data changes
@@ -357,7 +357,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error('Optimization failed:', error);
       clearTimers();
       // Fallback to mock result
-      const data = JSON.parse(sessionStorage.getItem('uploadedData') || '{}');
+      let data: any = {};
+      try { data = JSON.parse(sessionStorage.getItem('uploadedData') || '{}'); }
+      catch (e) { console.warn('Failed to parse uploadedData from sessionStorage', e); }
       const employeeList = data.employees || [];
       const vehicleList = data.vehicles || [];
       const baselineCost = employeeList.reduce((sum: number, e: any) => sum + (e.baselineCost || 150), 0);

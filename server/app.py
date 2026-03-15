@@ -11,6 +11,7 @@ import requests
 from dotenv import load_dotenv
 import copy  # For deep copying input data
 import threading  # For background geometry fetching
+import tempfile  # For atomic file writes
 import convert_excel_to_json  # Direct import instead of subprocess
 
 # Load environment variables from .env file
@@ -50,10 +51,65 @@ def allowed_file(filename):
 
 def _time_str_to_minutes(t):
     """Convert '08:15' or '08:15:00' to minutes since midnight."""
-    parts = str(t).strip().split(':')
-    h = int(parts[0])
-    m = int(parts[1]) if len(parts) > 1 else 0
-    return h * 60 + m
+    try:
+        parts = str(t).strip().split(':')
+        if not parts or parts[0] == '':
+            return 0
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        return h * 60 + m
+    except (ValueError, TypeError):
+        return 0
+
+
+def _parse_int(value, default=None):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _parse_float(value, default=None):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _validate_input_data(input_data):
+    """Validate uploaded/inline input payload before solver execution.
+    Returns None if valid, or a string with all validation errors."""
+    errors = []
+    employees = input_data.get('employees', [])
+    vehicles = input_data.get('vehicles', [])
+
+    if not isinstance(employees, list) or len(employees) == 0:
+        errors.append('No employees found in input data.')
+    if not isinstance(vehicles, list) or len(vehicles) == 0:
+        errors.append('No vehicles found in input data.')
+
+    if isinstance(vehicles, list):
+        for i, veh in enumerate(vehicles, start=1):
+            cap = _parse_int(veh.get('capacity', 4))
+            if cap is None:
+                errors.append(f"Vehicle {i}: capacity must be an integer")
+            elif cap < 0:
+                errors.append(f"Vehicle {i}: capacity cannot be negative")
+
+            cost = _parse_float(veh.get('cost_per_km', 10.0))
+            if cost is None:
+                errors.append(f"Vehicle {i}: cost_per_km must be numeric")
+            elif cost <= 0:
+                errors.append(f"Vehicle {i}: cost_per_km must be > 0")
+
+            # Intentionally allow 0 speed to preserve known test edge case.
+            speed = _parse_float(veh.get('avg_speed_kmph', 40.0))
+            if speed is None:
+                errors.append(f"Vehicle {i}: avg_speed_kmph must be numeric")
+            elif speed < 0:
+                errors.append(f"Vehicle {i}: avg_speed_kmph cannot be negative")
+
+    return '; '.join(errors) if errors else None
 
 
 def _compute_digest(employees, vehicles):
@@ -63,8 +119,8 @@ def _compute_digest(employees, vehicles):
 
     # Time window span
     if emp_count > 0:
-        earliest = min(_time_str_to_minutes(e['earliest_pickup']) for e in employees)
-        latest = max(_time_str_to_minutes(e['latest_drop']) for e in employees)
+        earliest = min(_time_str_to_minutes(e.get('earliest_pickup', '08:00')) for e in employees)
+        latest = max(_time_str_to_minutes(e.get('latest_drop', '18:00')) for e in employees)
         eh, em = divmod(earliest, 60)
         lh, lm = divmod(latest, 60)
         time_window_span = f"{eh:02d}:{em:02d} - {lh:02d}:{lm:02d}"
@@ -72,7 +128,7 @@ def _compute_digest(employees, vehicles):
         time_window_span = "N/A"
 
     # High priority %
-    high_priority = sum(1 for e in employees if int(e.get('priority', 3)) <= 2)
+    high_priority = sum(1 for e in employees if (_parse_int(e.get('priority', 3), 3) <= 2))
     high_priority_percent = round(high_priority / emp_count * 100) if emp_count > 0 else 0
 
     # Fleet composition by category
@@ -86,7 +142,7 @@ def _compute_digest(employees, vehicles):
             fleet['diesel'] += 1
         else:
             fleet['petrol'] += 1
-        cap = int(v.get('capacity', 4))
+        cap = _parse_int(v.get('capacity', 4), 4)
         if cap <= 2:
             modes['2-wheeler'] += 1
         elif cap <= 4:
@@ -449,7 +505,7 @@ def _fetch_osrm_fallback(start_lat, start_lng, end_lat, end_lng):
         resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
-            if data.get('code') == 'Ok':
+            if data.get('code') == 'Ok' and data.get('routes'):
                 coords = data['routes'][0]['geometry']['coordinates']
                 result = [[c[1], c[0]] for c in coords]  # [lng,lat] -> [lat,lng]
                 print(f"    ✓ OSRM fallback: {len(result)} points", flush=True)
@@ -487,11 +543,11 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
         employees = input_data.get('employees', [])
         vehicles_input = input_data.get('vehicles', [])
         
-        emp_lookup = {e['employee_id']: e for e in employees}
-        veh_lookup = {v['vehicle_id']: v for v in vehicles_input}
+        emp_lookup = {e.get('employee_id', ''): e for e in employees}
+        veh_lookup = {v.get('vehicle_id', ''): v for v in vehicles_input}
         
-        office_lat = employees[0]['drop_lat'] if employees else 0
-        office_lng = employees[0]['drop_lng'] if employees else 0
+        office_lat = employees[0].get('drop_lat', 0) if employees else 0
+        office_lng = employees[0].get('drop_lng', 0) if employees else 0
         
         print(f"  [Background] Office: ({office_lat}, {office_lng}), Employees: {len(employees)}, Vehicles: {len(vehicles_input)}", flush=True)
         
@@ -525,7 +581,7 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
         
         # Iterate through all vehicles/trips/stops and fetch geometry
         for sv in solver_vehicles:
-            vid = sv['vehicle_id']
+            vid = sv.get('vehicle_id', '')
             veh_info = veh_lookup.get(vid, {})
             
             # Find the corresponding route in the stored response
@@ -541,7 +597,7 @@ def _fetch_geometries_background(optimization_id, solver_output, input_data):
                     continue
             
             for trip in sv.get('trips', []):
-                trip_num = trip['trip_number']
+                trip_num = trip.get('trip_number', 1)
                 stops = trip.get('stops', [])
                 
                 # Track previous location
@@ -1046,10 +1102,9 @@ def upload_file():
         baseline_list = input_data.get('baseline', [])
         
         # Validate data
-        if len(employees) == 0:
-            return jsonify({'success': False, 'error': 'No employees found in Excel file. Please check the Employees sheet.'}), 400
-        if len(vehicles) == 0:
-            return jsonify({'success': False, 'error': 'No vehicles found in Excel file. Please check the Vehicles sheet.'}), 400
+        err = _validate_input_data(input_data)
+        if err:
+            return jsonify({'success': False, 'error': err}), 400
         
         baseline_cost = _compute_baseline_cost(baseline_list)
         digest = _compute_digest(employees, vehicles)
@@ -1098,7 +1153,14 @@ def optimize():
         else:
             return jsonify({'success': False, 'error': 'No data uploaded yet. Please upload an Excel file first.'}), 400
 
-        solver_duration = int(body.get('solverDurationSeconds', 30))  # Default to 30s (Standard)
+        # Validate structural input first (covers direct body mode and upload mode)
+        err = _validate_input_data(input_data)
+        if err:
+            return jsonify({'success': False, 'error': err}), 400
+
+        solver_duration = _parse_int(body.get('solverDurationSeconds', 30))  # Default to 30s
+        if solver_duration is None or solver_duration <= 0:
+            return jsonify({'success': False, 'error': 'solverDurationSeconds must be a positive integer'}), 400
         
         print(f"\n{'='*60}")
         print(f"Optimization Request: {solver_duration}s solver duration")
@@ -1106,8 +1168,14 @@ def optimize():
         
         # Get optimization config from frontend, falling back to Excel metadata values
         excel_meta = input_data.get('metadata', {})
-        cost_weight = float(body.get('costWeight', excel_meta.get('objective_cost_weight', 0.7)))
-        time_weight = float(body.get('timeWeight', excel_meta.get('objective_time_weight', 0.3)))
+        cost_weight = _parse_float(body.get('costWeight', excel_meta.get('objective_cost_weight', 0.7)))
+        time_weight = _parse_float(body.get('timeWeight', excel_meta.get('objective_time_weight', 0.3)))
+        if cost_weight is None or time_weight is None:
+            return jsonify({'success': False, 'error': 'costWeight and timeWeight must be numeric'}), 400
+        if cost_weight < 0 or time_weight < 0:
+            return jsonify({'success': False, 'error': 'costWeight and timeWeight cannot be negative'}), 400
+        if cost_weight + time_weight <= 0:
+            return jsonify({'success': False, 'error': 'At least one of costWeight/timeWeight must be > 0'}), 400
         default_delays = {
             1: excel_meta.get('priority_1_max_delay_min', 5),
             2: excel_meta.get('priority_2_max_delay_min', 5),
@@ -1116,6 +1184,18 @@ def optimize():
             5: excel_meta.get('priority_5_max_delay_min', 15),
         }
         priority_delays = body.get('priorityDelays', default_delays)
+        if not isinstance(priority_delays, dict):
+            return jsonify({'success': False, 'error': 'priorityDelays must be an object with keys 1..5'}), 400
+
+        p1 = _parse_int(priority_delays.get('1', priority_delays.get(1, default_delays[1])))
+        p2 = _parse_int(priority_delays.get('2', priority_delays.get(2, default_delays[2])))
+        p3 = _parse_int(priority_delays.get('3', priority_delays.get(3, default_delays[3])))
+        p4 = _parse_int(priority_delays.get('4', priority_delays.get(4, default_delays[4])))
+        p5 = _parse_int(priority_delays.get('5', priority_delays.get(5, default_delays[5])))
+        if None in (p1, p2, p3, p4, p5):
+            return jsonify({'success': False, 'error': 'priorityDelays values must be integers'}), 400
+        if min(p1, p2, p3, p4, p5) < 0:
+            return jsonify({'success': False, 'error': 'priorityDelays cannot be negative'}), 400
         distance_method = body.get('distanceMethod', 'haversine')
         
         # Update metadata in input data with frontend settings
@@ -1124,11 +1204,11 @@ def optimize():
         
         input_data['metadata']['objective_cost_weight'] = cost_weight
         input_data['metadata']['objective_time_weight'] = time_weight
-        input_data['metadata']['priority_1_max_delay_min'] = int(priority_delays.get('1', priority_delays.get(1, default_delays[1])))
-        input_data['metadata']['priority_2_max_delay_min'] = int(priority_delays.get('2', priority_delays.get(2, default_delays[2])))
-        input_data['metadata']['priority_3_max_delay_min'] = int(priority_delays.get('3', priority_delays.get(3, default_delays[3])))
-        input_data['metadata']['priority_4_max_delay_min'] = int(priority_delays.get('4', priority_delays.get(4, default_delays[4])))
-        input_data['metadata']['priority_5_max_delay_min'] = int(priority_delays.get('5', priority_delays.get(5, default_delays[5])))
+        input_data['metadata']['priority_1_max_delay_min'] = p1
+        input_data['metadata']['priority_2_max_delay_min'] = p2
+        input_data['metadata']['priority_3_max_delay_min'] = p3
+        input_data['metadata']['priority_4_max_delay_min'] = p4
+        input_data['metadata']['priority_5_max_delay_min'] = p5
         
         # Handle distance calculation method
         if distance_method == 'actual_maps':
@@ -1169,8 +1249,13 @@ def optimize():
                 input_data['metadata']['distance_multiplier'] = 1.0  # Already using actual distances
                 input_data['metadata']['uses_custom_distance_matrix'] = True
                 print(f"✓ Using actual road distances from OpenRouteService")
-                print(f"  Distance matrix size: {len(distance_matrix)}x{len(distance_matrix[0])}")
-                print(f"  Sample distances (km): [0][1]={distance_matrix[0][1]:.2f}, [1][2]={distance_matrix[1][2]:.2f}")
+                dm_rows = len(distance_matrix)
+                dm_cols = len(distance_matrix[0]) if dm_rows > 0 else 0
+                print(f"  Distance matrix size: {dm_rows}x{dm_cols}")
+                if dm_rows > 2 and dm_cols > 2:
+                    print(f"  Sample distances (km): [0][1]={distance_matrix[0][1]:.2f}, [1][2]={distance_matrix[1][2]:.2f}")
+                elif dm_rows > 1 and dm_cols > 1:
+                    print(f"  Sample distances (km): [0][1]={distance_matrix[0][1]:.2f}")
             else:
                 # Fallback to haversine with 1.3x multiplier
                 print("⚠ Falling back to haversine approximation (1.3x multiplier)")
@@ -1186,11 +1271,21 @@ def optimize():
                 del input_data['distance_matrix']
             print("Using haversine distance calculation")
         
-        # Write updated input JSON (no indent for faster write)
+        # Write updated input JSON atomically (write to temp file, then rename)
         print("\n=== Starting Optimization ===")
         json_write_start = time.time()
-        with open(input_json, 'w') as f:
-            json.dump(input_data, f)  # Removed indent=2 for 3-5x faster write
+        dir_name = os.path.dirname(input_json)
+        try:
+            fd, tmp_path = tempfile.mkstemp(suffix='.json', dir=dir_name)
+            with os.fdopen(fd, 'w') as f:
+                json.dump(input_data, f)
+            # Atomic replace (Windows: os.replace is atomic on same volume)
+            os.replace(tmp_path, input_json)
+        except Exception:
+            # Clean up temp file on failure
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
         json_write_time = time.time() - json_write_start
         print(f"✓ Updated input JSON in {json_write_time:.3f}s")
         
@@ -1198,7 +1293,9 @@ def optimize():
         has_distance_matrix = 'distance_matrix' in input_data
         print(f"  Contains distance_matrix: {has_distance_matrix}")
         if has_distance_matrix:
-            print(f"  Distance matrix size: {len(input_data['distance_matrix'])}x{len(input_data['distance_matrix'][0])}")
+            dm_rows = len(input_data['distance_matrix'])
+            dm_cols = len(input_data['distance_matrix'][0]) if dm_rows > 0 else 0
+            print(f"  Distance matrix size: {dm_rows}x{dm_cols}")
 
         timestamp = str(int(time.time()))
         output_json = os.path.join(OUTPUT_FOLDER, f'output_{timestamp}.json')

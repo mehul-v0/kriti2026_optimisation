@@ -114,6 +114,7 @@ public:
     }
     
     bool are_compatible(int i, int j) const {
+        if (i < 0 || i >= (int)incompatible_pairs.size()) return true;
         for (int k : incompatible_pairs[i]) if (k == j) return false;
         return true;
     }

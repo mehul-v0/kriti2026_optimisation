@@ -83,17 +83,36 @@ public:
         
         // Vehicles
         for (auto& v : data["vehicles"]) {
+            int cap = v.value("capacity", 4);
+            std::string vid = v.value("vehicle_id", "VEH_" + std::to_string(phys_vehs.size()));
+            if (cap < 0) {
+                std::cerr << "Error: Vehicle " << vid << " has invalid capacity < 0" << std::endl;
+                return false;
+            }
+            if (cap == 0) {
+                std::cerr << "Skipping vehicle " << vid << " (capacity is 0)" << std::endl;
+                continue;
+            }
             Vehicle veh;
             veh.id = phys_vehs.size();
             veh.physical_id = veh.id;
             veh.node_idx = node_idx++;
             veh.start_node = veh.node_idx;
-            veh.vehicle_id = v.value("vehicle_id", "VEH_" + std::to_string(veh.id));
+            veh.vehicle_id = vid;
             veh.current_lat = v.value("current_lat", 0.0);
             veh.current_lng = v.value("current_lng", 0.0);
-            veh.capacity = v.value("capacity", 4);
+            veh.capacity = cap;
             veh.cost_per_km = v.value("cost_per_km", 10.0);
             veh.speed_kmph = v.value("avg_speed_kmph", 40.0);
+            if (veh.cost_per_km <= 0.0) {
+                std::cerr << "Error: Vehicle " << veh.vehicle_id << " has invalid cost_per_km <= 0" << std::endl;
+                return false;
+            }
+            // Intentionally allow speed == 0 for edge-case testing.
+            if (veh.speed_kmph < 0.0) {
+                std::cerr << "Error: Vehicle " << veh.vehicle_id << " has invalid avg_speed_kmph < 0" << std::endl;
+                return false;
+            }
             veh.available_from = time_to_min(v.value("available_from", "08:00"));
             veh.category = get_category_code(v.value("category", "normal"));
             veh.vehicle_mode = infer_vehicle_mode(veh.capacity);
@@ -117,6 +136,10 @@ public:
         // Expand virtual vehicles - dynamic trips per vehicle
         // Each vehicle can do at most ceil(N_emps / N_vehs) + buffer trips
         // This gives ample room without exploding the search space
+        if (phys_vehs.empty()) {
+            std::cerr << "Error: No vehicles found in input" << std::endl;
+            return false;
+        }
         int min_trips = ((int)emps.size() + (int)phys_vehs.size() - 1) / (int)phys_vehs.size();
         TRIPS_PER_VEHICLE = std::max(g_config.min_trips_per_vehicle, min_trips + g_config.trips_buffer);
         // The actual start times will be adjusted in output based on when previous trip ends
@@ -144,14 +167,26 @@ public:
             dist.resize(n, std::vector<double>(n, 0.0));
             
             if (dm.is_array() && dm.size() == (size_t)n) {
+                bool valid_matrix = true;
                 for (int i = 0; i < n; i++) {
-                    if (dm[i].is_array() && dm[i].size() == (size_t)n) {
+                    if (!dm[i].is_array() || dm[i].size() != (size_t)n) {
+                        std::cerr << "Warning: distance_matrix row " << i << " has wrong size (" 
+                                  << dm[i].size() << " vs expected " << n << ")" << std::endl;
+                        valid_matrix = false;
+                        break;
+                    }
+                }
+                if (valid_matrix) {
+                    for (int i = 0; i < n; i++) {
                         for (int j = 0; j < n; j++) {
                             dist[i][j] = dm[i][j].get<double>();
                         }
                     }
+                    std::cout << "✓ Loaded " << n << "x" << n << " custom distance matrix" << std::endl;
+                } else {
+                    std::cerr << "Warning: Invalid distance_matrix row sizes. Falling back to haversine." << std::endl;
+                    build_distance_matrix(locs, dist, meta.distance_multiplier);
                 }
-                std::cout << "✓ Loaded " << n << "x" << n << " custom distance matrix" << std::endl;
             } else {
                 std::cerr << "Warning: Invalid distance_matrix format. Falling back to haversine." << std::endl;
                 build_distance_matrix(locs, dist, meta.distance_multiplier);
@@ -161,7 +196,7 @@ public:
             build_distance_matrix(locs, dist, meta.distance_multiplier);
         }
         
-        std::cout << "Loaded: " << emps.size() << " employees, " 
+        std::cout << "Loaded: " << emps.size() << " employees, "
                   << phys_vehs.size() << " vehicles (" << virt_vehs.size() << " virtual)" << std::endl;
         
         if (has_custom_distances) {

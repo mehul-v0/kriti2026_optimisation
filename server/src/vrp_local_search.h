@@ -120,12 +120,14 @@ public:
         } else {
             // Map to_adj-1 back to original index
             int orig_idx = (to_adj - 1 < from) ? (to_adj - 1) : (to_adj - 1 + seg_len);
+            if (orig_idx < 0 || orig_idx >= (int)route.size()) return {0, 0};
             prev_ins = emps[route[orig_idx]].node_idx;
         }
         if (to_adj >= new_sz) {
             after_ins = OFFICE_NODE;
         } else {
             int orig_idx = (to_adj < from) ? to_adj : (to_adj + seg_len);
+            if (orig_idx < 0 || orig_idx >= (int)route.size()) return {0, 0};
             after_ins = emps[route[orig_idx]].node_idx;
         }
         

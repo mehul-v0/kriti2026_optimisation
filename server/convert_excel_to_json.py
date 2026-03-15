@@ -4,6 +4,8 @@ import pandas as pd
 import json
 import sys
 import math
+import os
+import tempfile
 
 def _safe_float(val, default=0.0):
     """Convert value to float, returning default if NaN or invalid."""
@@ -118,7 +120,7 @@ def convert(excel_file, output='input.json'):
         if not veh_id or veh_id == 'UNKNOWN':
             continue
             
-        vehicles.append({
+        vehicle = {
             'vehicle_id': veh_id,
             'current_lat': _safe_float(row.get('current_lat', 0)),
             'current_lng': _safe_float(row.get('current_lng', 0)),
@@ -127,7 +129,22 @@ def convert(excel_file, output='input.json'):
             'avg_speed_kmph': _safe_float(row.get('avg_speed_kmph', 40.0), 40.0),
             'available_from': _safe_str(row.get('available_from', '08:00'), '08:00'),
             'category': _safe_str(row.get('category', 'normal'), 'normal').lower()
-        })
+        }
+
+        # Skip zero-capacity vehicles (they can't carry anyone).
+        if vehicle['capacity'] == 0:
+            print(f"Skipping vehicle {veh_id} (capacity is 0)")
+            continue
+        # Log warnings for suspicious values; validation happens in app.py.
+        if vehicle['capacity'] < 0:
+            print(f"Warning: Vehicle {veh_id} has negative capacity {vehicle['capacity']}")
+        if vehicle['cost_per_km'] <= 0:
+            print(f"Warning: Vehicle {veh_id} has invalid cost_per_km {vehicle['cost_per_km']}")
+        # Intentionally allow speed == 0 for solver edge-case testing.
+        if vehicle['avg_speed_kmph'] < 0:
+            print(f"Warning: Vehicle {veh_id} has negative avg_speed_kmph {vehicle['avg_speed_kmph']}")
+
+        vehicles.append(vehicle)
     data['vehicles'] = vehicles
     print(f"{len(vehicles)} vehicles")
     
@@ -164,9 +181,23 @@ def convert(excel_file, output='input.json'):
     data['baseline'] = baseline
     print(f"{len(baseline)} baseline entries")
     
-    # Save
-    with open(output, 'w') as f:
-        json.dump(data, f, indent=2)
+    if not employees:
+        print("Warning: No valid employees found in Excel file")
+    if not vehicles:
+        print("Warning: No valid vehicles found in Excel file")
+    
+    # Save atomically (write to temp file, then rename)
+    try:
+        dir_name = os.path.dirname(os.path.abspath(output))
+        fd, tmp_path = tempfile.mkstemp(suffix='.json', dir=dir_name)
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, output)
+    except (IOError, OSError) as e:
+        print(f"Error writing output file '{output}': {str(e)}")
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return False
     
     print(f"\nSaved: {output}")
     return True

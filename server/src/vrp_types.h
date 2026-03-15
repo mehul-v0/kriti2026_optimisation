@@ -113,11 +113,11 @@ struct NeighborList {
     
     void build(const std::vector<Employee>& emps, const std::vector<std::vector<double>>& dist, int /*office_node*/) {
         int n = (int)emps.size();
-        K = std::min(K, n - 1);
+        K = std::max(0, std::min(K, n - 1));
         neighbors.resize(n);
         for (int i = 0; i < n; i++) {
             std::vector<std::pair<double, int>> dists;
-            dists.reserve(n - 1);
+            dists.reserve(std::max(0, n - 1));
             for (int j = 0; j < n; j++) {
                 if (i == j) continue;
                 dists.push_back({dist[emps[i].node_idx][emps[j].node_idx], j});
