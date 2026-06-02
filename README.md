@@ -362,4 +362,4 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed guides on Railway, Render, AWS, 
 
 ## License
 
-This project was built for **Kriti 2026** — IIT Kanpur's annual technical event.
+This project was built for **Kriti 2026** — IIT Guwahati's annual technical event.
